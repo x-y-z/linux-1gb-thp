@@ -43,6 +43,7 @@ obj-y			:= filemap.o mempool.o oom_kill.o fadvise.o \
 
 obj-y += init-mm.o
 obj-y += memblock.o
+obj-y += exchange.o
 
 ifdef CONFIG_MMU
 	obj-$(CONFIG_ADVISE_SYSCALLS)	+= madvise.o
