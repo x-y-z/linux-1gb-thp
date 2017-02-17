@@ -71,6 +71,8 @@
 
 #define MADV_COLD	20		/* deactivate these pages */
 #define MADV_PAGEOUT	21		/* reclaim these pages */
+#define MADV_MEMDEFRAG	22		/* Worth backing with hugepages */
+#define MADV_NOMEMDEFRAG	23		/* Not worth backing with hugepages */
 
 /* compatibility flags */
 #define MAP_FILE	0
