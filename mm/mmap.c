@@ -169,6 +169,28 @@ void unlink_file_vma(struct vm_area_struct *vma)
 	}
 }
 
+void free_anchor_pages(struct vm_area_struct *vma)
+{
+	struct interval_tree_node *node;
+
+	if (!vma)
+		return;
+
+	if (RB_EMPTY_ROOT(&vma->anchor_page_rb.rb_root))
+		return;
+
+	for (node = interval_tree_iter_first(&vma->anchor_page_rb,
+				0, (unsigned long)-1);
+		 node;) {
+		struct anchor_page_node *anchor_node = container_of(node,
+					struct anchor_page_node, node);
+		interval_tree_remove(node, &vma->anchor_page_rb);
+		node = interval_tree_iter_next(node, 0, (unsigned long)-1);
+		kfree(anchor_node);
+	}
+
+}
+
 /*
  * Close a vm structure and free it, returning the next.
  */
@@ -181,6 +203,7 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 		vma->vm_ops->close(vma);
 	if (vma->vm_file)
 		fput(vma->vm_file);
+	free_anchor_pages(vma);
 	mpol_put(vma_policy(vma));
 	vm_area_free(vma);
 	return next;
@@ -725,10 +748,15 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
 	long adjust_next = 0;
 	int remove_next = 0;
 
+	/*free_anchor_pages(vma);*/
+
+	vma->vma_modify_jiffies = jiffies;
+
 	if (next && !insert) {
 		struct vm_area_struct *exporter = NULL, *importer = NULL;
 
 		if (end >= next->vm_end) {
+			/*free_anchor_pages(next);*/
 			/*
 			 * vma expands, overlapping all the next, and
 			 * perhaps the one after too (mprotect case 6).
@@ -775,6 +803,7 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
 				exporter = next->vm_next;
 
 		} else if (end > next->vm_start) {
+			/*free_anchor_pages(next);*/
 			/*
 			 * vma expands, overlapping part of the next:
 			 * mprotect case 5 shifting the boundary up.
