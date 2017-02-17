@@ -34,6 +34,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/oom.h>
 #include <linux/numa.h>
+#include <linux/mem_defrag.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -696,6 +697,9 @@ vm_fault_t do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 	if (unlikely(anon_vma_prepare(vma)))
 		return VM_FAULT_OOM;
 	if (unlikely(khugepaged_enter(vma, vma->vm_flags)))
+		return VM_FAULT_OOM;
+	/* Make it defrag  */
+	if (unlikely(kmem_defragd_enter(vma, vma->vm_flags)))
 		return VM_FAULT_OOM;
 	if (!(vmf->flags & FAULT_FLAG_WRITE) &&
 			!mm_forbids_zeropage(vma->vm_mm) &&

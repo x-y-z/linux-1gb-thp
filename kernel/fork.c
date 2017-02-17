@@ -91,6 +91,7 @@
 #include <linux/livepatch.h>
 #include <linux/thread_info.h>
 #include <linux/stackleak.h>
+#include <linux/mem_defrag.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -342,12 +343,16 @@ struct vm_area_struct *vm_area_dup(struct vm_area_struct *orig)
 	if (new) {
 		*new = *orig;
 		INIT_LIST_HEAD(&new->anon_vma_chain);
+		new->anchor_page_rb = RB_ROOT_CACHED;
+		new->vma_create_jiffies = jiffies;
+		new->vma_defrag_jiffies = 0;
 	}
 	return new;
 }
 
 void vm_area_free(struct vm_area_struct *vma)
 {
+	free_anchor_pages(vma);
 	kmem_cache_free(vm_area_cachep, vma);
 }
 
@@ -495,6 +500,9 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 	if (retval)
 		goto out;
 	retval = khugepaged_fork(mm, oldmm);
+	if (retval)
+		goto out;
+	retval = kmem_defragd_fork(mm, oldmm);
 	if (retval)
 		goto out;
 
@@ -1044,6 +1052,7 @@ static inline void __mmput(struct mm_struct *mm)
 	exit_aio(mm);
 	ksm_exit(mm);
 	khugepaged_exit(mm); /* must run before exit_mmap */
+	kmem_defragd_exit(mm);
 	exit_mmap(mm);
 	mm_put_huge_zero_page(mm);
 	set_mm_exe_file(mm, NULL);
