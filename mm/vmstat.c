@@ -1158,6 +1158,7 @@ const char * const vmstat_text[] = {
 	"nr_shmem_hugepages",
 	"nr_shmem_pmdmapped",
 	"nr_anon_transparent_hugepages",
+	"nr_anon_transparent_pud_hugepages",
 	"nr_unstable",
 	"nr_vmscan_write",
 	"nr_vmscan_immediate_reclaim",
@@ -1259,6 +1260,8 @@ const char * const vmstat_text[] = {
 	"thp_deferred_split_page",
 	"thp_split_pmd",
 #ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+	"thp_fault_alloc_pud",
+	"thp_fault_fallback_pud",
 	"thp_split_pud",
 #endif
 	"thp_zero_page_alloc",
