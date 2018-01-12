@@ -475,6 +475,7 @@ struct mm_struct {
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
 		pgtable_t pmd_huge_pte; /* protected by page_table_lock */
 #endif
+		struct list_head pud_huge_pte; /* protected by page_table_lock */
 #ifdef CONFIG_NUMA_BALANCING
 		/*
 		 * numa_next_scan is the next time that the PTEs will be marked

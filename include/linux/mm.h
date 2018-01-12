@@ -27,6 +27,7 @@
 #include <linux/memremap.h>
 #include <linux/overflow.h>
 #include <linux/sizes.h>
+#include <linux/pagechain.h>
 
 struct mempolicy;
 struct anon_vma;
@@ -1980,6 +1981,7 @@ static inline void pgtable_init(void)
 {
 	ptlock_cache_init();
 	pgtable_cache_init();
+	pagechain_cache_init();
 }
 
 static inline bool pgtable_page_ctor(struct page *page)
@@ -2095,6 +2097,8 @@ static inline spinlock_t *pud_lock(struct mm_struct *mm, pud_t *pud)
 	spin_lock(ptl);
 	return ptl;
 }
+
+#define pud_huge_pte(mm, pud) ((mm)->pud_huge_pte)
 
 extern void __init pagecache_init(void);
 extern void free_area_init(unsigned long * zones_size);

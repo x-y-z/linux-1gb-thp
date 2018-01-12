@@ -3732,7 +3732,7 @@ static vm_fault_t create_huge_pud(struct vm_fault *vmf)
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	/* No support for anonymous transparent PUD pages yet */
 	if (vma_is_anonymous(vmf->vma))
-		return VM_FAULT_FALLBACK;
+		return do_huge_pud_anonymous_page(vmf);
 	if (vmf->vma->vm_ops->huge_fault)
 		return vmf->vma->vm_ops->huge_fault(vmf, PE_SIZE_PUD);
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
@@ -4617,3 +4617,29 @@ void ptlock_free(struct page *page)
 	kmem_cache_free(page_ptl_cachep, page->ptl);
 }
 #endif
+
+static struct kmem_cache *pagechain_cachep;
+
+void __init pagechain_cache_init(void)
+{
+	pagechain_cachep = kmem_cache_create("pagechain",
+		sizeof(struct pagechain), 0, SLAB_PANIC, NULL);
+}
+
+struct pagechain *pagechain_alloc(void)
+{
+	struct pagechain *chain;
+
+	chain = kmem_cache_alloc(pagechain_cachep, GFP_ATOMIC);
+
+	if (!chain)
+		return NULL;
+
+	pagechain_init(chain);
+	return chain;
+}
+
+void pagechain_free(struct pagechain *pchain)
+{
+	kmem_cache_free(pagechain_cachep, pchain);
+}
