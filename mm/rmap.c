@@ -726,6 +726,7 @@ pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address)
 	pgd_t *pgd;
 	p4d_t *p4d;
 	pud_t *pud;
+	pud_t pude;
 	pmd_t *pmd = NULL;
 	pmd_t pmde;
 
@@ -738,7 +739,10 @@ pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address)
 		goto out;
 
 	pud = pud_offset(p4d, address);
-	if (!pud_present(*pud))
+
+	pude = *pud;
+	barrier();
+	if (!pud_present(pude) || pud_trans_huge(pude))
 		goto out;
 
 	pmd = pmd_offset(pud, address);
@@ -1033,7 +1037,7 @@ void page_move_anon_rmap(struct page *page, struct vm_area_struct *vma)
  * __page_set_anon_rmap - set up new anonymous rmap
  * @page:	Page or Hugepage to add to rmap
  * @vma:	VM area to add page to.
- * @address:	User virtual address of the mapping	
+ * @address:	User virtual address of the mapping
  * @exclusive:	the page is exclusively owned by the current process
  */
 static void __page_set_anon_rmap(struct page *page,
@@ -1132,8 +1136,12 @@ void do_page_add_anon_rmap(struct page *page,
 		 * pte lock(a spinlock) is held, which implies preemption
 		 * disabled.
 		 */
-		if (compound)
-			__inc_node_page_state(page, NR_ANON_THPS);
+		if (compound) {
+			if (nr == HPAGE_PMD_NR)
+				__inc_node_page_state(page, NR_ANON_THPS);
+			else
+				__inc_node_page_state(page, NR_ANON_THPS_PUD);
+		}
 		__mod_node_page_state(page_pgdat(page), NR_ANON_MAPPED, nr);
 	}
 	if (unlikely(PageKsm(page)))
@@ -1174,7 +1182,10 @@ void page_add_new_anon_rmap(struct page *page,
 		if (hpage_pincount_available(page))
 			atomic_set(compound_pincount_ptr(page), 0);
 
-		__inc_node_page_state(page, NR_ANON_THPS);
+		if (nr == HPAGE_PMD_NR)
+			__inc_node_page_state(page, NR_ANON_THPS);
+		else
+			__inc_node_page_state(page, NR_ANON_THPS_PUD);
 	} else {
 		/* Anon THP always mapped first with PMD */
 		VM_BUG_ON_PAGE(PageTransCompound(page), page);
@@ -1283,14 +1294,17 @@ static void page_remove_anon_compound_rmap(struct page *page)
 	if (!IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE))
 		return;
 
-	__dec_node_page_state(page, NR_ANON_THPS);
+	if (hpage_nr_pages(page) == HPAGE_PMD_NR)
+		__dec_node_page_state(page, NR_ANON_THPS);
+	else
+		__dec_node_page_state(page, NR_ANON_THPS_PUD);
 
 	if (TestClearPageDoubleMap(page)) {
 		/*
 		 * Subpages can be mapped with PTEs too. Check how many of
 		 * them are still mapped.
 		 */
-		for (i = 0, nr = 0; i < HPAGE_PMD_NR; i++) {
+		for (i = 0, nr = 0; i < hpage_nr_pages(page); i++) {
 			if (atomic_add_negative(-1, &page[i]._mapcount))
 				nr++;
 		}
@@ -1303,7 +1317,7 @@ static void page_remove_anon_compound_rmap(struct page *page)
 		if (nr && nr < HPAGE_PMD_NR)
 			deferred_split_huge_page(page);
 	} else {
-		nr = HPAGE_PMD_NR;
+		nr = hpage_nr_pages(page);
 	}
 
 	if (unlikely(PageMlocked(page)))

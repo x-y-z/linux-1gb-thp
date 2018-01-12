@@ -28,6 +28,7 @@
 #include <linux/overflow.h>
 #include <linux/sizes.h>
 #include <linux/sched.h>
+#include <linux/pagechain.h>
 
 struct mempolicy;
 struct anon_vma;
@@ -2146,6 +2147,7 @@ static inline void pgtable_init(void)
 {
 	ptlock_cache_init();
 	pgtable_cache_init();
+	pagechain_cache_init();
 }
 
 static inline bool pgtable_pte_page_ctor(struct page *page)
@@ -2261,6 +2263,8 @@ static inline spinlock_t *pud_lock(struct mm_struct *mm, pud_t *pud)
 	spin_lock(ptl);
 	return ptl;
 }
+
+#define pud_huge_pte(mm, pud) ((mm)->pud_huge_pte)
 
 extern void __init pagecache_init(void);
 extern void __init free_area_init_memoryless_node(int nid);
