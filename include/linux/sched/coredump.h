@@ -74,6 +74,7 @@ static inline int get_dumpable(struct mm_struct *mm)
 #define MMF_OOM_REAP_QUEUED	26	/* mm was queued for oom_reaper */
 #define MMF_PROC_SHARED	27	/* mm is shared while sighand is not */
 #define MMF_DISABLE_THP_MASK	(1 << MMF_DISABLE_THP)
+#define MMF_HUGE_PUD_ZERO_PAGE	27	/* mm has ever used the global huge pud zero page */
 
 #define MMF_INIT_MASK		(MMF_DUMPABLE_MASK | MMF_DUMP_FILTER_MASK |\
 				 MMF_DISABLE_THP_MASK)
