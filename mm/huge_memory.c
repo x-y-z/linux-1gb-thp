@@ -1334,6 +1334,60 @@ void huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud)
 unlock:
 	spin_unlock(vmf->ptl);
 }
+
+vm_fault_t do_huge_pud_wp_page(struct vm_fault *vmf, pud_t orig_pud)
+{
+	struct vm_area_struct *vma = vmf->vma;
+	struct page *page = NULL;
+	unsigned long haddr = vmf->address & HPAGE_PUD_MASK;
+
+	vmf->ptl = pud_lockptr(vma->vm_mm, vmf->pud);
+	VM_BUG_ON_VMA(!vma->anon_vma, vma);
+
+	if (is_huge_zero_pud(orig_pud))
+		goto fallback;
+
+	spin_lock(vmf->ptl);
+
+	if (unlikely(!pud_same(*vmf->pud, orig_pud))) {
+		spin_unlock(vmf->ptl);
+		return 0;
+	}
+
+	page = pud_page(orig_pud);
+	VM_BUG_ON_PAGE(!PageCompound(page) || !PageHead(page), page);
+
+	/* Lock page for reuse_swap_page() */
+	if (!trylock_page(page)) {
+		get_page(page);
+		spin_unlock(vmf->ptl);
+		lock_page(page);
+		spin_lock(vmf->ptl);
+		if (unlikely(!pud_same(*vmf->pud, orig_pud))) {
+			unlock_page(page);
+			put_page(page);
+			return 0;
+		}
+		put_page(page);
+	}
+	if (reuse_swap_page(page, NULL)) {
+		pud_t entry;
+
+		entry = pud_mkyoung(orig_pud);
+		entry = maybe_pud_mkwrite(pud_mkdirty(entry), vma);
+		if (pudp_set_access_flags(vma, haddr, vmf->pud, entry,  1))
+			update_mmu_cache_pud(vma, vmf->address, vmf->pud);
+		unlock_page(page);
+		spin_unlock(vmf->ptl);
+		return VM_FAULT_WRITE;
+	}
+	unlock_page(page);
+	spin_unlock(vmf->ptl);
+fallback:
+	__split_huge_pud(vma, vmf->pud, vmf->address);
+	return VM_FAULT_FALLBACK;
+}
+
 #endif /* CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD */
 
 void huge_pmd_set_accessed(struct vm_fault *vmf, pmd_t orig_pmd)
