@@ -990,7 +990,6 @@ static int __do_huge_pud_anonymous_page(struct vm_fault *vmf, struct page *page,
 		gfp_t gfp)
 {
 	struct vm_area_struct *vma = vmf->vma;
-	struct mem_cgroup *memcg;
 	pmd_t *pmd_pgtable;
 	unsigned long haddr = vmf->address & HPAGE_PUD_MASK;
 	int ret = 0;
@@ -1379,7 +1378,12 @@ int copy_huge_pud(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 {
 	spinlock_t *dst_ptl, *src_ptl;
 	pud_t pud;
-	int ret;
+	pmd_t *pmd_pgtable = NULL;
+	int ret = -ENOMEM;
+
+	pmd_pgtable = pmd_alloc_one_page_with_ptes(vma->vm_mm, addr);
+	if (unlikely(!pmd_pgtable))
+		goto out;
 
 	dst_ptl = pud_lock(dst_mm, dst_pud);
 	src_ptl = pud_lockptr(src_mm, src_pud);
@@ -1387,8 +1391,13 @@ int copy_huge_pud(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 
 	ret = -EAGAIN;
 	pud = *src_pud;
-	if (unlikely(!pud_trans_huge(pud) && !pud_devmap(pud)))
+	if (unlikely(!pud_trans_huge(pud) && !pud_devmap(pud))) {
+		pmd_free_page_with_ptes(dst_mm, pmd_pgtable);
 		goto out_unlock;
+	}
+
+	if (pud_devmap(pud))
+		pmd_free_page_with_ptes(dst_mm, pmd_pgtable);
 
 	/*
 	 * When page table lock is held, the huge zero pud should not be
@@ -1396,7 +1405,32 @@ int copy_huge_pud(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	 * a page table.
 	 */
 	if (is_huge_zero_pud(pud)) {
-		/* No huge zero pud yet */
+		struct page *zero_page;
+		/*
+		 * get_huge_zero_page() will never allocate a new page here,
+		 * since we already have a zero page to copy. It just takes a
+		 * reference.
+		 */
+		zero_page = mm_get_huge_pud_zero_page(dst_mm);
+		set_huge_pud_zero_page(virt_to_page(pmd_pgtable),
+			dst_mm, vma, addr, dst_pud, zero_page);
+		ret = 0;
+		goto out_unlock;
+	}
+
+	if (pud_trans_huge(pud)) {
+		struct page *src_page;
+		int i;
+
+		src_page = pud_page(pud);
+		VM_BUG_ON_PAGE(!PageHead(src_page), src_page);
+		get_page(src_page);
+		page_dup_rmap(src_page, true);
+		add_mm_counter(dst_mm, MM_ANONPAGES, HPAGE_PUD_NR);
+		mm_inc_nr_pmds(dst_mm);
+		for (i = 0; i < (1<<(HPAGE_PUD_ORDER - HPAGE_PMD_ORDER)); i++)
+			mm_inc_nr_ptes(dst_mm);
+		pgtable_trans_huge_pud_deposit(dst_mm, dst_pud, virt_to_page(pmd_pgtable));
 	}
 
 	pudp_set_wrprotect(src_mm, addr, src_pud);
@@ -1407,6 +1441,7 @@ int copy_huge_pud(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 out_unlock:
 	spin_unlock(src_ptl);
 	spin_unlock(dst_ptl);
+out:
 	return ret;
 }
 
@@ -1430,6 +1465,60 @@ void huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud)
 unlock:
 	spin_unlock(vmf->ptl);
 }
+
+vm_fault_t do_huge_pud_wp_page(struct vm_fault *vmf, pud_t orig_pud)
+{
+	struct vm_area_struct *vma = vmf->vma;
+	struct page *page = NULL;
+	unsigned long haddr = vmf->address & HPAGE_PUD_MASK;
+
+	vmf->ptl = pud_lockptr(vma->vm_mm, vmf->pud);
+	VM_BUG_ON_VMA(!vma->anon_vma, vma);
+
+	if (is_huge_zero_pud(orig_pud))
+		goto fallback;
+
+	spin_lock(vmf->ptl);
+
+	if (unlikely(!pud_same(*vmf->pud, orig_pud))) {
+		spin_unlock(vmf->ptl);
+		return 0;
+	}
+
+	page = pud_page(orig_pud);
+	VM_BUG_ON_PAGE(!PageCompound(page) || !PageHead(page), page);
+
+	/* Lock page for reuse_swap_page() */
+	if (!trylock_page(page)) {
+		get_page(page);
+		spin_unlock(vmf->ptl);
+		lock_page(page);
+		spin_lock(vmf->ptl);
+		if (unlikely(!pud_same(*vmf->pud, orig_pud))) {
+			unlock_page(page);
+			put_page(page);
+			return 0;
+		}
+		put_page(page);
+	}
+	if (reuse_swap_page(page, NULL)) {
+		pud_t entry;
+
+		entry = pud_mkyoung(orig_pud);
+		entry = maybe_pud_mkwrite(pud_mkdirty(entry), vma);
+		if (pudp_set_access_flags(vma, haddr, vmf->pud, entry,  1))
+			update_mmu_cache_pud(vma, vmf->address, vmf->pud);
+		unlock_page(page);
+		spin_unlock(vmf->ptl);
+		return VM_FAULT_WRITE;
+	}
+	unlock_page(page);
+	spin_unlock(vmf->ptl);
+fallback:
+	__split_huge_pud(vma, vmf->pud, vmf->address);
+	return VM_FAULT_FALLBACK;
+}
+
 #endif /* CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD */
 
 void huge_pmd_set_accessed(struct vm_fault *vmf, pmd_t orig_pmd)
