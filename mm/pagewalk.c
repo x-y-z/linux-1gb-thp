@@ -152,10 +152,11 @@ static int walk_pud_range(p4d_t *p4d, unsigned long addr, unsigned long end,
 		    !(ops->pmd_entry || ops->pte_entry))
 			continue;
 
-		if (walk->vma)
+		if (walk->vma) {
 			split_huge_pud(walk->vma, pud, addr);
-		if (pud_none(*pud))
-			goto again;
+			if (pud_trans_unstable(pud))
+				goto again;
+		}
 
 		err = walk_pmd_range(pud, addr, next, walk);
 		if (err)
