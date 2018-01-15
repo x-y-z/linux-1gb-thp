@@ -625,6 +625,9 @@ void prep_compound_page(struct page *page, unsigned int order)
 		set_compound_head(p, page);
 	}
 	atomic_set(compound_mapcount_ptr(page), -1);
+	if (order == HPAGE_PUD_ORDER)
+		for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR)
+			atomic_set(sub_compound_mapcount_ptr(&page[i], 1), -1);
 }
 
 #ifdef CONFIG_DEBUG_PAGEALLOC
@@ -1052,6 +1055,13 @@ static int free_tail_pages_check(struct page *head_page, struct page *page)
 		 */
 		break;
 	default:
+		/* sub_compound_map_ptr store here */
+		if (compound_order(head_page) == HPAGE_PUD_ORDER &&
+			(page - head_page) % HPAGE_PMD_NR == 3) {
+			if (unlikely(atomic_read(&page->compound_mapcount) != -1))
+				bad_page(page, "nonzero sub_compound_mapcount", 0);
+			break;
+		}
 		if (page->mapping != TAIL_MAPPING) {
 			bad_page(page, "corrupted mapping in tail page", 0);
 			goto out;
@@ -1092,8 +1102,14 @@ static __always_inline bool free_pages_prepare(struct page *page,
 
 		VM_BUG_ON_PAGE(compound && compound_order(page) != order, page);
 
-		if (compound)
+		if (compound) {
 			ClearPageDoubleMap(page);
+			if (order == HPAGE_PUD_ORDER) {
+				ClearPagePUDDoubleMap(page);
+				for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR)
+					ClearPageDoubleMap(&page[i]);
+			}
+		}
 		for (i = 1; i < (1 << order); i++) {
 			if (compound)
 				bad += free_tail_pages_check(page, page + i);
