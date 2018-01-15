@@ -1125,6 +1125,7 @@ void do_page_add_anon_rmap(struct page *page,
 {
 	bool compound = flags & RMAP_COMPOUND;
 	bool first;
+	struct page *head = compound_head(page);
 
 	if (unlikely(PageKsm(page)))
 		lock_page_memcg(page);
@@ -1134,7 +1135,7 @@ void do_page_add_anon_rmap(struct page *page,
 	if (compound) {
 		atomic_t *mapcount = NULL;
 		VM_BUG_ON_PAGE(!PageLocked(page), page);
-		VM_BUG_ON_PAGE(!PageTransHuge(page), page);
+		VM_BUG_ON_PAGE(!PMDPageInPUD(page) && !PageTransHuge(page), page);
 		if (compound_order(page) == HPAGE_PUD_ORDER) {
 			if (map_order == HPAGE_PUD_ORDER) {
 				mapcount = compound_mapcount_ptr(page);
@@ -1143,7 +1144,7 @@ void do_page_add_anon_rmap(struct page *page,
 				mapcount = sub_compound_mapcount_ptr(page, 1);
 			} else
 				VM_BUG_ON(1);
-		} else if (compound_order(page) == HPAGE_PMD_ORDER) {
+		} else if (compound_order(head) == HPAGE_PMD_ORDER) {
 			mapcount = compound_mapcount_ptr(page);
 		} else
 			VM_BUG_ON(1);
@@ -1153,7 +1154,7 @@ void do_page_add_anon_rmap(struct page *page,
 	}
 
 	if (first) {
-		int nr = compound ? thp_nr_pages(page) : 1;
+		int nr = 1<<map_order;
 		/*
 		 * We use the irq-unsafe __{inc|mod}_zone_page_stat because
 		 * these counters are not modified in interrupt context, and
@@ -1474,10 +1475,13 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		.address = address,
 	};
 	pte_t pteval;
-	struct page *subpage;
+	pmd_t pmdval;
+	pud_t pudval;
+	struct page *subpage = NULL;
 	bool ret = true;
 	struct mmu_notifier_range range;
 	enum ttu_flags flags = (enum ttu_flags)(long)arg;
+	int map_order = 0;
 
 	/* munlock has nothing to gain from examining un-locked vmas */
 	if ((flags & TTU_MUNLOCK) && !(vma->vm_flags & VM_LOCKED))
@@ -1486,6 +1490,11 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 	if (IS_ENABLED(CONFIG_MIGRATION) && (flags & TTU_MIGRATION) &&
 	    is_zone_device_page(page) && !is_device_private_page(page))
 		return true;
+
+	if (flags & TTU_SPLIT_HUGE_PUD) {
+		split_huge_pud_address(vma, address,
+				flags & TTU_SPLIT_FREEZE, page);
+	}
 
 	if (flags & TTU_SPLIT_HUGE_PMD) {
 		split_huge_pmd_address(vma, address,
@@ -1519,7 +1528,7 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 	while (page_vma_mapped_walk(&pvmw)) {
 #ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
 		/* PMD-mapped THP migration entry */
-		if (!pvmw.pte && (flags & TTU_MIGRATION)) {
+		if (!pvmw.pte && pvmw.pmd && (flags & TTU_MIGRATION)) {
 			VM_BUG_ON_PAGE(PageHuge(page) || !PageTransCompound(page), page);
 
 			set_pmd_migration_entry(&pvmw, page);
@@ -1551,9 +1560,25 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		}
 
 		/* Unexpected PMD-mapped THP? */
-		VM_BUG_ON_PAGE(!pvmw.pte, page);
 
-		subpage = page - page_to_pfn(page) + pte_pfn(*pvmw.pte);
+		if (pvmw.pte) {
+			subpage = page - page_to_pfn(page) + pte_pfn(*pvmw.pte);
+			/*
+			 * PageHuge always uses pvmw.pte to store relevant page
+			 * table entry
+			 */
+			if (PageHuge(page))
+				map_order = compound_order(page);
+			else
+				map_order = 0;
+		} else if (!pvmw.pte && pvmw.pmd) {
+			subpage = page - page_to_pfn(page) + pmd_pfn(*pvmw.pmd);
+			map_order = HPAGE_PMD_ORDER;
+		} else if (!pvmw.pte && !pvmw.pmd && pvmw.pud) {
+			subpage = page - page_to_pfn(page) + pud_pfn(*pvmw.pud);
+			map_order = HPAGE_PUD_ORDER;
+		}
+		VM_BUG_ON(!subpage);
 		address = pvmw.address;
 
 		if (PageHuge(page)) {
@@ -1631,8 +1656,12 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		}
 
 		if (!(flags & TTU_IGNORE_ACCESS)) {
-			if (ptep_clear_flush_young_notify(vma, address,
-						pvmw.pte)) {
+			if ((pvmw.pte &&
+				 ptep_clear_flush_young_notify(vma, address, pvmw.pte)) ||
+				((!pvmw.pte && pvmw.pmd) &&
+				 pmdp_clear_flush_young_notify(vma, address, pvmw.pmd)) ||
+				((!pvmw.pte && !pvmw.pmd && pvmw.pud) &&
+				 pudp_clear_flush_young_notify(vma, address, pvmw.pud))) {
 				ret = false;
 				page_vma_mapped_walk_done(&pvmw);
 				break;
@@ -1640,7 +1669,12 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		}
 
 		/* Nuke the page table entry. */
-		flush_cache_page(vma, address, pte_pfn(*pvmw.pte));
+		if (pvmw.pte)
+			flush_cache_page(vma, address, pte_pfn(*pvmw.pte));
+		else if (!pvmw.pte && pvmw.pmd)
+			flush_cache_page(vma, address, pmd_pfn(*pvmw.pmd));
+		else if (!pvmw.pte && !pvmw.pmd && pvmw.pud)
+			flush_cache_page(vma, address, pud_pfn(*pvmw.pud));
 		if (should_defer_flush(mm, flags)) {
 			/*
 			 * We clear the PTE but do not flush so potentially
@@ -1650,16 +1684,34 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 			 * transition on a cached TLB entry is written through
 			 * and traps if the PTE is unmapped.
 			 */
-			pteval = ptep_get_and_clear(mm, address, pvmw.pte);
+			if (pvmw.pte) {
+				pteval = ptep_get_and_clear(mm, address, pvmw.pte);
 
-			set_tlb_ubc_flush_pending(mm, pte_dirty(pteval));
+				set_tlb_ubc_flush_pending(mm, pte_dirty(pteval));
+			} else if (!pvmw.pte && pvmw.pmd) {
+				pmdval = pmdp_huge_get_and_clear(mm, address, pvmw.pmd);
+
+				set_tlb_ubc_flush_pending(mm, pmd_dirty(pmdval));
+			} else if (!pvmw.pte && !pvmw.pmd && pvmw.pud) {
+				pudval = pudp_huge_get_and_clear(mm, address, pvmw.pud);
+
+				set_tlb_ubc_flush_pending(mm, pud_dirty(pudval));
+			}
 		} else {
-			pteval = ptep_clear_flush(vma, address, pvmw.pte);
+			if (pvmw.pte)
+				pteval = ptep_clear_flush(vma, address, pvmw.pte);
+			else if (!pvmw.pte && pvmw.pmd)
+				pmdval = pmdp_huge_clear_flush(vma, address, pvmw.pmd);
+			else if (!pvmw.pte && !pvmw.pmd && pvmw.pud)
+				pudval = pudp_huge_clear_flush(vma, address, pvmw.pud);
 		}
 
 		/* Move the dirty bit to the page. Now the pte is gone. */
-		if (pte_dirty(pteval))
-			set_page_dirty(page);
+			if ((pvmw.pte && pte_dirty(pteval)) ||
+				((!pvmw.pte && pvmw.pmd) && pmd_dirty(pmdval)) ||
+				((!pvmw.pte && !pvmw.pmd && pvmw.pud) && pud_dirty(pudval))
+				)
+				set_page_dirty(page);
 
 		/* Update high watermark before we lower rss */
 		update_hiwater_rss(mm);
@@ -1694,35 +1746,59 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		} else if (IS_ENABLED(CONFIG_MIGRATION) &&
 				(flags & (TTU_MIGRATION|TTU_SPLIT_FREEZE))) {
 			swp_entry_t entry;
-			pte_t swp_pte;
 
-			if (arch_unmap_one(mm, vma, address, pteval) < 0) {
-				set_pte_at(mm, address, pvmw.pte, pteval);
-				ret = false;
-				page_vma_mapped_walk_done(&pvmw);
-				break;
+			if (pvmw.pte) {
+				pte_t swp_pte;
+
+				if (arch_unmap_one(mm, vma, address, pteval) < 0) {
+					set_pte_at(mm, address, pvmw.pte, pteval);
+					ret = false;
+					page_vma_mapped_walk_done(&pvmw);
+					break;
+				}
+
+				/*
+				 * Store the pfn of the page in a special migration
+				 * pte. do_swap_page() will wait until the migration
+				 * pte is removed and then restart fault handling.
+				 */
+				entry = make_migration_entry(subpage,
+						pte_write(pteval));
+				swp_pte = swp_entry_to_pte(entry);
+				if (pte_soft_dirty(pteval))
+					swp_pte = pte_swp_mksoft_dirty(swp_pte);
+				if (pte_uffd_wp(pteval))
+					swp_pte = pte_swp_mkuffd_wp(swp_pte);
+				set_pte_at(mm, address, pvmw.pte, swp_pte);
+				/*
+				 * No need to invalidate here it will synchronize on
+				 * against the special swap migration pte.
+				 */
+			} else if (!pvmw.pte && pvmw.pmd) {
+				pmd_t swp_pmd;
+				/*
+				 * Store the pfn of the page in a special migration
+				 * pte. do_swap_page() will wait until the migration
+				 * pte is removed and then restart fault handling.
+				 */
+				entry = make_migration_entry(subpage,
+						pmd_write(pmdval));
+				swp_pmd = swp_entry_to_pmd(entry);
+				if (pmd_soft_dirty(pmdval))
+					swp_pmd = pmd_swp_mksoft_dirty(swp_pmd);
+				set_pmd_at(mm, address, pvmw.pmd, swp_pmd);
+				/*
+				 * No need to invalidate here it will synchronize on
+				 * against the special swap migration pte.
+				 */
+			} else if (!pvmw.pte && !pvmw.pmd && pvmw.pud) {
+				VM_BUG_ON(1);
 			}
-
-			/*
-			 * Store the pfn of the page in a special migration
-			 * pte. do_swap_page() will wait until the migration
-			 * pte is removed and then restart fault handling.
-			 */
-			entry = make_migration_entry(subpage,
-					pte_write(pteval));
-			swp_pte = swp_entry_to_pte(entry);
-			if (pte_soft_dirty(pteval))
-				swp_pte = pte_swp_mksoft_dirty(swp_pte);
-			if (pte_uffd_wp(pteval))
-				swp_pte = pte_swp_mkuffd_wp(swp_pte);
-			set_pte_at(mm, address, pvmw.pte, swp_pte);
-			/*
-			 * No need to invalidate here it will synchronize on
-			 * against the special swap migration pte.
-			 */
 		} else if (PageAnon(page)) {
 			swp_entry_t entry = { .val = page_private(subpage) };
 			pte_t swp_pte;
+
+			VM_BUG_ON(!pvmw.pte);
 			/*
 			 * Store the swap location in the pte.
 			 * See handle_pte_fault() ...
@@ -1808,7 +1884,7 @@ discard:
 		 *
 		 * See Documentation/vm/mmu_notifier.rst
 		 */
-		page_remove_rmap(subpage, compound_order(page));
+		page_remove_rmap(subpage, map_order);
 		put_page(page);
 	}
 
