@@ -731,10 +731,32 @@ static struct page *follow_pud_mask(struct vm_area_struct *vma,
 		if (page)
 			return page;
 	}
+
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+	if (likely(!pud_trans_huge(*pud))) {
+		if (unlikely(pud_bad(*pud)))
+			return no_page_table(vma, flags);
+		return follow_pmd_mask(vma, address, pud, flags, ctx);
+	}
+
+	ptl = pud_lock(mm, pud);
+
+	if (unlikely(!pud_trans_huge(*pud))) {
+		spin_unlock(ptl);
+		if (unlikely(pud_bad(*pud)))
+			return no_page_table(vma, flags);
+		return follow_pmd_mask(vma, address, pud, flags, ctx);
+	}
+
+	page = follow_trans_huge_pud(vma, address, pud, flags);
+	spin_unlock(ptl);
+	ctx->page_mask = HPAGE_PUD_NR - 1;
+	return page;
+#else
 	if (unlikely(pud_bad(*pud)))
 		return no_page_table(vma, flags);
-
 	return follow_pmd_mask(vma, address, pud, flags, ctx);
+#endif
 }
 
 static struct page *follow_p4d_mask(struct vm_area_struct *vma,
