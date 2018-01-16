@@ -1265,8 +1265,8 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 					 * tail pages can be freed without IO.
 					 */
 					if (!compound_mapcount(page) &&
-					    split_huge_page_to_list(page,
-								    page_list))
+						split_huge_page_to_list(page,
+									page_list))
 						goto activate_locked;
 				}
 try_to_swap:
@@ -1274,6 +1274,8 @@ try_to_swap:
 					if (!PageTransHuge(page))
 						goto activate_locked_split;
 					/* Fallback to swap normal pages */
+					VM_BUG_ON_PAGE(compound_order(page) != HPAGE_PMD_ORDER,
+						       page);
 					if (split_huge_page_to_list(page,
 								    page_list))
 						goto activate_locked;
@@ -1290,6 +1292,7 @@ try_to_swap:
 				mapping = page_mapping(page);
 			}
 		} else if (unlikely(PageTransHuge(page))) {
+			VM_BUG_ON_PAGE(compound_order(page) != HPAGE_PMD_ORDER, page);
 			/* Split file THP */
 			if (split_huge_page_to_list(page, page_list))
 				goto keep_locked;
@@ -1315,9 +1318,12 @@ try_to_swap:
 			enum ttu_flags flags = ttu_flags | TTU_BATCH_FLUSH;
 			bool was_swapbacked = PageSwapBacked(page);
 
-			if (unlikely(PageTransHuge(page)))
-				flags |= TTU_SPLIT_HUGE_PMD;
-
+			if (unlikely(PageTransHuge(page))) {
+				if (compound_order(page) == HPAGE_PMD_ORDER)
+					flags |= TTU_SPLIT_HUGE_PMD;
+				else if (compound_order(page) == HPAGE_PUD_ORDER)
+					flags |= TTU_SPLIT_HUGE_PUD;
+			}
 			if (!try_to_unmap(page, flags)) {
 				stat->nr_unmap_fail += nr_pages;
 				if (!was_swapbacked && PageSwapBacked(page))
