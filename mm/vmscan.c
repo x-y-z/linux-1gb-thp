@@ -1271,25 +1271,47 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				if (!(sc->gfp_mask & __GFP_IO))
 					goto keep_locked;
 				if (PageTransHuge(page)) {
-					/* cannot split THP, skip it */
-					if (!can_split_huge_page(page, NULL))
-						goto activate_locked;
-					/*
-					 * Split pages without a PMD map right
-					 * away. Chances are some or all of the
-					 * tail pages can be freed without IO.
-					 */
-					if (!compound_mapcount(page) &&
-					    split_huge_page_to_list(page,
-								    page_list))
+					if (compound_order(page) == HPAGE_PUD_ORDER) {
+						/* cannot split THP, skip it */
+						if (!can_split_huge_pud_page(page, NULL))
+							goto activate_locked;
+						/*
+						 * Split pages without a PMD map right
+						 * away. Chances are some or all of the
+						 * tail pages can be freed without IO.
+						 */
+						if (!compound_mapcount(page) &&
+							split_huge_pud_page_to_list(page,
+										page_list))
+							goto activate_locked;
+					}
+					if (compound_order(page) == HPAGE_PMD_ORDER) {
+						/* cannot split THP, skip it */
+						if (!can_split_huge_page(page, NULL))
+							goto activate_locked;
+						/*
+						 * Split pages without a PMD map right
+						 * away. Chances are some or all of the
+						 * tail pages can be freed without IO.
+						 */
+						if (!compound_mapcount(page) &&
+							split_huge_page_to_list(page,
+										page_list))
+							goto activate_locked;
+					}
+				}
+				if (compound_order(page) == HPAGE_PUD_ORDER) {
+					if (split_huge_pud_page_to_list(page,
+									page_list))
 						goto activate_locked;
 				}
 				if (!add_to_swap(page)) {
 					if (!PageTransHuge(page))
 						goto activate_locked;
 					/* Fallback to swap normal pages */
+					VM_BUG_ON_PAGE(compound_order(page) != HPAGE_PMD_ORDER, page);
 					if (split_huge_page_to_list(page,
-								    page_list))
+									page_list))
 						goto activate_locked;
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 					count_vm_event(THP_SWPOUT_FALLBACK);
@@ -1304,6 +1326,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				mapping = page_mapping(page);
 			}
 		} else if (unlikely(PageTransHuge(page))) {
+			VM_BUG_ON_PAGE(compound_order(page) != HPAGE_PMD_ORDER, page);
 			/* Split file THP */
 			if (split_huge_page_to_list(page, page_list))
 				goto keep_locked;
@@ -1316,8 +1339,12 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		if (page_mapped(page)) {
 			enum ttu_flags flags = ttu_flags | TTU_BATCH_FLUSH;
 
-			if (unlikely(PageTransHuge(page)))
-				flags |= TTU_SPLIT_HUGE_PMD;
+			if (unlikely(PageTransHuge(page))) {
+				if (compound_order(page) == HPAGE_PMD_ORDER)
+					flags |= TTU_SPLIT_HUGE_PMD;
+				else if (compound_order(page) == HPAGE_PUD_ORDER)
+					flags |= TTU_SPLIT_HUGE_PUD;
+			}
 			if (!try_to_unmap(page, flags)) {
 				stat->nr_unmap_fail++;
 				goto activate_locked;
