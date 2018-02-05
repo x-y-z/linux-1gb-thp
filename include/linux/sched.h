@@ -56,6 +56,7 @@ struct signal_struct;
 struct task_delay_info;
 struct task_group;
 
+#ifdef CONFIG_PAGE_MIGRATION_PROFILE
 struct move_pages_breakdown {
 	unsigned long long last_timestamp;
 
@@ -78,6 +79,7 @@ struct move_pages_breakdown {
 	unsigned long long store_page_status_cycles;
 	unsigned long long return_to_syscall_cycles;
 };
+#endif
 
 
 /*
@@ -851,7 +853,9 @@ struct task_struct {
 	unsigned long			min_flt;
 	unsigned long			maj_flt;
 
+#ifdef CONFIG_PAGE_MIGRATION_PROFILE
 	struct move_pages_breakdown move_pages_breakdown;
+#endif
 
 #ifdef CONFIG_POSIX_TIMERS
 	struct task_cputime		cputime_expires;
