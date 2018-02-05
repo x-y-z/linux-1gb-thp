@@ -61,6 +61,7 @@ struct signal_struct;
 struct task_delay_info;
 struct task_group;
 
+#ifdef CONFIG_PAGE_MIGRATION_PROFILE
 struct move_pages_breakdown {
 	unsigned long long last_timestamp;
 
@@ -83,6 +84,7 @@ struct move_pages_breakdown {
 	unsigned long long store_page_status_cycles;
 	unsigned long long return_to_syscall_cycles;
 };
+#endif
 
 
 /*
@@ -901,7 +903,9 @@ struct task_struct {
 	/* Empty if CONFIG_POSIX_CPUTIMERS=n */
 	struct posix_cputimers		posix_cputimers;
 
+#ifdef CONFIG_PAGE_MIGRATION_PROFILE
 	struct move_pages_breakdown move_pages_breakdown;
+#endif
 
 	/* Process credentials: */
 
