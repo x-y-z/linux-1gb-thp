@@ -334,6 +334,7 @@ static ssize_t get_task_cmdline(struct task_struct *tsk, char __user *buf,
 	return ret;
 }
 
+#ifdef CONFIG_PAGE_MIGRATION_PROFILE
 static int proc_pid_move_pages_breakdown(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
@@ -416,6 +417,7 @@ static int proc_pid_move_pages_breakdown(struct seq_file *m, struct pid_namespac
 
 	return 0;
 }
+#endif
 
 static ssize_t proc_pid_cmdline_read(struct file *file, char __user *buf,
 				     size_t count, loff_t *pos)
@@ -3069,7 +3071,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_HAVE_ARCH_TRACEHOOK
 	ONE("syscall",    S_IRUSR, proc_pid_syscall),
 #endif
+#ifdef CONFIG_PAGE_MIGRATION_PROFILE
 	ONE("move_pages_breakdown",       S_IRUGO, proc_pid_move_pages_breakdown),
+#endif
 	REG("cmdline",    S_IRUGO, proc_pid_cmdline_ops),
 	ONE("stat",       S_IRUGO, proc_tgid_stat),
 	ONE("statm",      S_IRUGO, proc_pid_statm),
@@ -3466,7 +3470,9 @@ static const struct pid_entry tid_base_stuff[] = {
 #ifdef CONFIG_HAVE_ARCH_TRACEHOOK
 	ONE("syscall",   S_IRUSR, proc_pid_syscall),
 #endif
+#ifdef CONFIG_PAGE_MIGRATION_PROFILE
 	ONE("move_pages_breakdown",       S_IRUGO, proc_pid_move_pages_breakdown),
+#endif
 	REG("cmdline",   S_IRUGO, proc_pid_cmdline_ops),
 	ONE("stat",      S_IRUGO, proc_tid_stat),
 	ONE("statm",     S_IRUGO, proc_pid_statm),
