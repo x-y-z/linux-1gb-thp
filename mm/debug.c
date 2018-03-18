@@ -70,8 +70,12 @@ void __dump_page(struct page *page, const char *reason)
 	pr_warn("page:%px count:%d mapcount:%d mapping:%px index:%#lx",
 		  page, page_ref_count(page), mapcount,
 		  page->mapping, page_to_pgoff(page));
-	if (PageCompound(page))
-		pr_cont(" compound_mapcount: %d", compound_mapcount(page));
+	if (PageCompound(page)) {
+		struct page *head = compound_head(page);
+
+		pr_cont(" compound_mapcount: %d, order: %d", compound_mapcount(page),
+				compound_order(head));
+	}
 	pr_cont("\n");
 	if (PageAnon(page))
 		pr_warn("anon ");
