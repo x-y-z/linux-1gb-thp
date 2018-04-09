@@ -1787,8 +1787,8 @@ static struct ctl_table vm_table[] = {
 		.maxlen		= sizeof(only_print_head_pfn),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &one,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 	{ }
 };
