@@ -84,6 +84,8 @@ enum transparent_hugepage_flag {
 #ifdef CONFIG_DEBUG_VM
 	TRANSPARENT_HUGEPAGE_DEBUG_COW_FLAG,
 #endif
+	TRANSPARENT_PUD_HUGEPAGE_FLAG,
+	TRANSPARENT_PUD_HUGEPAGE_REQ_MADV_FLAG,
 };
 
 struct kobject;
@@ -146,6 +148,18 @@ static inline bool __transparent_hugepage_enabled(struct vm_area_struct *vma)
 }
 
 bool transparent_hugepage_enabled(struct vm_area_struct *vma);
+static inline bool transparent_pud_hugepage_enabled(struct vm_area_struct *vma)
+{
+	if (transparent_hugepage_enabled(vma)) {
+		if (transparent_hugepage_flags & (1 << TRANSPARENT_PUD_HUGEPAGE_FLAG))
+			return true;
+		if (transparent_hugepage_flags &
+					(1 << TRANSPARENT_HUGEPAGE_REQ_MADV_FLAG))
+			return !!(vma->vm_flags & VM_HUGEPAGE);
+	}
+
+	return false;
+}
 
 #define transparent_hugepage_use_zero_page()				\
 	(transparent_hugepage_flags &					\
