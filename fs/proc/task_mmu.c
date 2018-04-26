@@ -1426,6 +1426,45 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 	return err;
 }
 
+static int pagemap_pud_range(pud_t *pudp, unsigned long addr, unsigned long end,
+			     struct mm_walk *walk)
+{
+	struct vm_area_struct *vma = walk->vma;
+	struct pagemapread *pm = walk->private;
+	int err = 0;
+	u64 flags = 0, frame = 0;
+	pud_t pud = *pudp;
+	struct page *page = NULL;
+
+	if (vma->vm_flags & VM_SOFTDIRTY)
+		flags |= PM_SOFT_DIRTY;
+
+	if (pud_present(pud)) {
+		page = pud_page(pud);
+
+		flags |= PM_PRESENT;
+		if (pud_soft_dirty(pud))
+			flags |= PM_SOFT_DIRTY;
+		if (pm->show_pfn)
+			frame = pud_pfn(pud) +
+				((addr & ~PMD_MASK) >> PAGE_SHIFT);
+	}
+
+	if (page && page_mapcount(page) == 1)
+		flags |= PM_MMAP_EXCLUSIVE;
+
+	for (; addr != end; addr += PAGE_SIZE) {
+		pagemap_entry_t pme = make_pme(frame, flags);
+
+		err = add_to_pagemap(addr, &pme, pm);
+		if (err)
+			break;
+		if (pm->show_pfn && (flags & PM_PRESENT))
+			frame++;
+	}
+	return err;
+}
+
 #ifdef CONFIG_HUGETLB_PAGE
 /* This function walks within one hugetlb entry in the single call */
 static int pagemap_hugetlb_range(pte_t *ptep, unsigned long hmask,
@@ -1476,6 +1515,7 @@ static int pagemap_hugetlb_range(pte_t *ptep, unsigned long hmask,
 #endif /* HUGETLB_PAGE */
 
 static const struct mm_walk_ops pagemap_ops = {
+	.pud_entry	= pagemap_pud_range,
 	.pmd_entry	= pagemap_pmd_range,
 	.pte_hole	= pagemap_pte_hole,
 	.hugetlb_entry	= pagemap_hugetlb_range,
