@@ -4282,3 +4282,422 @@ void remove_migration_pmd(struct page_vma_mapped_walk *pvmw, struct page *new)
 	update_mmu_cache_pmd(vma, address, pvmw->pmd);
 }
 #endif
+
+/* promote HPAGE_PMD_SIZE range into a PMD map.
+ * mmap_sem needs to be down_write.
+ */
+int promote_huge_pmd_address(struct vm_area_struct *vma, unsigned long haddr)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	pmd_t *pmd, _pmd;
+	pte_t *pte, *_pte;
+	spinlock_t *pmd_ptl, *pte_ptl;
+	struct mmu_notifier_range range;
+	pgtable_t pgtable;
+	struct page *page, *head;
+	unsigned long address = haddr;
+	int ret = -EBUSY;
+
+	VM_BUG_ON(haddr & ~HPAGE_PMD_MASK);
+
+	if (haddr < vma->vm_start || (haddr + HPAGE_PMD_SIZE) > vma->vm_end)
+		return -EINVAL;
+
+	pmd = mm_find_pmd(mm, haddr);
+	if (!pmd || pmd_trans_huge(*pmd))
+		goto out;
+
+	anon_vma_lock_write(vma->anon_vma);
+
+	pte = pte_offset_map(pmd, haddr);
+	pte_ptl = pte_lockptr(mm, pmd);
+
+	head = page = vm_normal_page(vma, haddr, *pte);
+	if (!page || !PageTransCompound(page))
+		goto out_unlock;
+	VM_BUG_ON(page != compound_head(page));
+	lock_page(head);
+
+	mmu_notifier_range_init(&range, mm, haddr, haddr + HPAGE_PMD_SIZE);
+	mmu_notifier_invalidate_range_start(&range);
+	pmd_ptl = pmd_lock(mm, pmd); /* probably unnecessary */
+	/*
+	 * After this gup_fast can't run anymore. This also removes
+	 * any huge TLB entry from the CPU so we won't allow
+	 * huge and small TLB entries for the same virtual address
+	 * to avoid the risk of CPU bugs in that area.
+	 */
+
+	_pmd = pmdp_collapse_flush(vma, haddr, pmd);
+	spin_unlock(pmd_ptl);
+	mmu_notifier_invalidate_range_end(&range);
+
+	/* remove ptes */
+	for (_pte = pte; _pte < pte + HPAGE_PMD_NR;
+				_pte++, page++, address += PAGE_SIZE) {
+		pte_t pteval = *_pte;
+
+		if (pte_none(pteval) || is_zero_pfn(pte_pfn(pteval))) {
+			pr_err("pte none or zero pfn during pmd promotion\n");
+			if (is_zero_pfn(pte_pfn(pteval))) {
+				/*
+				 * ptl mostly unnecessary.
+				 */
+				spin_lock(pte_ptl);
+				/*
+				 * paravirt calls inside pte_clear here are
+				 * superfluous.
+				 */
+				pte_clear(vma->vm_mm, address, _pte);
+				spin_unlock(pte_ptl);
+			}
+		} else {
+			/*
+			 * ptl mostly unnecessary, but preempt has to
+			 * be disabled to update the per-cpu stats
+			 * inside page_remove_rmap().
+			 */
+			spin_lock(pte_ptl);
+			/*
+			 * paravirt calls inside pte_clear here are
+			 * superfluous.
+			 */
+			pte_clear(vma->vm_mm, address, _pte);
+			atomic_dec(&page->_mapcount);
+			/*page_remove_rmap(page, false, 0);*/
+			if (atomic_read(&page->_mapcount) > -1) {
+				SetPageDoubleMap(head);
+				pr_info("page double mapped");
+			}
+			spin_unlock(pte_ptl);
+		}
+	}
+	page_ref_sub(head, HPAGE_PMD_NR - 1);
+
+	pte_unmap(pte);
+	pgtable = pmd_pgtable(_pmd);
+
+	_pmd = mk_huge_pmd(head, vma->vm_page_prot);
+	_pmd = maybe_pmd_mkwrite(pmd_mkdirty(_pmd), vma);
+
+	/*
+	 * spin_lock() below is not the equivalent of smp_wmb(), so
+	 * this is needed to avoid the copy_huge_page writes to become
+	 * visible after the set_pmd_at() write.
+	 */
+	smp_wmb();
+
+	spin_lock(pmd_ptl);
+	VM_BUG_ON(!pmd_none(*pmd));
+	atomic_inc(compound_mapcount_ptr(head));
+	__inc_node_page_state(head, NR_ANON_THPS);
+	pgtable_trans_huge_deposit(mm, pmd, pgtable);
+	set_pmd_at(mm, haddr, pmd, _pmd);
+	update_mmu_cache_pmd(vma, haddr, pmd);
+	spin_unlock(pmd_ptl);
+	unlock_page(head);
+	ret = 0;
+
+out_unlock:
+	anon_vma_unlock_write(vma->anon_vma);
+out:
+	return ret;
+}
+
+/* Racy check whether the huge page can be split */
+static bool can_promote_huge_page(struct page *page)
+{
+	int extra_pins;
+
+	/* Additional pins from radix tree */
+	if (PageAnon(page))
+		extra_pins = PageSwapCache(page) ? 1 : 0;
+	else
+		return false;
+	if (PageSwapCache(page))
+		return false;
+	if (PageWriteback(page))
+		return false;
+	return total_mapcount(page) == page_count(page) - extra_pins - 1;
+}
+
+/* write a __promote_huge_page_isolate(struct vm_area_struct *vma,
+ * unsigned long address, pte_t *pte) to isolate all subpages into a list,
+ * then call promote_list_to_huge_page() to promote in-place
+ */
+
+static int __promote_huge_page_isolate(struct vm_area_struct *vma,
+					unsigned long haddr, pte_t *pte,
+					struct page **head, struct list_head *subpage_list)
+{
+	struct page *page = NULL;
+	pte_t *_pte;
+	bool writable = false;
+	unsigned long address = haddr;
+
+	*head = NULL;
+	lru_add_drain();
+	for (_pte = pte; _pte < pte+HPAGE_PMD_NR;
+	     _pte++, address += PAGE_SIZE) {
+		pte_t pteval = *_pte;
+
+		if (pte_none(pteval) || (pte_present(pteval) &&
+				is_zero_pfn(pte_pfn(pteval))))
+			goto out;
+		if (!pte_present(pteval))
+			goto out;
+		page = vm_normal_page(vma, address, pteval);
+		if (unlikely(!page))
+			goto out;
+
+		if (address == haddr) {
+			*head = page;
+			if (page_to_pfn(page) & ((1<<HPAGE_PMD_ORDER) - 1))
+				goto out;
+		}
+
+		if ((*head + (address - haddr)/PAGE_SIZE) != page)
+			goto out;
+
+		if (PageCompound(page))
+			goto out;
+
+		if (PageMlocked(page))
+			goto out;
+
+		VM_BUG_ON_PAGE(!PageAnon(page), page);
+
+		/*
+		 * We can do it before isolate_lru_page because the
+		 * page can't be freed from under us. NOTE: PG_lock
+		 * is needed to serialize against split_huge_page
+		 * when invoked from the VM.
+		 */
+		if (!trylock_page(page))
+			goto out;
+
+		/*
+		 * cannot use mapcount: can't collapse if there's a gup pin.
+		 * The page must only be referenced by the scanned process
+		 * and page swap cache.
+		 */
+		if (page_count(page) != page_mapcount(page) + PageSwapCache(page)) {
+			unlock_page(page);
+			goto out;
+		}
+		if (pte_write(pteval)) {
+			writable = true;
+		} else {
+			if (PageSwapCache(page) &&
+			    !reuse_swap_page(page, NULL)) {
+				unlock_page(page);
+				goto out;
+			}
+			/*
+			 * Page is not in the swap cache. It can be collapsed
+			 * into a THP.
+			 */
+		}
+
+		/*
+		 * Isolate the page to avoid collapsing an hugepage
+		 * currently in use by the VM.
+		 */
+		if (isolate_lru_page(page)) {
+			unlock_page(page);
+			goto out;
+		}
+
+		inc_node_page_state(page,
+				NR_ISOLATED_ANON + page_is_file_cache(page));
+		VM_BUG_ON_PAGE(!PageLocked(page), page);
+		VM_BUG_ON_PAGE(PageLRU(page), page);
+	}
+	if (likely(writable)) {
+		int i;
+
+		for (i = 0; i < HPAGE_PMD_NR; i++) {
+			struct page *p = *head + i;
+
+			list_add_tail(&p->lru, subpage_list);
+			VM_BUG_ON_PAGE(!PageLocked(p), p);
+		}
+		return 1;
+	} else {
+		/*result = SCAN_PAGE_RO;*/
+	}
+
+out:
+	release_pte_pages(pte, _pte);
+	return 0;
+}
+
+/*
+ * This function promotes normal pages into a huge page. @list point to all
+ * subpages of huge page to promote, @head point to the head page.
+ *
+ * Only caller must hold pin on the pages on @list, otherwise promotion
+ * fails with -EBUSY. All subpages must be locked.
+ *
+ * Both head page and tail pages will inherit mapping, flags, and so on from
+ * the hugepage.
+ *
+ * GUP pin and PG_locked transferred to @page. *
+ *
+ * Returns 0 if the hugepage is promoted successfully.
+ * Returns -EBUSY if any subpage is pinned or if anon_vma disappeared from
+ * under us.
+ */
+int promote_list_to_huge_page(struct page *head, struct list_head *list)
+{
+	struct anon_vma *anon_vma = NULL;
+	int ret = 0;
+	DECLARE_BITMAP(subpage_bitmap, HPAGE_PMD_NR);
+	struct page *subpage;
+	int i;
+
+	/* no file-backed page support yet */
+	if (PageAnon(head)) {
+		/*
+		 * The caller does not necessarily hold an mmap_sem that would
+		 * prevent the anon_vma disappearing so we first we take a
+		 * reference to it and then lock the anon_vma for write. This
+		 * is similar to page_lock_anon_vma_read except the write lock
+		 * is taken to serialise against parallel split or collapse
+		 * operations.
+		 */
+		anon_vma = page_get_anon_vma(head);
+		if (!anon_vma) {
+			ret = -EBUSY;
+			goto out;
+		}
+		anon_vma_lock_write(anon_vma);
+	} else
+		return -EBUSY;
+
+	/* Racy check each subpage to see if any has extra pin */
+	list_for_each_entry(subpage, list, lru) {
+		if (can_promote_huge_page(subpage))
+			bitmap_set(subpage_bitmap, subpage - head, 1);
+	}
+	/* Proceed only if none of subpages has extra pin.  */
+	if (!bitmap_full(subpage_bitmap, HPAGE_PMD_NR)) {
+		ret = -EBUSY;
+		goto out_unlock;
+	}
+
+	list_for_each_entry(subpage, list, lru) {
+		enum ttu_flags ttu_flags = TTU_IGNORE_MLOCK | TTU_IGNORE_ACCESS |
+			TTU_RMAP_LOCKED;
+		bool unmap_success;
+
+		if (PageAnon(subpage))
+			ttu_flags |= TTU_SPLIT_FREEZE;
+
+		unmap_success = try_to_unmap(subpage, ttu_flags);
+		VM_BUG_ON_PAGE(!unmap_success, subpage);
+	}
+
+	/* Take care of migration wait list:
+	 * make compound page first, since it is impossible to move waiting
+	 * process from subpage queues to the head page queue.
+	 */
+	set_compound_page_dtor(head, COMPOUND_PAGE_DTOR);
+	set_compound_order(head, HPAGE_PMD_ORDER);
+	__SetPageHead(head);
+	for (i = 1; i < HPAGE_PMD_NR; i++) {
+		struct page *p = head + i;
+
+		p->index = 0;
+		p->mapping = TAIL_MAPPING;
+		p->mem_cgroup = NULL;
+		ClearPageActive(p);
+		/* move subpage refcount to head page */
+		page_ref_add(head, page_count(p) - 1);
+		set_page_count(p, 0);
+		set_compound_head(p, head);
+	}
+	atomic_set(compound_mapcount_ptr(head), -1);
+	prep_transhuge_page(head);
+
+	remap_page(head);
+
+	if (!mem_cgroup_disabled())
+		mod_memcg_state(head->mem_cgroup, MEMCG_RSS_HUGE, HPAGE_PMD_NR);
+
+	for (i = 1; i < HPAGE_PMD_NR; i++) {
+		struct page *subpage = head + i;
+		__unlock_page(subpage);
+	}
+
+	INIT_LIST_HEAD(&head->lru);
+	unlock_page(head);
+	putback_lru_page(head);
+
+	mod_node_page_state(page_pgdat(head),
+			NR_ISOLATED_ANON + page_is_file_cache(head), -HPAGE_PMD_NR);
+out_unlock:
+	if (anon_vma) {
+		anon_vma_unlock_write(anon_vma);
+		put_anon_vma(anon_vma);
+	}
+out:
+	return ret;
+}
+
+static int promote_huge_page_isolate(struct vm_area_struct *vma,
+					unsigned long haddr,
+					struct page **head, struct list_head *subpage_list)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	pmd_t *pmd;
+	pte_t *pte;
+	spinlock_t *pte_ptl;
+	int ret = -EBUSY;
+
+	pmd = mm_find_pmd(mm, haddr);
+	if (!pmd || pmd_trans_huge(*pmd))
+		goto out;
+
+	anon_vma_lock_write(vma->anon_vma);
+
+	pte = pte_offset_map(pmd, haddr);
+	pte_ptl = pte_lockptr(mm, pmd);
+
+	spin_lock(pte_ptl);
+	ret = __promote_huge_page_isolate(vma, haddr, pte, head, subpage_list);
+	spin_unlock(pte_ptl);
+
+	if (unlikely(!ret)) {
+		pte_unmap(pte);
+		ret = -EBUSY;
+		goto out_unlock;
+	}
+	ret = 0;
+	/*
+	 * All pages are isolated and locked so anon_vma rmap
+	 * can't run anymore.
+	 */
+out_unlock:
+	anon_vma_unlock_write(vma->anon_vma);
+out:
+	return ret;
+}
+
+/* assume mmap_sem is down_write, wrapper for madvise */
+int promote_huge_page_address(struct vm_area_struct *vma, unsigned long haddr)
+{
+	LIST_HEAD(subpage_list);
+	struct page *head;
+
+	if (haddr & (HPAGE_PMD_SIZE - 1))
+		return -EINVAL;
+
+	if (haddr < vma->vm_start || (haddr + HPAGE_PMD_SIZE) > vma->vm_end)
+		return -EINVAL;
+
+	if (promote_huge_page_isolate(vma, haddr, &head, &subpage_list))
+		return -EBUSY;
+
+	return promote_list_to_huge_page(head, &subpage_list);
+}

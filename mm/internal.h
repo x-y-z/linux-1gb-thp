@@ -593,4 +593,10 @@ int expand_free_page(struct zone *zone, struct page *buddy_head,
 void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
 							unsigned int alloc_flags);
 
+void __unlock_page(struct page *page);
+
+int promote_huge_pmd_address(struct vm_area_struct *vma, unsigned long haddr);
+
+int promote_huge_page_address(struct vm_area_struct *vma, unsigned long haddr);
+
 #endif	/* __MM_INTERNAL_H */
