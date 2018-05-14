@@ -550,7 +550,7 @@ static void release_pte_page(struct page *page)
 	putback_lru_page(page);
 }
 
-static void release_pte_pages(pte_t *pte, pte_t *_pte,
+void release_pte_pages(pte_t *pte, pte_t *_pte,
 		struct list_head *compound_pagelist)
 {
 	struct page *page, *tmp;
