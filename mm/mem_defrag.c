@@ -56,6 +56,7 @@ struct defrag_result_stats {
 	unsigned long dst_non_lru_failed;
 	unsigned long dst_non_moveable_failed;
 	unsigned long not_defrag_vpn;
+	unsigned int aligned_max_order;
 };
 
 enum {
@@ -689,6 +690,10 @@ restart:
 
 		page_size = get_contig_page_size(scan_page);
 
+		if (compound_order(compound_head(scan_page)) == HPAGE_PUD_ORDER) {
+			defrag_stats->aligned_max_order = HPAGE_PUD_ORDER;
+			goto quit_defrag;
+		}
 		/* PTE-mapped THP not allowed  */
 		if ((scan_page == compound_head(scan_page)) &&
 			PageTransHuge(scan_page) && !PageHuge(scan_page))
@@ -714,6 +719,8 @@ restart:
 		/* already in the contiguous pos  */
 		if (page_dist == (long long)(scan_page - anchor_page)) {
 			defrag_stats->aligned += (page_size/PAGE_SIZE);
+			defrag_stats->aligned_max_order = max(defrag_stats->aligned_max_order,
+				compound_order(scan_page));
 			continue;
 		} else { /* migrate pages according to the anchor pages in the vma.  */
 			struct page *dest_page = anchor_page + page_dist;
@@ -901,6 +908,10 @@ freepage_isolate_fail_unlocked:
 			} else { /* exchange  */
 				int err = -EBUSY;
 
+				if (compound_order(compound_head(dest_page)) == HPAGE_PUD_ORDER) {
+					defrag_stats->aligned_max_order = HPAGE_PUD_ORDER;
+					goto quit_defrag;
+				}
 				/* PTE-mapped THP not allowed  */
 				if ((dest_page == compound_head(dest_page)) &&
 					PageTransHuge(dest_page) && !PageHuge(dest_page))
@@ -1486,10 +1497,13 @@ static int kmem_defragd_scan_mm(struct defrag_scan_control *sc)
 				up_read(&vma->vm_mm->mmap_sem);
 			} else if (sc->action == MEM_DEFRAG_DO_DEFRAG) {
 				/* go to nearest 1GB aligned address  */
+				unsigned long defrag_begin = *scan_address;
 				unsigned long defrag_end = min_t(unsigned long,
 							(*scan_address + HPAGE_PUD_SIZE) & HPAGE_PUD_MASK,
 							vend);
 				int defrag_result;
+				int nr_fails_in_1gb_range = 0;
+				int skip_promotion = 0;
 
 				anchor_node = get_anchor_page_node_from_vma(vma, *scan_address);
 
@@ -1583,14 +1597,47 @@ continue_defrag:
 					 * skip the page which cannot be defragged and restart
 					 * from the next page
 					 */
-					if (defrag_stats.not_defrag_vpn &&
-						defrag_stats.not_defrag_vpn < defrag_sub_chunk_end) {
+					if (defrag_stats.not_defrag_vpn) {
 						VM_BUG_ON(defrag_sub_chunk_end != defrag_end &&
 							defrag_stats.not_defrag_vpn > defrag_sub_chunk_end);
+						find_anchor_pages_in_vma(mm, vma, defrag_stats.not_defrag_vpn);
 
-						*scan_address = defrag_stats.not_defrag_vpn;
-						defrag_stats.not_defrag_vpn = 0;
-						goto continue_defrag;
+						nr_fails_in_1gb_range += 1;
+						if (defrag_stats.not_defrag_vpn < defrag_sub_chunk_end) {
+							/* reset and continue  */
+							*scan_address = defrag_stats.not_defrag_vpn;
+							defrag_stats.not_defrag_vpn = 0;
+							goto continue_defrag;
+						}
+					} else {
+						/* defrag works for the whole chunk,
+						 * promote to THP in place
+						 */
+						if (!defrag_result &&
+							/* skip existing THPs */
+							defrag_stats.aligned_max_order < HPAGE_PMD_ORDER &&
+							!(*scan_address & (HPAGE_PMD_SIZE-1)) &&
+							!(defrag_sub_chunk_end & (HPAGE_PMD_SIZE-1))) {
+							int ret = 0;
+							/* find a range to promote pmd */
+							down_write(&mm->mmap_sem);
+							ret = promote_huge_page_address(vma, *scan_address);
+							if (!ret) {
+								/*
+								 * promote to 2MB THP successful, but it is
+								 * still PTE pointed
+								 */
+								/* promote PTE-mapped THP to PMD-mapped */
+								promote_huge_pmd_address(vma, *scan_address);
+							}
+							up_write(&mm->mmap_sem);
+						}
+						/* skip PUD pages */
+						if (defrag_stats.aligned_max_order == HPAGE_PUD_ORDER) {
+							*scan_address = defrag_end;
+							skip_promotion = 1;
+							continue;
+						}
 					}
 
 					/* Done with current 2MB chunk */
@@ -1606,6 +1653,26 @@ continue_defrag:
 					}
 				}
 
+				/* defrag works for the whole chunk, promote to PUD THP in place */
+				if (!nr_fails_in_1gb_range &&
+					!skip_promotion && /* avoid existing THP */
+					!(defrag_begin & (HPAGE_PUD_SIZE-1)) &&
+					!(defrag_end & (HPAGE_PUD_SIZE-1))) {
+					int ret = 0;
+					/* find a range to promote pud */
+					down_write(&mm->mmap_sem);
+					ret = promote_huge_pud_page_address(vma, defrag_begin);
+					if (!ret) {
+						/*
+						 * promote to 1GB THP successful, but it is
+						 * still PMD pointed
+						 */
+						/* promote PMD-mapped THP to PUD-mapped */
+						if (mem_defrag_promote_1gb_thp)
+							promote_huge_pud_address(vma, defrag_begin);
+					}
+					up_write(&mm->mmap_sem);
+				}
 			}
 		}
 done_one_vma:
