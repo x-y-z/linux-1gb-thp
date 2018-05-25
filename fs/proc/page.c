@@ -161,6 +161,8 @@ u64 stable_page_flags(struct page *page)
 			u |= BIT_ULL(KPF_ZERO_PAGE);
 			u |= BIT_ULL(KPF_THP);
 		}
+		if (compound_order(head) == HPAGE_PUD_ORDER)
+			u |= 1 << KPF_PUD_THP;
 	} else if (is_zero_pfn(page_to_pfn(page)))
 		u |= BIT_ULL(KPF_ZERO_PAGE);
 
