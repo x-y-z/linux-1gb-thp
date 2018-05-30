@@ -123,6 +123,7 @@ extern int vma_scan_threshold_type;
 extern int vma_no_repeat_defrag;
 extern int num_breakout_chunks;
 extern int defrag_size_threshold;
+extern int mem_defrag_promote_thp;
 
 extern int only_print_head_pfn;
 
@@ -137,6 +138,7 @@ static int zero;
 static int __maybe_unused one = 1;
 static int __maybe_unused two = 2;
 static int __maybe_unused four = 4;
+static int __maybe_unused fifteen = 15;
 static unsigned long one_ul = 1;
 static unsigned long long_max = LONG_MAX;
 static int one_hundred = 100;
@@ -1788,6 +1790,15 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
 		.extra2		= &one,
+	},
+	{
+		.procname	= "mem_defrag_promote_thp",
+		.data		= &mem_defrag_promote_thp,
+		.maxlen		= sizeof(mem_defrag_promote_thp),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &fifteen,
 	},
 	{ }
 };
