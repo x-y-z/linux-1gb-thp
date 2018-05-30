@@ -64,12 +64,18 @@ enum {
 	VMA_THRESHOLD_TYPE_SIZE,
 };
 
+#define PROMOTE_PMD_MAP  (0x8)
+#define PROMOTE_PMD_PAGE (0x4)
+#define PROMOTE_PUD_MAP  (0x2)
+#define PROMOTE_PUD_PAGE (0x1)
+
 int num_breakout_chunks;
 int vma_scan_percentile = 100;
 int vma_scan_threshold_type = VMA_THRESHOLD_TYPE_TIME;
 int vma_no_repeat_defrag;
 int kmem_defragd_always;
 int defrag_size_threshold = 5;
+int mem_defrag_promote_thp = (PROMOTE_PMD_MAP|PROMOTE_PMD_PAGE);
 static DEFINE_SPINLOCK(kmem_defragd_mm_lock);
 
 #define MM_SLOTS_HASH_BITS 10
@@ -1613,7 +1619,8 @@ continue_defrag:
 						/* defrag works for the whole chunk,
 						 * promote to THP in place
 						 */
-						if (!defrag_result &&
+						if ((mem_defrag_promote_thp & PROMOTE_PMD_PAGE) &&
+							!defrag_result &&
 							/* skip existing THPs */
 							defrag_stats.aligned_max_order < HPAGE_PMD_ORDER &&
 							!(*scan_address & (HPAGE_PMD_SIZE-1)) &&
@@ -1628,7 +1635,8 @@ continue_defrag:
 								 * still PTE pointed
 								 */
 								/* promote PTE-mapped THP to PMD-mapped */
-								promote_huge_pmd_address(vma, *scan_address);
+								if (mem_defrag_promote_thp & PROMOTE_PMD_MAP)
+									promote_huge_pmd_address(vma, *scan_address);
 							}
 							up_write(&mm->mmap_sem);
 						}
@@ -1654,7 +1662,8 @@ continue_defrag:
 				}
 
 				/* defrag works for the whole chunk, promote to PUD THP in place */
-				if (!nr_fails_in_1gb_range &&
+				if ((mem_defrag_promote_thp & PROMOTE_PUD_PAGE) &&
+					!nr_fails_in_1gb_range &&
 					!skip_promotion && /* avoid existing THP */
 					!(defrag_begin & (HPAGE_PUD_SIZE-1)) &&
 					!(defrag_end & (HPAGE_PUD_SIZE-1))) {
@@ -1668,7 +1677,7 @@ continue_defrag:
 						 * still PMD pointed
 						 */
 						/* promote PMD-mapped THP to PUD-mapped */
-						if (mem_defrag_promote_1gb_thp)
+						if (mem_defrag_promote_thp & PROMOTE_PUD_MAP)
 							promote_huge_pud_address(vma, defrag_begin);
 					}
 					up_write(&mm->mmap_sem);
