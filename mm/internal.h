@@ -632,6 +632,9 @@ extern int exchange_two_pages(struct page *page1, struct page *page2);
 void expand(struct zone *zone, struct page *page,
 	int low, int high, int migratetype);
 
+int expand_free_page(struct zone *zone, struct page *buddy_head,
+	struct page *page, int buddy_order, int page_order, int migratetype);
+
 void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
 							unsigned int alloc_flags);
 
