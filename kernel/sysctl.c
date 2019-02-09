@@ -124,6 +124,8 @@ extern int vma_no_repeat_defrag;
 extern int num_breakout_chunks;
 extern int defrag_size_threshold;
 
+extern int only_print_head_pfn;
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -1777,6 +1779,15 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
+	},
+	{
+		.procname	= "only_print_head_pfn",
+		.data		= &only_print_head_pfn,
+		.maxlen		= sizeof(only_print_head_pfn),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
 	},
 	{ }
 };

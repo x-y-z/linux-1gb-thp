@@ -27,6 +27,9 @@
 
 #define SEQ_PUT_DEC(str, val) \
 		seq_put_decimal_ull_width(m, str, (val) << (PAGE_SHIFT-10), 8)
+
+int only_print_head_pfn;
+
 void task_mem(struct seq_file *m, struct mm_struct *mm)
 {
 	unsigned long text, lib, swap, anon, file, shmem;
@@ -1316,7 +1319,7 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 				flags |= PM_SOFT_DIRTY;
 			if (pm->show_pfn)
 				frame = pmd_pfn(pmd) +
-					((addr & ~PMD_MASK) >> PAGE_SHIFT);
+					(only_print_head_pfn?0:((addr & ~PMD_MASK) >> PAGE_SHIFT));
 		}
 #ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
 		else if (is_swap_pmd(pmd)) {
@@ -1402,7 +1405,7 @@ static int pagemap_pud_range(pud_t *pudp, unsigned long addr, unsigned long end,
 			flags |= PM_SOFT_DIRTY;
 		if (pm->show_pfn)
 			frame = pud_pfn(pud) +
-				((addr & ~PMD_MASK) >> PAGE_SHIFT);
+				(only_print_head_pfn?0:((addr & ~PUD_MASK) >> PAGE_SHIFT));
 	}
 
 	if (page && page_mapcount(page) == 1)
