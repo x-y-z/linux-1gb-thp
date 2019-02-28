@@ -1005,6 +1005,11 @@ asmlinkage long sys_pidfd_send_signal(int pidfd, int sig,
 asmlinkage long sys_pidfd_getfd(int pidfd, int fd, unsigned int flags);
 asmlinkage long sys_scan_process_memory(pid_t pid, char __user *out_buf,
 			int buf_len, int action);
+asmlinkage long sys_exchange_pages(pid_t pid, unsigned long nr_pages,
+			const void __user * __user *from_pages,
+			const void __user * __user *to_pages,
+			int __user *status,
+			int flags);
 
 /*
  * Architecture-specific system calls
