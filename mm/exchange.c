@@ -22,9 +22,12 @@
 #include <linux/backing-dev.h>
 #include <linux/sched/mm.h>
 #include <linux/xarray.h>
+#include <linux/module.h>
 
 
 #include "internal.h"
+
+static char *page_tmp[NR_CPUS] = {NULL};
 
 struct exchange_page_info {
 	struct page *from_page;
@@ -67,13 +70,34 @@ static void exchange_page(char *to, char *from)
 	}
 }
 
+static void exchange_page2(char *to, char *from)
+{
+	int cpu = smp_processor_id();
+
+	VM_BUG_ON(!in_atomic());
+
+	if (!page_tmp[cpu]) {
+		int nid = cpu_to_node(cpu);
+		struct page *page_tmp_page = alloc_pages_node(nid, GFP_KERNEL, 0);
+		if (!page_tmp_page) {
+			exchange_page(to, from);
+			return;
+		}
+		page_tmp[cpu] = kmap(page_tmp_page);
+	}
+
+	copy_page(page_tmp[cpu], to);
+	copy_page(to, from);
+	copy_page(from, page_tmp[cpu]);
+}
+
 static inline void exchange_highpage(struct page *to, struct page *from)
 {
 	char *vfrom, *vto;
 
 	vfrom = kmap_atomic(from);
 	vto = kmap_atomic(to);
-	exchange_page(vto, vfrom);
+	exchange_page2(vto, vfrom);
 	kunmap_atomic(vto);
 	kunmap_atomic(vfrom);
 }
@@ -1347,3 +1371,36 @@ out:
 
 	return err;
 }
+
+static int __init exchange_init(void)
+{
+	int cpu_id, ret = 0;
+
+	for_each_online_cpu(cpu_id) {
+		int nid = cpu_to_node(cpu_id);
+		struct page *page_tmp_page = alloc_pages_node(nid, GFP_KERNEL, 0);
+		if (!page_tmp_page) {
+			ret = -1;
+			continue;
+		}
+		page_tmp[cpu_id] = kmap(page_tmp_page);
+	}
+
+	WARN_ON(ret < 0);
+	return 0;
+}
+
+static void __exit exchange_exit(void)
+{
+	int i;
+	for (i = 0 ; i < NR_CPUS; i++)
+		if (page_tmp[i]) {
+			struct page *page = virt_to_page(page_tmp[i]);
+			kunmap(page);
+			__free_pages(page, 0);
+		}
+}
+
+
+module_init(exchange_init)
+module_exit(exchange_exit)
