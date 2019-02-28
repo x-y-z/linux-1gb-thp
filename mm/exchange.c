@@ -445,6 +445,7 @@ static int exchange_from_to_pages(struct page *to_page, struct page *from_page,
 	int rc = -EBUSY;
 	struct address_space *to_page_mapping, *from_page_mapping;
 	struct buffer_head *to_head = NULL, *to_bh = NULL;
+	u64 timestamp;
 
 	VM_BUG_ON_PAGE(!PageLocked(from_page), from_page);
 	VM_BUG_ON_PAGE(!PageLocked(to_page), to_page);
@@ -523,6 +524,12 @@ exchange_mappings:
 			goto exchange_mappings;
 		}
 	}
+
+	timestamp = rdtsc();
+	current->move_pages_breakdown.change_page_mapping_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
+
 	/* actual page data exchange  */
 	if (rc != MIGRATEPAGE_SUCCESS)
 		return rc;
@@ -545,6 +552,12 @@ exchange_mappings:
 				(!page_has_private(from_page) && !page_has_private(to_page))));
 
 	exchange_page_flags(to_page, from_page);
+
+	timestamp = rdtsc();
+	current->move_pages_breakdown.copy_page_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
+
 
 	if (to_bh) {
 		VM_BUG_ON(to_bh != to_head);
@@ -572,6 +585,7 @@ static int unmap_and_exchange(struct page *from_page,
 	unsigned long from_flags, to_flags;
 	pgoff_t from_index, to_index;
 	struct address_space *from_mapping, *to_mapping;
+	u64 timestamp;
 
 	if (!trylock_page(from_page)) {
 		if (mode == MIGRATE_ASYNC)
@@ -584,6 +598,11 @@ static int unmap_and_exchange(struct page *from_page,
 			goto out_unlock;
 		lock_page(to_page);
 	}
+
+	timestamp = rdtsc();
+	current->move_pages_breakdown.lock_page_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
 
 	/* from_page is supposed to be an anonymous page */
 	VM_BUG_ON_PAGE(PageWriteback(from_page), from_page);
@@ -660,6 +679,12 @@ static int unmap_and_exchange(struct page *from_page,
 		to_page_was_mapped = 1;
 	}
 
+	timestamp = rdtsc();
+	current->move_pages_breakdown.unmap_page_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
+
+
 	if (!page_mapped(from_page) && !page_mapped(to_page))
 		rc = exchange_from_to_pages(to_page, from_page, mode);
 
@@ -679,6 +704,12 @@ static int unmap_and_exchange(struct page *from_page,
 			swap(to_page->index, to_index);
 	}
 
+	timestamp = rdtsc();
+	current->move_pages_breakdown.remove_migration_ptes_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
+
+
 out_unlock_both_remove_from_migration_pte:
 	if (from_page_was_mapped) {
 		/* swap back from_page->index to be compatible with
@@ -694,6 +725,12 @@ out_unlock_both_remove_from_migration_pte:
 		if (rc == MIGRATEPAGE_SUCCESS)
 			swap(from_page->index, from_index);
 	}
+
+		timestamp = rdtsc();
+		current->move_pages_breakdown.putback_new_page_cycles += timestamp -
+			current->move_pages_breakdown.last_timestamp;
+		current->move_pages_breakdown.last_timestamp = timestamp;
+
 
 out_unlock_both:
 	if (to_anon_vma)
@@ -737,6 +774,12 @@ static int exchange_pages(struct list_head *exchange_list,
 {
 	struct exchange_page_info *one_pair, *one_pair2;
 	int failed = 0;
+	u64 timestamp;
+
+	timestamp = rdtsc();
+	current->move_pages_breakdown.enter_unmap_and_move_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
 
 	list_for_each_entry_safe(one_pair, one_pair2, exchange_list, list) {
 		struct page *from_page = one_pair->from_page;
@@ -809,6 +852,11 @@ putback:
 				-hpage_nr_pages(from_page));
 
 		putback_lru_page(from_page);
+
+		timestamp = rdtsc();
+		current->move_pages_breakdown.putback_old_page_cycles += timestamp -
+			current->move_pages_breakdown.last_timestamp;
+		current->move_pages_breakdown.last_timestamp = timestamp;
 putback_to_page:
 		mod_node_page_state(page_pgdat(to_page), NR_ISOLATED_ANON +
 				page_is_file_cache(to_page),
@@ -1087,8 +1135,14 @@ static int do_pages_exchange(struct mm_struct *mm, nodemask_t task_nodes,
 	LIST_HEAD(to_pagelist);
 	int start, i;
 	int err = 0, err1;
+	u64 timestamp;
 
 	migrate_prep();
+
+	timestamp = rdtsc();
+	current->move_pages_breakdown.migrate_prep_cycles += timestamp -
+				current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
 
 	down_read(&mm->mmap_sem);
 	for (i = start = 0; i < nr_pages; i++) {
@@ -1106,6 +1160,11 @@ static int do_pages_exchange(struct mm_struct *mm, nodemask_t task_nodes,
 
 		err = -EACCES;
 
+		timestamp = rdtsc();
+		current->move_pages_breakdown.form_page_node_info_cycles += timestamp -
+					current->move_pages_breakdown.last_timestamp;
+		current->move_pages_breakdown.last_timestamp = timestamp;
+
 		/*
 		 * Errors in the page lookup or isolation are not fatal and we simply
 		 * report them via status
@@ -1122,6 +1181,11 @@ static int do_pages_exchange(struct mm_struct *mm, nodemask_t task_nodes,
 			goto out_flush;
 
 
+		timestamp = rdtsc();
+		current->move_pages_breakdown.form_page_node_info_cycles += timestamp -
+					current->move_pages_breakdown.last_timestamp;
+		current->move_pages_breakdown.last_timestamp = timestamp;
+
 		err = do_exchange_page_list(mm, &from_pagelist, &to_pagelist,
 				0, 0);
 		if (err)
@@ -1133,9 +1197,18 @@ static int do_pages_exchange(struct mm_struct *mm, nodemask_t task_nodes,
 		}
 		start = i;
 
+		timestamp = rdtsc();
+		current->move_pages_breakdown.store_page_status_cycles += timestamp -
+					current->move_pages_breakdown.last_timestamp;
+		current->move_pages_breakdown.last_timestamp = timestamp;
+
 	}
 out_flush:
 
+	timestamp = rdtsc();
+	current->move_pages_breakdown.form_page_node_info_cycles += timestamp -
+				current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
 
 	/* Make sure we do not overwrite the existing error */
 	err1 = do_exchange_page_list(mm, &from_pagelist, &to_pagelist,
@@ -1145,6 +1218,10 @@ out_flush:
 	if (!err)
 		err = err1;
 
+	timestamp = rdtsc();
+	current->move_pages_breakdown.store_page_status_cycles += timestamp -
+				current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
 out:
 	up_read(&mm->mmap_sem);
 	return err;
@@ -1160,6 +1237,10 @@ SYSCALL_DEFINE6(exchange_pages, pid_t, pid, unsigned long, nr_pages,
 	struct mm_struct *mm;
 	int err;
 	nodemask_t task_nodes;
+	u64 timestamp = rdtsc();
+
+	current->move_pages_breakdown.syscall_timestamp += timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
 
 	/* Check flags */
 	if (flags & ~(MPOL_MF_MOVE|
@@ -1205,15 +1286,30 @@ SYSCALL_DEFINE6(exchange_pages, pid_t, pid, unsigned long, nr_pages,
 	if (!mm)
 		return -EINVAL;
 
+	timestamp = rdtsc();
+	current->move_pages_breakdown.check_rights_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
+
 	err = do_pages_exchange(mm, task_nodes, nr_pages, from_pages,
 				    to_pages, status, flags);
 
 	mmput(mm);
 
+	timestamp = rdtsc();
+	current->move_pages_breakdown.return_to_syscall_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
+
 	return err;
 
 out:
 	put_task_struct(task);
+
+	timestamp = rdtsc();
+	current->move_pages_breakdown.return_to_syscall_cycles += timestamp -
+		current->move_pages_breakdown.last_timestamp;
+	current->move_pages_breakdown.last_timestamp = timestamp;
 
 	return err;
 }
