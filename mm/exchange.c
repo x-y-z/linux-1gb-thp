@@ -21,6 +21,7 @@
 #include <linux/fs.h> /* buffer_migrate_page  */
 #include <linux/backing-dev.h>
 #include <linux/sched/mm.h>
+#include <linux/xarray.h>
 
 
 #include "internal.h"
@@ -283,8 +284,8 @@ static int exchange_page_move_mapping(struct address_space *to_mapping,
 			enum migrate_mode mode,
 			int to_extra_count, int from_extra_count)
 {
-	int to_expected_count = 1 + to_extra_count,
-		from_expected_count = 1 + from_extra_count;
+	int to_expected_count = expected_page_refs(to_mapping, to_page) + to_extra_count,
+		from_expected_count = expected_page_refs(from_mapping, from_page) + from_extra_count;
 	unsigned long from_page_index = from_page->index;
 	unsigned long to_page_index = to_page->index;
 	int to_swapbacked = PageSwapBacked(to_page),
@@ -328,44 +329,30 @@ static int exchange_page_move_mapping(struct address_space *to_mapping,
 			SetPageSwapBacked(to_page);
 	} else if (!from_mapping && to_mapping) {
 		/* from is anonymous, to is file-backed  */
+		XA_STATE(to_xas, &to_mapping->i_pages, page_index(to_page));
 		struct zone *from_zone, *to_zone;
-		void **to_pslot;
 		int dirty;
 
 		from_zone = page_zone(from_page);
 		to_zone = page_zone(to_page);
 
-		xa_lock_irq(&to_mapping->i_pages);
+		xas_lock_irq(&to_xas);
 
-		to_pslot = radix_tree_lookup_slot(&to_mapping->i_pages,
-			page_index(to_page));
-
-		to_expected_count += 1 + page_has_private(to_page);
 		if (page_count(to_page) != to_expected_count ||
-			radix_tree_deref_slot_protected(to_pslot,
-				&to_mapping->i_pages.xa_lock) != to_page) {
-			xa_unlock_irq(&to_mapping->i_pages);
+			xas_load(&to_xas) != to_page) {
+			xas_unlock_irq(&to_xas);
 			return -EAGAIN;
 		}
 
 		if (!page_ref_freeze(to_page, to_expected_count)) {
-			xa_unlock_irq(&to_mapping->i_pages);
+			xas_unlock_irq(&to_xas);
 			pr_debug("cannot freeze page count\n");
-			return -EAGAIN;
-		}
-
-		if (mode == MIGRATE_ASYNC && to_head &&
-				!buffer_migrate_lock_buffers(to_head, mode)) {
-			page_ref_unfreeze(to_page, to_expected_count);
-			xa_unlock_irq(&to_mapping->i_pages);
-
-			pr_debug("cannot lock buffer head\n");
 			return -EAGAIN;
 		}
 
 		if (!page_ref_freeze(from_page, from_expected_count)) {
 			page_ref_unfreeze(to_page, to_expected_count);
-			xa_unlock_irq(&to_mapping->i_pages);
+			xas_unlock_irq(&to_xas);
 
 			return -EAGAIN;
 		}
@@ -395,14 +382,20 @@ static int exchange_page_move_mapping(struct address_space *to_mapping,
 
 		dirty = PageDirty(to_page);
 
-		radix_tree_replace_slot(&to_mapping->i_pages,
-				to_pslot, from_page);
+		xas_store(&to_xas, from_page);
+		if (PageTransHuge(to_page)) {
+			int i;
+			for (i = 1; i < HPAGE_PMD_NR; i++) {
+				xas_next(&to_xas);
+				xas_store(&to_xas, from_page + i);
+			}
+		}
 
 		/* move cache reference */
-		page_ref_unfreeze(to_page, to_expected_count - 1);
-		page_ref_unfreeze(from_page, from_expected_count + 1);
+		page_ref_unfreeze(to_page, to_expected_count - hpage_nr_pages(to_page));
+		page_ref_unfreeze(from_page, from_expected_count + hpage_nr_pages(from_page));
 
-		xa_unlock(&to_mapping->i_pages);
+		xas_unlock(&to_xas);
 
 		/*
 		 * If moved to a different zone then also account
