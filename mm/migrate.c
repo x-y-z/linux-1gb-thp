@@ -374,7 +374,7 @@ unlock:
 }
 #endif
 
-static int expected_page_refs(struct address_space *mapping, struct page *page)
+int expected_page_refs(struct address_space *mapping, struct page *page)
 {
 	int expected_count = 1;
 
