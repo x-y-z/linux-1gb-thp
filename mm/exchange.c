@@ -28,6 +28,7 @@
 #include "internal.h"
 
 static char *page_tmp[NR_CPUS] = {NULL};
+int use_u64_exchange;
 
 struct exchange_page_info {
 	struct page *from_page;
@@ -97,7 +98,10 @@ static inline void exchange_highpage(struct page *to, struct page *from)
 
 	vfrom = kmap_atomic(from);
 	vto = kmap_atomic(to);
-	exchange_page2(vto, vfrom);
+	if (use_u64_exchange)
+		exchange_page(vto, vfrom);
+	else
+		exchange_page2(vto, vfrom);
 	kunmap_atomic(vto);
 	kunmap_atomic(vfrom);
 }
