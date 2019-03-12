@@ -127,6 +127,8 @@ extern int mem_defrag_promote_thp;
 
 extern int only_print_head_pfn;
 
+extern int use_u64_exchange;
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -1799,6 +1801,15 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
 		.extra2		= &fifteen,
+	},
+	{
+		.procname	= "use_u64_exchange",
+		.data		= &use_u64_exchange,
+		.maxlen		= sizeof(use_u64_exchange),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
 	},
 	{ }
 };
