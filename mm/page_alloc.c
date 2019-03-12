@@ -1323,6 +1323,8 @@ static void destroy_compound_gigantic_page(struct page *page,
 	set_page_refcounted(page);
 }
 
+void free_contig_range(unsigned long pfn, unsigned nr_pages);
+
 static void __free_pages_ok(struct page *page, unsigned int order)
 {
 	unsigned long flags;
