@@ -264,6 +264,14 @@ config PAGE_MIGRATION_PROFILE
 	help
 	  Profile migrate hugepages with multiple optimizations to get higher throughput.
 
+config CONTIG_MEM_GENERATION
+    bool
+    def_bool y
+    select ARCH_ENABLE_THP_MIGRATION
+    select TRANSPARENT_HUGEPAGE
+    select MEMCG
+    select MEMCG_SWAP
+
 config PHYS_ADDR_T_64BIT
 	def_bool 64BIT
 
