@@ -552,7 +552,7 @@ xfs_discard_page(
 	if (error && !XFS_FORCED_SHUTDOWN(mp))
 		xfs_alert(mp, "page discard unable to remove delalloc mapping.");
 out_invalidate:
-	iomap_invalidatepage(page, pageoff, PAGE_SIZE - pageoff);
+	iomap_invalidatepage(page, pageoff, thp_size(page) - pageoff);
 }
 
 static const struct iomap_writeback_ops xfs_writeback_ops = {
