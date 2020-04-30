@@ -289,6 +289,7 @@ config CONTIG_MEM_GENERATION
     select TRANSPARENT_HUGEPAGE
     select MEMCG
     select MEMCG_SWAP
+    select INTERVAL_TREE
 
 config PHYS_ADDR_T_64BIT
 	def_bool 64BIT
