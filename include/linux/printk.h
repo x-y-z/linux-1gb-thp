@@ -189,7 +189,7 @@ extern int printk_delay_msec;
 extern int dmesg_restrict;
 
 extern int
-devkmsg_sysctl_set_loglvl(struct ctl_table *table, int write, void __user *buf,
+devkmsg_sysctl_set_loglvl(struct ctl_table *table, int write, void *buf,
 			  size_t *lenp, loff_t *ppos);
 
 extern void wake_up_klogd(void);
@@ -327,8 +327,19 @@ extern int kptr_restrict;
 	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))
 #include <linux/dynamic_debug.h>
 
-/* dynamic_pr_debug() uses pr_fmt() internally so we don't need it here */
-#define pr_debug(fmt, ...) \
+/**
+ * pr_debug - Print a debug-level message conditionally
+ * @fmt: format string
+ * @...: arguments for the format string
+ *
+ * This macro expands to dynamic_pr_debug() if CONFIG_DYNAMIC_DEBUG is
+ * set. Otherwise, if DEBUG is defined, it's equivalent to a printk with
+ * KERN_DEBUG loglevel. If DEBUG is not defined it does nothing.
+ *
+ * It uses pr_fmt() to generate the format string (dynamic_pr_debug() uses
+ * pr_fmt() internally).
+ */
+#define pr_debug(fmt, ...)			\
 	dynamic_pr_debug(fmt, ##__VA_ARGS__)
 #elif defined(DEBUG)
 #define pr_debug(fmt, ...) \
