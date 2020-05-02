@@ -69,7 +69,7 @@ static inline void flush_cache_kmaps(void)
 }
 
 void *kmap_atomic_high(struct page *page);
-void __kunmap_atomic(void *kvaddr);
+void kunmap_atomic_high(void *kvaddr);
 
 void kmap_init(void);
 

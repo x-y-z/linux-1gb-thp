@@ -51,7 +51,7 @@ void kmap_init(void) __init;
 #define PKMAP_END (PKMAP_ADDR(LAST_PKMAP))
 
 void *kmap_atomic_high(struct page *page);
-void __kunmap_atomic(void *kvaddr);
+void kunmap_atomic_high(void *kvaddr);
 
 #define flush_cache_kmaps()	flush_cache_all()
 

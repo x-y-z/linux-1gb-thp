@@ -52,7 +52,7 @@ extern pte_t *pkmap_page_table;
 #define PKMAP_ADDR(nr)  (PKMAP_BASE + ((nr) << PAGE_SHIFT))
 
 extern void *kmap_atomic_prot(struct page *page, pgprot_t prot);
-extern void __kunmap_atomic(void *kvaddr);
+extern void kunmap_atomic_high(void *kvaddr);
 
 static inline void *kmap_atomic_high(struct page *page)
 {
