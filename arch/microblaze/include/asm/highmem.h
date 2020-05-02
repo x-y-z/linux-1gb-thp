@@ -51,13 +51,8 @@ extern pte_t *pkmap_page_table;
 #define PKMAP_NR(virt)  ((virt - PKMAP_BASE) >> PAGE_SHIFT)
 #define PKMAP_ADDR(nr)  (PKMAP_BASE + ((nr) << PAGE_SHIFT))
 
-extern void *kmap_atomic_prot(struct page *page, pgprot_t prot);
+extern void *kmap_atomic_high_prot(struct page *page, pgprot_t prot);
 extern void kunmap_atomic_high(void *kvaddr);
-
-static inline void *kmap_atomic_high(struct page *page)
-{
-	return kmap_atomic_prot(page, kmap_prot);
-}
 
 #define flush_cache_kmaps()	{ flush_icache(); flush_dcache(); }
 
