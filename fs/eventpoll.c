@@ -704,8 +704,14 @@ static __poll_t ep_scan_ready_list(struct eventpoll *ep,
 	 * in a lockless way.
 	 */
 	write_lock_irq(&ep->lock);
-	list_splice_init(&ep->rdllist, &txlist);
 	WRITE_ONCE(ep->ovflist, NULL);
+	/*
+	 * In ep_poll() we use ep_events_available() in a lockless way to decide
+	 * if events are available. So we need to preserve that either
+	 * ep->oflist != EP_UNACTIVE_PTR or there are events on the ep->rdllist.
+	 */
+	smp_wmb();
+	list_splice_init(&ep->rdllist, &txlist);
 	write_unlock_irq(&ep->lock);
 
 	/*
@@ -737,16 +743,21 @@ static __poll_t ep_scan_ready_list(struct eventpoll *ep,
 		}
 	}
 	/*
+	 * Quickly re-inject items left on "txlist".
+	 */
+	list_splice(&txlist, &ep->rdllist);
+	/*
+	 * In ep_poll() we use ep_events_available() in a lockless way to decide
+	 * if events are available. So we need to preserve that either
+	 * ep->oflist != EP_UNACTIVE_PTR or there are events on the ep->rdllist.
+	 */
+	smp_wmb();
+	/*
 	 * We need to set back ep->ovflist to EP_UNACTIVE_PTR, so that after
 	 * releasing the lock, events will be queued in the normal way inside
 	 * ep->rdllist.
 	 */
 	WRITE_ONCE(ep->ovflist, EP_UNACTIVE_PTR);
-
-	/*
-	 * Quickly re-inject items left on "txlist".
-	 */
-	list_splice(&txlist, &ep->rdllist);
 	__pm_relax(ep->ws);
 	write_unlock_irq(&ep->lock);
 
