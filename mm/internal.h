@@ -620,4 +620,6 @@ struct migration_target_control {
 	gfp_t gfp_mask;
 };
 
+void destroy_compound_gigantic_page(struct page *page,
+					unsigned int order);
 #endif	/* __MM_INTERNAL_H */
