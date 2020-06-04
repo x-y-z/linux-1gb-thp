@@ -159,51 +159,25 @@ static int load_misc_binary(struct linux_binprm *bprm)
 			goto ret;
 	}
 
-	if (fmt->flags & MISC_FMT_OPEN_BINARY) {
+	if (fmt->flags & MISC_FMT_OPEN_BINARY)
+		bprm->have_execfd = 1;
 
-		/* if the binary should be opened on behalf of the
-		 * interpreter than keep it open and assign descriptor
-		 * to it
-		 */
-		fd_binary = get_unused_fd_flags(0);
-		if (fd_binary < 0) {
-			retval = fd_binary;
-			goto ret;
-		}
-		fd_install(fd_binary, bprm->file);
-
-		/* if the binary is not readable than enforce mm->dumpable=0
-		   regardless of the interpreter's permissions */
-		would_dump(bprm, bprm->file);
-
-		allow_write_access(bprm->file);
-		bprm->file = NULL;
-
-		/* mark the bprm that fd should be passed to interp */
-		bprm->interp_flags |= BINPRM_FLAGS_EXECFD;
-		bprm->interp_data = fd_binary;
-
-	} else {
-		allow_write_access(bprm->file);
-		fput(bprm->file);
-		bprm->file = NULL;
-	}
 	/* make argv[1] be the path to the binary */
 	retval = copy_string_kernel(bprm->interp, bprm);
 	if (retval < 0)
-		goto error;
+		goto ret;
 	bprm->argc++;
 
 	/* add the interp as argv[0] */
 	retval = copy_string_kernel(fmt->interpreter, bprm);
 	if (retval < 0)
-		goto error;
+		goto ret;
 	bprm->argc++;
 
 	/* Update interp in case binfmt_script needs it. */
 	retval = bprm_change_interp(fmt->interpreter, bprm);
 	if (retval < 0)
-		goto error;
+		goto ret;
 
 	if (fmt->flags & MISC_FMT_OPEN_FILE) {
 		interp_file = file_clone_open(fmt->interp_file);

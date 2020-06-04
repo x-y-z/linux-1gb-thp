@@ -110,7 +110,9 @@ static int load_script(struct linux_binprm *bprm)
 	if (retval < 0)
 		return retval;
 	bprm->argc++;
+	*((char *)i_end) = '\0';
 	if (i_arg) {
+		*((char *)i_sep) = '\0';
 		retval = copy_string_kernel(i_arg, bprm);
 		if (retval < 0)
 			return retval;
