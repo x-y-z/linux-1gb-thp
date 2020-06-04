@@ -244,6 +244,7 @@ long strncpy_from_unsafe_user(char *dst, const void __user *unsafe_addr,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(probe_user_write);
 
 /**
  * strnlen_unsafe_user: - Get the size of a user string INCLUDING final NUL.
