@@ -857,9 +857,15 @@ __SYSCALL(__NR_openat2, sys_openat2)
 __SYSCALL(__NR_pidfd_getfd, sys_pidfd_getfd)
 #define __NR_faccessat2 439
 __SYSCALL(__NR_faccessat2, sys_faccessat2)
+#define __NR_watch_mount 440
+__SYSCALL(__NR_watch_mount, sys_watch_mount)
+#define __NR_watch_sb 441
+__SYSCALL(__NR_watch_sb, sys_watch_sb)
+#define __NR_fsinfo 442
+__SYSCALL(__NR_fsinfo, sys_fsinfo)
 
 #undef __NR_syscalls
-#define __NR_syscalls 440
+#define __NR_syscalls 443
 
 /*
  * 32 bit systems traditionally used different

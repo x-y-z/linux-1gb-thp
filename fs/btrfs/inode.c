@@ -7823,19 +7823,24 @@ const struct iomap_ops btrfs_dio_iomap_ops = {
 	.iomap_begin            = btrfs_dio_iomap_begin,
 	.iomap_end              = btrfs_dio_iomap_end,
 };
+<<<<<<< HEAD
 
 const struct iomap_dio_ops btrfs_dops = {
 	.submit_io		= btrfs_submit_direct,
 };
+=======
+>>>>>>> linux-next/akpm-base
 
-#define BTRFS_FIEMAP_FLAGS	(FIEMAP_FLAG_SYNC)
+const struct iomap_dio_ops btrfs_dops = {
+	.submit_io		= btrfs_submit_direct,
+};
 
 static int btrfs_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		__u64 start, __u64 len)
 {
 	int	ret;
 
-	ret = fiemap_check_flags(fieinfo, BTRFS_FIEMAP_FLAGS);
+	ret = fiemap_prep(inode, fieinfo, start, &len, 0);
 	if (ret)
 		return ret;
 

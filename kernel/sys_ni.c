@@ -51,6 +51,7 @@ COND_SYSCALL_COMPAT(io_pgetevents);
 COND_SYSCALL(io_uring_setup);
 COND_SYSCALL(io_uring_enter);
 COND_SYSCALL(io_uring_register);
+COND_SYSCALL(fsinfo);
 
 /* fs/xattr.c */
 
@@ -85,6 +86,9 @@ COND_SYSCALL(ioprio_get);
 /* fs/locks.c */
 COND_SYSCALL(flock);
 
+/* fs/mount_notify.c */
+COND_SYSCALL(watch_mount);
+
 /* fs/namei.c */
 
 /* fs/namespace.c */
@@ -115,6 +119,9 @@ COND_SYSCALL_COMPAT(signalfd4);
 /* fs/stat.c */
 
 /* fs/sync.c */
+
+/* fs/super.c */
+COND_SYSCALL(watch_sb);
 
 /* fs/timerfd.c */
 COND_SYSCALL(timerfd_create);

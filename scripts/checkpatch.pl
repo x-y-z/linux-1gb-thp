@@ -2609,7 +2609,7 @@ sub process {
 				if (($last_binding_patch != -1) &&
 				    ($last_binding_patch ^ $is_binding_patch)) {
 					WARN("DT_SPLIT_BINDING_PATCH",
-					     "DT binding docs and includes should be a separate patch. See: Documentation/devicetree/bindings/submitting-patches.txt\n");
+					     "DT binding docs and includes should be a separate patch. See: Documentation/devicetree/bindings/submitting-patches.rst\n");
 				}
 			}
 
@@ -4243,6 +4243,17 @@ sub process {
 		if ($line =~ /\bENOSYS\b/) {
 			WARN("ENOSYS",
 			     "ENOSYS means 'invalid syscall nr' and nothing else\n" . $herecurr);
+		}
+
+# ENOTSUPP is not a standard error code and should be avoided in new patches.
+# Folks usually mean EOPNOTSUPP (also called ENOTSUP), when they type ENOTSUPP.
+# Similarly to ENOSYS warning a small number of false positives is expected.
+		if (!$file && $line =~ /\bENOTSUPP\b/) {
+			if (WARN("ENOTSUPP",
+				 "ENOTSUPP is not a SUSV4 error code, prefer EOPNOTSUPP\n" . $herecurr) &&
+			    $fix) {
+				$fixed[$fixlinenr] =~ s/\bENOTSUPP\b/EOPNOTSUPP/;
+			}
 		}
 
 # function brace can't be on same line, except for #defines of do while,
@@ -5933,6 +5944,14 @@ sub process {
 			if (!ctx_has_comment($first_line, $linenr)) {
 				WARN("WAITQUEUE_ACTIVE",
 				     "waitqueue_active without comment\n" . $herecurr);
+			}
+		}
+
+# check for data_race without a comment.
+		if ($line =~ /\bdata_race\s*\(/) {
+			if (!ctx_has_comment($first_line, $linenr)) {
+				WARN("DATA_RACE",
+				     "data_race without comment\n" . $herecurr);
 			}
 		}
 

@@ -49,7 +49,8 @@ LSM_HOOK(int, 0, syslog, int type)
 LSM_HOOK(int, 0, settime, const struct timespec64 *ts,
 	 const struct timezone *tz)
 LSM_HOOK(int, 0, vm_enough_memory, struct mm_struct *mm, long pages)
-LSM_HOOK(int, 0, bprm_set_creds, struct linux_binprm *bprm)
+LSM_HOOK(int, 0, bprm_creds_for_exec, struct linux_binprm *bprm)
+LSM_HOOK(int, 0, bprm_creds_from_file, struct linux_binprm *bprm, struct file *file)
 LSM_HOOK(int, 0, bprm_check_security, struct linux_binprm *bprm)
 LSM_HOOK(void, LSM_RET_VOID, bprm_committing_creds, struct linux_binprm *bprm)
 LSM_HOOK(void, LSM_RET_VOID, bprm_committed_creds, struct linux_binprm *bprm)
@@ -252,6 +253,21 @@ LSM_HOOK(int, 0, inode_notifysecctx, struct inode *inode, void *ctx, u32 ctxlen)
 LSM_HOOK(int, 0, inode_setsecctx, struct dentry *dentry, void *ctx, u32 ctxlen)
 LSM_HOOK(int, 0, inode_getsecctx, struct inode *inode, void **ctx,
 	 u32 *ctxlen)
+
+#if defined(CONFIG_SECURITY) && defined(CONFIG_WATCH_QUEUE)
+LSM_HOOK(int, 0, post_notification, const struct cred *w_cred,
+	 const struct cred *cred, struct watch_notification *n)
+#endif /* CONFIG_SECURITY && CONFIG_WATCH_QUEUE */
+
+#if defined(CONFIG_SECURITY) && defined(CONFIG_KEY_NOTIFICATIONS)
+LSM_HOOK(int, 0, watch_key, struct key *key)
+#endif /* CONFIG_SECURITY && CONFIG_KEY_NOTIFICATIONS */
+#ifdef CONFIG_MOUNT_NOTIFICATIONS
+LSM_HOOK(int, 0, watch_mount, struct watch *watch, struct path *path)
+#endif
+#ifdef CONFIG_SB_NOTIFICATIONS
+LSM_HOOK(int, 0, watch_sb, struct watch *watch, struct super_block *sb)
+#endif
 
 #ifdef CONFIG_SECURITY_NETWORK
 LSM_HOOK(int, 0, unix_stream_connect, struct sock *sock, struct sock *other,

@@ -134,7 +134,6 @@ static int load_misc_binary(struct linux_binprm *bprm)
 	Node *fmt;
 	struct file *interp_file = NULL;
 	int retval;
-	int fd_binary = -1;
 
 	retval = -ENOEXEC;
 	if (!enabled)
@@ -215,38 +214,16 @@ static int load_misc_binary(struct linux_binprm *bprm)
 	}
 	retval = PTR_ERR(interp_file);
 	if (IS_ERR(interp_file))
-		goto error;
+		goto ret;
 
-	bprm->file = interp_file;
-	if (fmt->flags & MISC_FMT_CREDENTIALS) {
-		loff_t pos = 0;
+	bprm->interpreter = interp_file;
+	if (fmt->flags & MISC_FMT_CREDENTIALS)
+		bprm->execfd_creds = 1;
 
-		/*
-		 * No need to call prepare_binprm(), it's already been
-		 * done.  bprm->buf is stale, update from interp_file.
-		 */
-		memset(bprm->buf, 0, BINPRM_BUF_SIZE);
-		retval = kernel_read(bprm->file, bprm->buf, BINPRM_BUF_SIZE,
-				&pos);
-	} else
-		retval = prepare_binprm(bprm);
-
-	if (retval < 0)
-		goto error;
-
-	retval = search_binary_handler(bprm);
-	if (retval < 0)
-		goto error;
-
+	retval = 0;
 ret:
 	dput(fmt->dentry);
 	return retval;
-error:
-	if (fd_binary > 0)
-		ksys_close(fd_binary);
-	bprm->interp_flags = 0;
-	bprm->interp_data = 0;
-	goto ret;
 }
 
 /* Command parsers */

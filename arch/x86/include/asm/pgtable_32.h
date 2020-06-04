@@ -32,13 +32,6 @@ extern pmd_t initial_pg_pmd[];
 void paging_init(void);
 void sync_initial_page_table(void);
 
-/*
- * Define this if things work differently on an i386 and an i486:
- * it will (on an i486) warn about kernel memory accesses that are
- * done without a 'access_ok( ..)'
- */
-#undef TEST_ACCESS_OK
-
 #ifdef CONFIG_X86_PAE
 # include <asm/pgtable-3level.h>
 #else
@@ -60,7 +53,7 @@ void sync_initial_page_table(void);
 #define kpte_clear_flush(ptep, vaddr)		\
 do {						\
 	pte_clear(&init_mm, (vaddr), (ptep));	\
-	__flush_tlb_one_kernel((vaddr));		\
+	flush_tlb_one_kernel((vaddr));		\
 } while (0)
 
 #endif /* !__ASSEMBLY__ */

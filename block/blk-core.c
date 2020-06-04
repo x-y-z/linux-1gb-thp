@@ -958,6 +958,7 @@ generic_make_request_checks(struct bio *bio)
 	struct request_queue *q;
 	int nr_sectors = bio_sectors(bio);
 	blk_status_t status = BLK_STS_IOERR;
+	struct blk_plug *plug;
 	char b[BDEVNAME_SIZE];
 
 	might_sleep();
@@ -970,6 +971,10 @@ generic_make_request_checks(struct bio *bio)
 			bio_devname(bio, b), (long long)bio->bi_iter.bi_sector);
 		goto end_io;
 	}
+
+	plug = blk_mq_plug(q, bio);
+	if (plug && plug->nowait)
+		bio->bi_opf |= REQ_NOWAIT;
 
 	/*
 	 * For a REQ_NOWAIT based request, return -EOPNOTSUPP
@@ -1466,11 +1471,19 @@ unsigned long disk_start_io_acct(struct gendisk *disk, unsigned int sectors,
 	part_stat_add(part, sectors[sgrp], sectors);
 	part_stat_local_inc(part, in_flight[op_is_write(op)]);
 	part_stat_unlock();
+<<<<<<< HEAD
 
 	return now;
 }
 EXPORT_SYMBOL(disk_start_io_acct);
 
+=======
+
+	return now;
+}
+EXPORT_SYMBOL(disk_start_io_acct);
+
+>>>>>>> linux-next/akpm-base
 void disk_end_io_acct(struct gendisk *disk, unsigned int op,
 		unsigned long start_time)
 {
@@ -1800,6 +1813,7 @@ void blk_start_plug(struct blk_plug *plug)
 	INIT_LIST_HEAD(&plug->cb_list);
 	plug->rq_count = 0;
 	plug->multiple_queues = false;
+	plug->nowait = false;
 
 	/*
 	 * Store ordering should not be needed here, since a potential
