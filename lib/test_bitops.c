@@ -50,6 +50,8 @@ unsigned long order_comb_long[][2] = {
 
 static int __init test_bitops_startup(void)
 {
+	int i;
+
 	pr_warn("Loaded test module\n");
 	set_bit(BITOPS_4, g_bitmap);
 	set_bit(BITOPS_7, g_bitmap);
