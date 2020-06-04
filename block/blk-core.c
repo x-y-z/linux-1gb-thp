@@ -1471,19 +1471,11 @@ unsigned long disk_start_io_acct(struct gendisk *disk, unsigned int sectors,
 	part_stat_add(part, sectors[sgrp], sectors);
 	part_stat_local_inc(part, in_flight[op_is_write(op)]);
 	part_stat_unlock();
-<<<<<<< HEAD
 
 	return now;
 }
 EXPORT_SYMBOL(disk_start_io_acct);
 
-=======
-
-	return now;
-}
-EXPORT_SYMBOL(disk_start_io_acct);
-
->>>>>>> linux-next/akpm-base
 void disk_end_io_acct(struct gendisk *disk, unsigned int op,
 		unsigned long start_time)
 {

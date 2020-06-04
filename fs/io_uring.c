@@ -1114,7 +1114,6 @@ static void __io_queue_deferred(struct io_ring_ctx *ctx)
 	do {
 		struct io_kiocb *req = list_first_entry(&ctx->defer_list,
 							struct io_kiocb, list);
-<<<<<<< HEAD
 
 		if (req_need_defer(req))
 			break;
@@ -1135,28 +1134,6 @@ static void io_flush_timeouts(struct io_ring_ctx *ctx)
 					- atomic_read(&ctx->cq_timeouts))
 			break;
 
-=======
-
-		if (req_need_defer(req))
-			break;
-		list_del_init(&req->list);
-		io_queue_async_work(req);
-	} while (!list_empty(&ctx->defer_list));
-}
-
-static void io_flush_timeouts(struct io_ring_ctx *ctx)
-{
-	while (!list_empty(&ctx->timeout_list)) {
-		struct io_kiocb *req = list_first_entry(&ctx->timeout_list,
-							struct io_kiocb, list);
-
-		if (req->flags & REQ_F_TIMEOUT_NOSEQ)
-			break;
-		if (req->timeout.target_seq != ctx->cached_cq_tail
-					- atomic_read(&ctx->cq_timeouts))
-			break;
-
->>>>>>> linux-next/akpm-base
 		list_del_init(&req->list);
 		io_kill_timeout(req);
 	}
@@ -6103,11 +6080,7 @@ static int io_submit_sqes(struct io_ring_ctx *ctx, unsigned int nr,
 			break;
 		}
 
-<<<<<<< HEAD
-		err = io_init_req(ctx, req, sqe, statep);
-=======
 		err = io_init_req(ctx, req, sqe, &state);
->>>>>>> linux-next/akpm-base
 		io_consume_sqe(ctx);
 		/* will complete beyond this point, count as submitted */
 		submitted++;

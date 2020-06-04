@@ -1149,12 +1149,8 @@ static int loop_configure(struct loop_device *lo, fmode_t mode,
 
 	if (config->block_size)
 		bsize = config->block_size;
-<<<<<<< HEAD
-	else if ((lo->lo_backing_file->f_flags & O_DIRECT) && inode->i_sb->s_bdev)
-=======
 	else if ((lo->lo_backing_file->f_flags & O_DIRECT) &&
 		 inode->i_sb->s_bdev)
->>>>>>> linux-next/akpm-base
 		/* In case of direct I/O, match underlying block size */
 		bsize = bdev_logical_block_size(inode->i_sb->s_bdev);
 	else

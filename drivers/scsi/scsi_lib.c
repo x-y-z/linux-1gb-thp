@@ -960,61 +960,6 @@ static inline bool scsi_cmd_needs_dma_drain(struct scsi_device *sdev,
 	       !op_is_write(req_op(rq)) &&
 	       sdev->host->hostt->dma_need_drain(rq);
 }
-<<<<<<< HEAD
-
-/*
- * Function:    scsi_init_io()
- *
- * Purpose:     SCSI I/O initialize function.
- *
- * Arguments:   cmd   - Command descriptor we wish to initialize
- *
- * Returns:     BLK_STS_OK on success
- *		BLK_STS_RESOURCE if the failure is retryable
- *		BLK_STS_IOERR if the failure is fatal
- */
-blk_status_t scsi_init_io(struct scsi_cmnd *cmd)
-{
-	struct scsi_device *sdev = cmd->device;
-	struct request *rq = cmd->request;
-	unsigned short nr_segs = blk_rq_nr_phys_segments(rq);
-	struct scatterlist *last_sg = NULL;
-	blk_status_t ret;
-	bool need_drain = scsi_cmd_needs_dma_drain(sdev, rq);
-	int count;
-
-	if (WARN_ON_ONCE(!nr_segs))
-		return BLK_STS_IOERR;
-
-	/*
-	 * Make sure there is space for the drain.  The driver must adjust
-	 * max_hw_segments to be prepared for this.
-	 */
-	if (need_drain)
-		nr_segs++;
-
-	/*
-	 * If sg table allocation fails, requeue request later.
-	 */
-	if (unlikely(sg_alloc_table_chained(&cmd->sdb.table, nr_segs,
-			cmd->sdb.table.sgl, SCSI_INLINE_SG_CNT)))
-		return BLK_STS_RESOURCE;
-
-	/*
-	 * Next, walk the list, and fill in the addresses and sizes of
-	 * each segment.
-	 */
-	count = __blk_rq_map_sg(rq->q, rq, cmd->sdb.table.sgl, &last_sg);
-
-	if (blk_rq_bytes(rq) & rq->q->dma_pad_mask) {
-		unsigned int pad_len =
-			(rq->q->dma_pad_mask & ~blk_rq_bytes(rq)) + 1;
-
-		last_sg->length += pad_len;
-		cmd->extra_len += pad_len;
-	}
-
-=======
 
 /**
  * scsi_init_io - SCSI I/O initialization function.
@@ -1066,7 +1011,6 @@ blk_status_t scsi_init_io(struct scsi_cmnd *cmd)
 		cmd->extra_len += pad_len;
 	}
 
->>>>>>> linux-next/akpm-base
 	if (need_drain) {
 		sg_unmark_end(last_sg);
 		last_sg = sg_next(last_sg);
