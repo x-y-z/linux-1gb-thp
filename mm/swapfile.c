@@ -1633,7 +1633,9 @@ static int page_trans_huge_map_swapcount(struct page *page, int *total_mapcount,
 	/* hugetlbfs shouldn't call it */
 	VM_BUG_ON_PAGE(PageHuge(page), page);
 
-	if (!IS_ENABLED(CONFIG_THP_SWAP) || likely(!PageTransCompound(page))) {
+	if (!IS_ENABLED(CONFIG_THP_SWAP) ||
+	    unlikely(compound_order(compound_head(page)) == HPAGE_PUD_ORDER) ||
+	    likely(!PageTransCompound(page))) {
 		mapcount = page_trans_huge_mapcount(page, total_mapcount);
 		if (PageSwapCache(page))
 			swapcount = page_swapcount(page);

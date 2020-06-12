@@ -1627,155 +1627,29 @@ unlock:
 	spin_unlock(vmf->ptl);
 }
 
-static int do_huge_pud_wp_page_fallback(struct vm_fault *vmf, pud_t orig_pud,
-		struct page *page)
-{
-	struct vm_area_struct *vma = vmf->vma;
-	unsigned long haddr = vmf->address & HPAGE_PUD_MASK;
-	struct mem_cgroup *memcg;
-	pgtable_t pgtable, pmd_pgtable;
-	pud_t _pud;
-	int ret = 0, i, j;
-	struct page **pages;
-	struct mmu_notifier_range range;
-
-	pages = kmalloc(sizeof(struct page *) * HPAGE_PUD_NR,
-			GFP_KERNEL);
-	if (unlikely(!pages)) {
-		ret |= VM_FAULT_OOM;
-		goto out;
-	}
-
-	pmd_pgtable = pte_alloc_order(vma->vm_mm, haddr,
-		HPAGE_PUD_ORDER - HPAGE_PMD_ORDER);
-	if (!pmd_pgtable) {
-		ret |= VM_FAULT_OOM;
-		goto out_kfree_pages;
-	}
-
-	for (i = 0; i < (1<<(HPAGE_PUD_ORDER-HPAGE_PMD_ORDER)); i++) {
-		pages[i] = alloc_page_vma_node(GFP_TRANSHUGE, vma,
-					       vmf->address, page_to_nid(page));
-		if (unlikely(!pages[i])) {
-			if (pages[i])
-				put_page(pages[i]);
-			while (--i >= 0) {
-				set_page_private(pages[i], 0);
-				put_page(pages[i]);
-			}
-			kfree(pages);
-			pte_free_order(vma->vm_mm, pmd_pgtable,
-				HPAGE_PMD_ORDER - HPAGE_PMD_ORDER);
-			ret |= VM_FAULT_OOM;
-			goto out;
-		}
-		mem_cgroup_charge(pages[i], vma->vm_mm, GFP_KERNEL);
-		count_vm_event(THP_FAULT_ALLOC);
-		set_page_private(pages[i], (unsigned long)memcg);
-		prep_transhuge_page(pages[i]);
-	}
-
-	for (i = 0; i < (1<<(HPAGE_PUD_ORDER-HPAGE_PMD_ORDER)); i++) {
-		for (j = 0; j < HPAGE_PMD_NR; j++) {
-			copy_user_highpage(pages[i] + j, page + i * HPAGE_PMD_NR + j,
-					   haddr + PAGE_SIZE * (i * HPAGE_PMD_NR + j), vma);
-			cond_resched();
-		}
-		__SetPageUptodate(pages[i]);
-	}
-
-	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma, vma->vm_mm,
-				haddr, haddr + HPAGE_PUD_SIZE);
-	mmu_notifier_invalidate_range_start(&range);
-
-	vmf->ptl = pud_lock(vma->vm_mm, vmf->pud);
-	if (unlikely(!pud_same(*vmf->pud, orig_pud)))
-		goto out_free_pages;
-	VM_BUG_ON_PAGE(!PageHead(page), page);
-
-	/*
-	 * Leave pmd empty until pte is filled note we must notify here as
-	 * concurrent CPU thread might write to new page before the call to
-	 * mmu_notifier_invalidate_range_end() happens which can lead to a
-	 * device seeing memory write in different order than CPU.
-	 *
-	 * See Documentation/vm/mmu_notifier.txt
-	 */
-	pmdp_huge_clear_flush_notify(vma, haddr, vmf->pmd);
-
-	pgtable = pgtable_trans_huge_pud_withdraw(vma->vm_mm, vmf->pud);
-	pud_populate_with_pgtable(vma->vm_mm, &_pud, pgtable);
-
-	for (i = 0; i < (1<<(HPAGE_PUD_ORDER-HPAGE_PMD_ORDER));
-		 i++, haddr += (PAGE_SIZE * HPAGE_PMD_NR)) {
-		pmd_t entry;
-
-		entry = mk_huge_pmd(pages[i], vma->vm_page_prot);
-		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
-		memcg = (void *)page_private(pages[i]);
-		set_page_private(pages[i], 0);
-		page_add_new_anon_rmap(pages[i], vmf->vma, haddr, true, HPAGE_PMD_ORDER);
-		lru_cache_add_active_or_unevictable(pages[i], vma);
-		vmf->pmd = pmd_offset(&_pud, haddr);
-		VM_BUG_ON(!pmd_none(*vmf->pmd));
-		pgtable_trans_huge_deposit(vma->vm_mm, vmf->pmd, &pmd_pgtable[i]);
-		set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
-	}
-	kfree(pages);
-
-	smp_wmb(); /* make pte visible before pmd */
-	pud_populate_with_pgtable(vma->vm_mm, vmf->pud, pgtable);
-	page_remove_rmap(page, true, HPAGE_PUD_ORDER);
-	spin_unlock(vmf->ptl);
-
-	/*
-	 * No need to double call mmu_notifier->invalidate_range() callback as
-	 * the above pmdp_huge_clear_flush_notify() did already call it.
-	 */
-	mmu_notifier_invalidate_range_only_end(&range);
-
-	ret |= VM_FAULT_WRITE;
-	put_page(page);
-
-out:
-	return ret;
-
-out_free_pages:
-	spin_unlock(vmf->ptl);
-	mmu_notifier_invalidate_range_end(&range);
-	for (i = 0; i < (1<<(HPAGE_PUD_ORDER-HPAGE_PMD_ORDER)); i++) {
-		memcg = (void *)page_private(pages[i]);
-		set_page_private(pages[i], 0);
-		put_page(pages[i]);
-	}
-out_kfree_pages:
-	kfree(pages);
-	goto out;
-}
-
 int do_huge_pud_wp_page(struct vm_fault *vmf, pud_t orig_pud)
 {
 	struct vm_area_struct *vma = vmf->vma;
-	struct page *page = NULL, *new_page;
+	struct page *page = NULL;
 	unsigned long haddr = vmf->address & HPAGE_PUD_MASK;
-	struct mmu_notifier_range range;
-	gfp_t huge_gfp;			/* for allocation and charge */
-	int ret = 0;
 
 	vmf->ptl = pud_lockptr(vma->vm_mm, vmf->pud);
 	VM_BUG_ON_VMA(!vma->anon_vma, vma);
+
 	if (is_huge_zero_pud(orig_pud))
-		goto alloc;
+		goto fallback;
+
 	spin_lock(vmf->ptl);
-	if (unlikely(!pud_same(*vmf->pud, orig_pud)))
-		goto out_unlock;
+
+	if (unlikely(!pud_same(*vmf->pud, orig_pud))) {
+		spin_unlock(vmf->ptl);
+		return 0;
+	}
 
 	page = pud_page(orig_pud);
 	VM_BUG_ON_PAGE(!PageCompound(page) || !PageHead(page), page);
-	/*
-	 * We can only reuse the page if nobody else maps the huge page or it's
-	 * part.
-	 */
+
+	/* Lock page for reuse_swap_page() */
 	if (!trylock_page(page)) {
 		get_page(page);
 		spin_unlock(vmf->ptl);
@@ -1784,10 +1658,11 @@ int do_huge_pud_wp_page(struct vm_fault *vmf, pud_t orig_pud)
 		if (unlikely(!pud_same(*vmf->pud, orig_pud))) {
 			unlock_page(page);
 			put_page(page);
-			goto out_unlock;
+			return 0;
 		}
 		put_page(page);
 	}
+
 	if (reuse_swap_page(page, NULL)) {
 		pud_t entry;
 
@@ -1795,93 +1670,15 @@ int do_huge_pud_wp_page(struct vm_fault *vmf, pud_t orig_pud)
 		entry = maybe_pud_mkwrite(pud_mkdirty(entry), vma);
 		if (pudp_set_access_flags(vma, haddr, vmf->pud, entry,  1))
 			update_mmu_cache_pud(vma, vmf->address, vmf->pud);
-		ret |= VM_FAULT_WRITE;
 		unlock_page(page);
-		goto out_unlock;
+		spin_unlock(vmf->ptl);
+		return VM_FAULT_WRITE;
 	}
 	unlock_page(page);
-	get_page(page);
 	spin_unlock(vmf->ptl);
-alloc:
-	if (transparent_pud_hugepage_enabled(vma) &&
-	    !transparent_hugepage_debug_cow()) {
-		huge_gfp = alloc_hugepage_direct_gfpmask(vma);
-		new_page = alloc_hugepage_vma(huge_gfp, vma, haddr, HPAGE_PUD_ORDER);
-	} else
-		new_page = NULL;
-
-	if (likely(new_page)) {
-		prep_transhuge_page(new_page);
-	} else {
-		if (!page) {
-			/*WARN(1, "%s: split_huge_page\n", __func__);*/
-			split_huge_pud(vma, vmf->pud, vmf->address);
-			ret |= VM_FAULT_FALLBACK;
-		} else {
-			ret = do_huge_pud_wp_page_fallback(vmf, orig_pud, page);
-			if (ret & VM_FAULT_OOM) {
-				/*WARN(1, "%s: split_huge_page after wp fallback\n", __func__);*/
-				split_huge_pud(vma, vmf->pud, vmf->address);
-				ret |= VM_FAULT_FALLBACK;
-			}
-			put_page(page);
-		}
-		count_vm_event(THP_FAULT_FALLBACK_PUD);
-		goto out;
-	}
-
-	mem_cgroup_charge(new_page, vma->vm_mm, huge_gfp);
-
-	count_vm_event(THP_FAULT_ALLOC_PUD);
-
-	if (!page)
-		clear_huge_page(new_page, vmf->address, HPAGE_PUD_NR);
-	else
-		copy_user_huge_page(new_page, page, haddr, vma, HPAGE_PUD_NR);
-	__SetPageUptodate(new_page);
-
-	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma, vma->vm_mm,
-				haddr, haddr + HPAGE_PUD_SIZE);
-	mmu_notifier_invalidate_range_start(&range);
-
-	spin_lock(vmf->ptl);
-	if (page)
-		put_page(page);
-	if (unlikely(!pud_same(*vmf->pud, orig_pud))) {
-		spin_unlock(vmf->ptl);
-		put_page(new_page);
-		goto out_mn;
-	} else {
-		pud_t entry;
-
-		entry = mk_huge_pud(new_page, vma->vm_page_prot);
-		entry = maybe_pud_mkwrite(pud_mkdirty(entry), vma);
-		pudp_huge_clear_flush_notify(vma, haddr, vmf->pud);
-		page_add_new_anon_rmap(new_page, vma, haddr, true, HPAGE_PUD_ORDER);
-		lru_cache_add_active_or_unevictable(new_page, vma);
-		set_pud_at(vma->vm_mm, haddr, vmf->pud, entry);
-		update_mmu_cache_pud(vma, vmf->address, vmf->pud);
-		if (!page) {
-			add_mm_counter(vma->vm_mm, MM_ANONPAGES, HPAGE_PUD_NR);
-		} else {
-			VM_BUG_ON_PAGE(!PageHead(page), page);
-			page_remove_rmap(page, true, HPAGE_PUD_ORDER);
-			put_page(page);
-		}
-		ret |= VM_FAULT_WRITE;
-	}
-	spin_unlock(vmf->ptl);
-out_mn:
-	/*
-	 * No need to double call mmu_notifier->invalidate_range() callback as
-	 * the above pmdp_huge_clear_flush_notify() did already call it.
-	 */
-	mmu_notifier_invalidate_range_only_end(&range);
-out:
-	return ret;
-out_unlock:
-	spin_unlock(vmf->ptl);
-	return ret;
+fallback:
+	__split_huge_pud(vma, vmf->pud, vmf->address, false, NULL);
+	return VM_FAULT_FALLBACK;
 }
 
 #endif /* CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD */
