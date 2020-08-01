@@ -290,7 +290,7 @@ static int dbg_tps_open(struct inode *inode, struct file *file)
 
 static const struct file_operations debug_fops = {
 	.open		= dbg_tps_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -404,7 +404,6 @@ static void tps65010_work(struct work_struct *work)
 	tps65010_interrupt(tps);
 
 	if (test_and_clear_bit(FLAG_VBUS_CHANGED, &tps->flags)) {
-		int	status;
 		u8	chgconfig, tmp;
 
 		chgconfig = i2c_smbus_read_byte_data(tps->client,
@@ -415,8 +414,8 @@ static void tps65010_work(struct work_struct *work)
 		else if (tps->vbus >= 100)
 			chgconfig |= TPS_VBUS_CHARGING;
 
-		status = i2c_smbus_write_byte_data(tps->client,
-				TPS_CHGCONFIG, chgconfig);
+		i2c_smbus_write_byte_data(tps->client,
+					  TPS_CHGCONFIG, chgconfig);
 
 		/* vbus update fails unless VBUS is connected! */
 		tmp = i2c_smbus_read_byte_data(tps->client, TPS_CHGCONFIG);

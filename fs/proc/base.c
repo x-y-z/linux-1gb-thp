@@ -538,7 +538,7 @@ static ssize_t lstats_write(struct file *file, const char __user *buf,
 
 static const struct file_operations proc_lstats_operations = {
 	.open		= lstats_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.write		= lstats_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -785,7 +785,7 @@ static int proc_single_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations proc_single_file_operations = {
 	.open		= proc_single_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -1469,7 +1469,7 @@ static int sched_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations proc_pid_sched_operations = {
 	.open		= sched_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.write		= sched_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -1544,7 +1544,7 @@ static int sched_autogroup_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations proc_pid_sched_autogroup_operations = {
 	.open		= sched_autogroup_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.write		= sched_autogroup_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -1647,7 +1647,7 @@ static int timens_offsets_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations proc_timens_offsets_operations = {
 	.open		= timens_offsets_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.write		= timens_offsets_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -1704,7 +1704,7 @@ static int comm_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations proc_pid_set_comm_operations = {
 	.open		= comm_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.write		= comm_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -2198,16 +2198,16 @@ struct map_files_info {
 };
 
 /*
- * Only allow CAP_SYS_ADMIN to follow the links, due to concerns about how the
- * symlinks may be used to bypass permissions on ancestor directories in the
- * path to the file in question.
+ * Only allow CAP_SYS_ADMIN and CAP_CHECKPOINT_RESTORE to follow the links, due
+ * to concerns about how the symlinks may be used to bypass permissions on
+ * ancestor directories in the path to the file in question.
  */
 static const char *
 proc_map_files_get_link(struct dentry *dentry,
 			struct inode *inode,
 		        struct delayed_call *done)
 {
-	if (!capable(CAP_SYS_ADMIN))
+	if (!checkpoint_restore_ns_capable(&init_user_ns))
 		return ERR_PTR(-EPERM);
 
 	return proc_pid_get_link(dentry, inode, done);
@@ -2493,7 +2493,7 @@ static int proc_timers_open(struct inode *inode, struct file *file)
 
 static const struct file_operations proc_timers_operations = {
 	.open		= proc_timers_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= seq_release_private,
 };
@@ -2585,7 +2585,7 @@ static int timerslack_ns_open(struct inode *inode, struct file *filp)
 
 static const struct file_operations proc_pid_set_timerslack_ns_operations = {
 	.open		= timerslack_ns_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.write		= timerslack_ns_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -3037,7 +3037,7 @@ static int proc_projid_map_open(struct inode *inode, struct file *file)
 static const struct file_operations proc_uid_map_operations = {
 	.open		= proc_uid_map_open,
 	.write		= proc_uid_map_write,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= proc_id_map_release,
 };
@@ -3045,7 +3045,7 @@ static const struct file_operations proc_uid_map_operations = {
 static const struct file_operations proc_gid_map_operations = {
 	.open		= proc_gid_map_open,
 	.write		= proc_gid_map_write,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= proc_id_map_release,
 };
@@ -3053,7 +3053,7 @@ static const struct file_operations proc_gid_map_operations = {
 static const struct file_operations proc_projid_map_operations = {
 	.open		= proc_projid_map_open,
 	.write		= proc_projid_map_write,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= proc_id_map_release,
 };
@@ -3104,7 +3104,7 @@ static int proc_setgroups_release(struct inode *inode, struct file *file)
 static const struct file_operations proc_setgroups_operations = {
 	.open		= proc_setgroups_open,
 	.write		= proc_setgroups_write,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= proc_setgroups_release,
 };

@@ -1477,8 +1477,8 @@ static void b43legacy_release_firmware(struct b43legacy_wldev *dev)
 
 static void b43legacy_print_fw_helptext(struct b43legacy_wl *wl)
 {
-	b43legacyerr(wl, "You must go to http://wireless.kernel.org/en/users/"
-		     "Drivers/b43#devicefirmware "
+	b43legacyerr(wl, "You must go to https://wireless.wiki.kernel.org/en/"
+		     "users/Drivers/b43#devicefirmware "
 		     "and download the correct firmware (version 3).\n");
 }
 
@@ -2580,7 +2580,7 @@ static void b43legacy_put_phy_into_reset(struct b43legacy_wldev *dev)
 static int b43legacy_switch_phymode(struct b43legacy_wl *wl,
 				      unsigned int new_mode)
 {
-	struct b43legacy_wldev *uninitialized_var(up_dev);
+	struct b43legacy_wldev *up_dev;
 	struct b43legacy_wldev *down_dev;
 	int err;
 	bool gmode = false;

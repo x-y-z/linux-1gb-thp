@@ -15,6 +15,7 @@ struct mount;
 struct shrink_control;
 struct fs_context;
 struct user_namespace;
+struct fsinfo_context;
 
 /*
  * block_dev.c
@@ -23,7 +24,9 @@ struct user_namespace;
 extern void __init bdev_cache_init(void);
 
 extern int __sync_blockdev(struct block_device *bdev, int wait);
-
+void iterate_bdevs(void (*)(struct block_device *, void *), void *);
+void emergency_thaw_bdev(struct super_block *sb);
+void bd_forget(struct inode *inode);
 #else
 static inline void bdev_cache_init(void)
 {
@@ -33,7 +36,18 @@ static inline int __sync_blockdev(struct block_device *bdev, int wait)
 {
 	return 0;
 }
-#endif
+static inline void iterate_bdevs(void (*f)(struct block_device *, void *),
+		void *arg)
+{
+}
+static inline int emergency_thaw_bdev(struct super_block *sb)
+{
+	return 0;
+}
+static inline void bd_forget(struct inode *inode)
+{
+}
+#endif /* CONFIG_BLOCK */
 
 /*
  * buffer.c
@@ -45,6 +59,11 @@ extern int __block_write_begin_int(struct page *page, loff_t pos, unsigned len,
  * char_dev.c
  */
 extern void __init chrdev_init(void);
+
+/*
+ * d_path.c
+ */
+extern void get_fs_root_rcu(struct fs_struct *fs, struct path *root);
 
 /*
  * fs_context.c
@@ -89,6 +108,15 @@ extern int __mnt_want_write_file(struct file *);
 extern void __mnt_drop_write_file(struct file *);
 
 extern void dissolve_on_fput(struct vfsmount *);
+extern int lookup_mount_object(struct path *, unsigned int, struct path *);
+extern int fsinfo_generic_mount_source(struct path *, struct fsinfo_context *);
+extern int fsinfo_generic_mount_info(struct path *, struct fsinfo_context *);
+extern int fsinfo_generic_mount_topology(struct path *, struct fsinfo_context *);
+extern int fsinfo_generic_mount_point(struct path *, struct fsinfo_context *);
+extern int fsinfo_generic_mount_point_full(struct path *, struct fsinfo_context *);
+extern int fsinfo_generic_mount_children(struct path *, struct fsinfo_context *);
+extern int fsinfo_generic_mount_all(struct path *, struct fsinfo_context *);
+
 /*
  * fs_struct.c
  */
@@ -103,6 +131,7 @@ extern struct file *alloc_empty_file_noaccount(int, const struct cred *);
 /*
  * super.c
  */
+extern atomic64_t vfs_unique_counter;
 extern int reconfigure_super(struct fs_context *);
 extern bool trylock_super(struct super_block *sb);
 extern struct super_block *user_get_super(dev_t);

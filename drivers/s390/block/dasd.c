@@ -1089,7 +1089,7 @@ static int dasd_stats_open(struct inode *inode, struct file *file)
 static const struct file_operations dasd_stats_raw_fops = {
 	.owner		= THIS_MODULE,
 	.open		= dasd_stats_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 	.write		= dasd_stats_write,
@@ -2802,7 +2802,7 @@ static void __dasd_cleanup_cqr(struct dasd_ccw_req *cqr)
 			blk_update_request(req, BLK_STS_OK,
 					   blk_rq_bytes(req) - proc_bytes);
 			blk_mq_requeue_request(req, true);
-		} else {
+		} else if (likely(!blk_should_fake_timeout(req->q))) {
 			blk_mq_complete_request(req);
 		}
 	}

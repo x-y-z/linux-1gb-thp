@@ -2106,6 +2106,12 @@ static const char *gflags2str(char *buf, const struct gfs2_glock *gl)
 		*p++ = 'o';
 	if (test_bit(GLF_BLOCKING, gflags))
 		*p++ = 'b';
+	if (test_bit(GLF_INODE_CREATING, gflags))
+		*p++ = 'c';
+	if (test_bit(GLF_PENDING_DELETE, gflags))
+		*p++ = 'P';
+	if (test_bit(GLF_FREEING, gflags))
+		*p++ = 'x';
 	*p = 0;
 	return buf;
 }
@@ -2473,7 +2479,7 @@ static int gfs2_sbstats_open(struct inode *inode, struct file *file)
 static const struct file_operations gfs2_glocks_fops = {
 	.owner   = THIS_MODULE,
 	.open    = gfs2_glocks_open,
-	.read    = seq_read,
+	.read_iter    = seq_read_iter,
 	.llseek  = seq_lseek,
 	.release = gfs2_glocks_release,
 };
@@ -2481,7 +2487,7 @@ static const struct file_operations gfs2_glocks_fops = {
 static const struct file_operations gfs2_glstats_fops = {
 	.owner   = THIS_MODULE,
 	.open    = gfs2_glstats_open,
-	.read    = seq_read,
+	.read_iter    = seq_read_iter,
 	.llseek  = seq_lseek,
 	.release = gfs2_glocks_release,
 };
@@ -2489,7 +2495,7 @@ static const struct file_operations gfs2_glstats_fops = {
 static const struct file_operations gfs2_sbstats_fops = {
 	.owner   = THIS_MODULE,
 	.open	 = gfs2_sbstats_open,
-	.read    = seq_read,
+	.read_iter    = seq_read_iter,
 	.llseek  = seq_lseek,
 	.release = seq_release,
 };

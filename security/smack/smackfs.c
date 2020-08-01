@@ -671,7 +671,7 @@ static ssize_t smk_write_load(struct file *file, const char __user *buf,
 
 static const struct file_operations smk_load_ops = {
 	.open           = smk_open_load,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek         = seq_lseek,
 	.write		= smk_write_load,
 	.release        = seq_release,
@@ -884,7 +884,7 @@ static ssize_t smk_set_cipso(struct file *file, const char __user *buf,
 	}
 
 	ret = sscanf(rule, "%d", &maplevel);
-	if (ret != 1 || maplevel > SMACK_CIPSO_MAXLEVEL)
+	if (ret != 1 || maplevel < 0 || maplevel > SMACK_CIPSO_MAXLEVEL)
 		goto out;
 
 	rule += SMK_DIGITLEN;
@@ -905,6 +905,10 @@ static ssize_t smk_set_cipso(struct file *file, const char __user *buf,
 
 	for (i = 0; i < catlen; i++) {
 		rule += SMK_DIGITLEN;
+		if (rule > data + count) {
+			rc = -EOVERFLOW;
+			goto out;
+		}
 		ret = sscanf(rule, "%u", &cat);
 		if (ret != 1 || cat > SMACK_CIPSO_MAXCATNUM)
 			goto out;
@@ -944,7 +948,7 @@ static ssize_t smk_write_cipso(struct file *file, const char __user *buf,
 
 static const struct file_operations smk_cipso_ops = {
 	.open           = smk_open_cipso,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek         = seq_lseek,
 	.write		= smk_write_cipso,
 	.release        = seq_release,
@@ -1018,7 +1022,7 @@ static ssize_t smk_write_cipso2(struct file *file, const char __user *buf,
 
 static const struct file_operations smk_cipso2_ops = {
 	.open           = smk_open_cipso2,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek         = seq_lseek,
 	.write		= smk_write_cipso2,
 	.release        = seq_release,
@@ -1283,7 +1287,7 @@ free_data_out:
 
 static const struct file_operations smk_net4addr_ops = {
 	.open           = smk_open_net4addr,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek         = seq_lseek,
 	.write		= smk_write_net4addr,
 	.release        = seq_release,
@@ -1540,7 +1544,7 @@ free_data_out:
 
 static const struct file_operations smk_net6addr_ops = {
 	.open           = smk_open_net6addr,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek         = seq_lseek,
 	.write		= smk_write_net6addr,
 	.release        = seq_release,
@@ -2028,7 +2032,7 @@ static ssize_t smk_write_onlycap(struct file *file, const char __user *buf,
 
 static const struct file_operations smk_onlycap_ops = {
 	.open		= smk_open_onlycap,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.write		= smk_write_onlycap,
 	.llseek		= seq_lseek,
 	.release	= seq_release,
@@ -2252,7 +2256,7 @@ static ssize_t smk_write_load_self(struct file *file, const char __user *buf,
 
 static const struct file_operations smk_load_self_ops = {
 	.open           = smk_open_load_self,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek         = seq_lseek,
 	.write		= smk_write_load_self,
 	.release        = seq_release,
@@ -2386,7 +2390,7 @@ static ssize_t smk_write_load2(struct file *file, const char __user *buf,
 
 static const struct file_operations smk_load2_ops = {
 	.open           = smk_open_load2,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek         = seq_lseek,
 	.write		= smk_write_load2,
 	.release        = seq_release,
@@ -2459,7 +2463,7 @@ static ssize_t smk_write_load_self2(struct file *file, const char __user *buf,
 
 static const struct file_operations smk_load_self2_ops = {
 	.open           = smk_open_load_self2,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek         = seq_lseek,
 	.write		= smk_write_load_self2,
 	.release        = seq_release,
@@ -2720,7 +2724,6 @@ static int smk_open_relabel_self(struct inode *inode, struct file *file)
 static ssize_t smk_write_relabel_self(struct file *file, const char __user *buf,
 				size_t count, loff_t *ppos)
 {
-	struct task_smack *tsp = smack_cred(current_cred());
 	char *data;
 	int rc;
 	LIST_HEAD(list_tmp);
@@ -2745,18 +2748,28 @@ static ssize_t smk_write_relabel_self(struct file *file, const char __user *buf,
 	kfree(data);
 
 	if (!rc || (rc == -EINVAL && list_empty(&list_tmp))) {
+		struct cred *new;
+		struct task_smack *tsp;
+
+		new = prepare_creds();
+		if (!new) {
+			rc = -ENOMEM;
+			goto out;
+		}
+		tsp = smack_cred(new);
 		smk_destroy_label_list(&tsp->smk_relabel);
 		list_splice(&list_tmp, &tsp->smk_relabel);
+		commit_creds(new);
 		return count;
 	}
-
+out:
 	smk_destroy_label_list(&list_tmp);
 	return rc;
 }
 
 static const struct file_operations smk_relabel_self_ops = {
 	.open		= smk_open_relabel_self,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.write		= smk_write_relabel_self,
 	.release	= seq_release,

@@ -4,6 +4,8 @@
 
 #define CMA_MAX_NAME 64
 
+#include <linux/debugfs.h>
+
 struct cma {
 	unsigned long   base_pfn;
 	unsigned long   count;
@@ -13,6 +15,7 @@ struct cma {
 #ifdef CONFIG_CMA_DEBUGFS
 	struct hlist_head mem_head;
 	spinlock_t mem_head_lock;
+	struct debugfs_u32_array dfs_bitmap;
 #endif
 	char name[CMA_MAX_NAME];
 };

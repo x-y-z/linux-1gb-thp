@@ -40,6 +40,7 @@
 #include <asm/fadump.h>
 #include <asm/asm-prototypes.h>
 #include <asm/debugfs.h>
+#include <asm/dtl.h>
 
 #include "pseries.h"
 
@@ -584,7 +585,7 @@ static int vcpudispatch_stats_open(struct inode *inode, struct file *file)
 
 static const struct proc_ops vcpudispatch_stats_proc_ops = {
 	.proc_open	= vcpudispatch_stats_open,
-	.proc_read	= seq_read,
+	.proc_read_iter	= seq_read_iter,
 	.proc_write	= vcpudispatch_stats_write,
 	.proc_lseek	= seq_lseek,
 	.proc_release	= single_release,
@@ -628,7 +629,7 @@ static int vcpudispatch_stats_freq_open(struct inode *inode, struct file *file)
 
 static const struct proc_ops vcpudispatch_stats_freq_proc_ops = {
 	.proc_open	= vcpudispatch_stats_freq_open,
-	.proc_read	= seq_read,
+	.proc_read_iter	= seq_read_iter,
 	.proc_write	= vcpudispatch_stats_freq_write,
 	.proc_lseek	= seq_lseek,
 	.proc_release	= single_release,
@@ -1680,9 +1681,11 @@ static int pseries_lpar_register_process_table(unsigned long base,
 
 	if (table_size)
 		flags |= PROC_TABLE_NEW;
-	if (radix_enabled())
-		flags |= PROC_TABLE_RADIX | PROC_TABLE_GTSE;
-	else
+	if (radix_enabled()) {
+		flags |= PROC_TABLE_RADIX;
+		if (mmu_has_feature(MMU_FTR_GTSE))
+			flags |= PROC_TABLE_GTSE;
+	} else
 		flags |= PROC_TABLE_HPT_SLB;
 	for (;;) {
 		rc = plpar_hcall_norets(H_REGISTER_PROC_TBL, flags, base,

@@ -357,6 +357,9 @@ int amdgpu_gmc_allocate_vm_inv_eng(struct amdgpu_device *adev)
 		ring = adev->rings[i];
 		vmhub = ring->funcs->vmhub;
 
+		if (ring == &adev->mes.ring)
+			continue;
+
 		inv_eng = ffs(vm_inv_engs[vmhub]);
 		if (!inv_eng) {
 			dev_err(adev->dev, "no VM inv eng for ring %s\n",
@@ -406,5 +409,25 @@ void amdgpu_gmc_tmz_set(struct amdgpu_device *adev)
 		dev_warn(adev->dev,
 			 "Trusted Memory Zone (TMZ) feature not supported\n");
 		break;
+	}
+}
+
+void amdgpu_gmc_set_vm_fault_masks(struct amdgpu_device *adev, int hub_type,
+				   bool enable)
+{
+	struct amdgpu_vmhub *hub;
+	u32 tmp, reg, i;
+
+	hub = &adev->vmhub[hub_type];
+	for (i = 0; i < 16; i++) {
+		reg = hub->vm_context0_cntl + hub->ctx_distance * i;
+
+		tmp = RREG32(reg);
+		if (enable)
+			tmp |= hub->vm_cntx_cntl_vm_fault;
+		else
+			tmp &= ~hub->vm_cntx_cntl_vm_fault;
+
+		WREG32(reg, tmp);
 	}
 }

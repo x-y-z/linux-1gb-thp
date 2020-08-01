@@ -125,7 +125,7 @@ static int i915_ips_status(struct seq_file *m, void *unused)
 	wakeref = intel_runtime_pm_get(&dev_priv->runtime_pm);
 
 	seq_printf(m, "Enabled by kernel parameter: %s\n",
-		   yesno(i915_modparams.enable_ips));
+		   yesno(dev_priv->params.enable_ips));
 
 	if (INTEL_GEN(dev_priv) >= 8) {
 		seq_puts(m, "Currently: unknown\n");
@@ -1009,7 +1009,7 @@ static ssize_t i915_ipc_status_write(struct file *file, const char __user *ubuf,
 static const struct file_operations i915_ipc_status_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_ipc_status_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 	.write = i915_ipc_status_write
@@ -1099,10 +1099,10 @@ static void drrs_status_per_crtc(struct seq_file *m,
 		seq_puts(m, "\n\t\t");
 		if (drrs->refresh_rate_type == DRRS_HIGH_RR) {
 			seq_puts(m, "DRRS_State: DRRS_HIGH_RR\n");
-			vrefresh = panel->fixed_mode->vrefresh;
+			vrefresh = drm_mode_vrefresh(panel->fixed_mode);
 		} else if (drrs->refresh_rate_type == DRRS_LOW_RR) {
 			seq_puts(m, "DRRS_State: DRRS_LOW_RR\n");
-			vrefresh = panel->downclock_mode->vrefresh;
+			vrefresh = drm_mode_vrefresh(panel->downclock_mode);
 		} else {
 			seq_printf(m, "DRRS_State: Unknown(%d)\n",
 						drrs->refresh_rate_type);
@@ -1194,7 +1194,7 @@ static int i915_dp_mst_info(struct seq_file *m, void *unused)
 	struct drm_i915_private *dev_priv = node_to_i915(m->private);
 	struct drm_device *dev = &dev_priv->drm;
 	struct intel_encoder *intel_encoder;
-	struct intel_digital_port *intel_dig_port;
+	struct intel_digital_port *dig_port;
 	struct drm_connector *connector;
 	struct drm_connector_list_iter conn_iter;
 
@@ -1207,14 +1207,14 @@ static int i915_dp_mst_info(struct seq_file *m, void *unused)
 		if (!intel_encoder || intel_encoder->type == INTEL_OUTPUT_DP_MST)
 			continue;
 
-		intel_dig_port = enc_to_dig_port(intel_encoder);
-		if (!intel_dig_port->dp.can_mst)
+		dig_port = enc_to_dig_port(intel_encoder);
+		if (!dig_port->dp.can_mst)
 			continue;
 
 		seq_printf(m, "MST Source Port [ENCODER:%d:%s]\n",
-			   intel_dig_port->base.base.base.id,
-			   intel_dig_port->base.base.name);
-		drm_dp_mst_dump_topology(m, &intel_dig_port->dp.mst_mgr);
+			   dig_port->base.base.base.id,
+			   dig_port->base.base.name);
+		drm_dp_mst_dump_topology(m, &dig_port->dp.mst_mgr);
 	}
 	drm_connector_list_iter_end(&conn_iter);
 
@@ -1326,7 +1326,7 @@ static int i915_displayport_test_active_open(struct inode *inode,
 static const struct file_operations i915_displayport_test_active_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_displayport_test_active_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 	.write = i915_displayport_test_active_write
@@ -1627,7 +1627,7 @@ static ssize_t cur_wm_latency_write(struct file *file, const char __user *ubuf,
 static const struct file_operations i915_pri_wm_latency_fops = {
 	.owner = THIS_MODULE,
 	.open = pri_wm_latency_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 	.write = pri_wm_latency_write
@@ -1636,7 +1636,7 @@ static const struct file_operations i915_pri_wm_latency_fops = {
 static const struct file_operations i915_spr_wm_latency_fops = {
 	.owner = THIS_MODULE,
 	.open = spr_wm_latency_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 	.write = spr_wm_latency_write
@@ -1645,7 +1645,7 @@ static const struct file_operations i915_spr_wm_latency_fops = {
 static const struct file_operations i915_cur_wm_latency_fops = {
 	.owner = THIS_MODULE,
 	.open = cur_wm_latency_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 	.write = cur_wm_latency_write
@@ -1728,7 +1728,7 @@ static int i915_hpd_storm_ctl_open(struct inode *inode, struct file *file)
 static const struct file_operations i915_hpd_storm_ctl_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_hpd_storm_ctl_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 	.write = i915_hpd_storm_ctl_write
@@ -1801,7 +1801,7 @@ static ssize_t i915_hpd_short_storm_ctl_write(struct file *file,
 static const struct file_operations i915_hpd_short_storm_ctl_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_hpd_short_storm_ctl_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 	.write = i915_hpd_short_storm_ctl_write,
@@ -2179,7 +2179,7 @@ static int i915_dsc_fec_support_open(struct inode *inode,
 static const struct file_operations i915_dsc_fec_support_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_dsc_fec_support_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 	.write = i915_dsc_fec_support_write
@@ -2218,7 +2218,8 @@ int intel_connector_debugfs_add(struct drm_connector *connector)
 	}
 
 	if (INTEL_GEN(dev_priv) >= 10 &&
-	    (connector->connector_type == DRM_MODE_CONNECTOR_DisplayPort ||
+	    ((connector->connector_type == DRM_MODE_CONNECTOR_DisplayPort &&
+	      !to_intel_connector(connector)->mst_port) ||
 	     connector->connector_type == DRM_MODE_CONNECTOR_eDP))
 		debugfs_create_file("i915_dsc_fec_support", S_IRUGO, root,
 				    connector, &i915_dsc_fec_support_fops);

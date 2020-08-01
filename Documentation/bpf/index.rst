@@ -48,6 +48,15 @@ Program types
    bpf_lsm
 
 
+Map types
+=========
+
+.. toctree::
+   :maxdepth: 1
+
+   map_cgroup_storage
+
+
 Testing and debugging BPF
 =========================
 
@@ -57,6 +66,14 @@ Testing and debugging BPF
    drgn
    s390
 
+
+Other
+=====
+
+.. toctree::
+   :maxdepth: 1
+
+   ringbuf
 
 .. Links:
 .. _Documentation/networking/filter.rst: ../networking/filter.txt

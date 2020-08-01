@@ -92,13 +92,13 @@ static int seq_release_net(struct inode *ino, struct file *f)
 
 static const struct proc_ops proc_net_seq_ops = {
 	.proc_open	= seq_open_net,
-	.proc_read	= seq_read,
+	.proc_read_iter	= seq_read_iter,
 	.proc_write	= proc_simple_write,
 	.proc_lseek	= seq_lseek,
 	.proc_release	= seq_release_net,
 };
 
-int bpf_iter_init_seq_net(void *priv_data)
+int bpf_iter_init_seq_net(void *priv_data, struct bpf_iter_aux_info *aux)
 {
 #ifdef CONFIG_NET_NS
 	struct seq_net_private *p = priv_data;
@@ -204,7 +204,7 @@ static int single_release_net(struct inode *ino, struct file *f)
 
 static const struct proc_ops proc_net_single_ops = {
 	.proc_open	= single_open_net,
-	.proc_read	= seq_read,
+	.proc_read_iter	= seq_read_iter,
 	.proc_write	= proc_simple_write,
 	.proc_lseek	= seq_lseek,
 	.proc_release	= single_release_net,

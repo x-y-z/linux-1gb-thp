@@ -209,7 +209,7 @@ static const struct file_operations debugfs_cram_fops = {
 static const struct file_operations debugfs_stats_fops = {
 	.owner		= THIS_MODULE,
 	.open		= rsxx_attr_stats_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -217,7 +217,7 @@ static const struct file_operations debugfs_stats_fops = {
 static const struct file_operations debugfs_pci_regs_fops = {
 	.owner		= THIS_MODULE,
 	.open		= rsxx_attr_pci_regs_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -562,13 +562,15 @@ static int rsxx_eeh_frozen(struct pci_dev *dev)
 
 	for (i = 0; i < card->n_targets; i++) {
 		if (card->ctrl[i].status.buf)
-			pci_free_consistent(card->dev, STATUS_BUFFER_SIZE8,
-					    card->ctrl[i].status.buf,
-					    card->ctrl[i].status.dma_addr);
+			dma_free_coherent(&card->dev->dev,
+					  STATUS_BUFFER_SIZE8,
+					  card->ctrl[i].status.buf,
+					  card->ctrl[i].status.dma_addr);
 		if (card->ctrl[i].cmd.buf)
-			pci_free_consistent(card->dev, COMMAND_BUFFER_SIZE8,
-					    card->ctrl[i].cmd.buf,
-					    card->ctrl[i].cmd.dma_addr);
+			dma_free_coherent(&card->dev->dev,
+					  COMMAND_BUFFER_SIZE8,
+					  card->ctrl[i].cmd.buf,
+					  card->ctrl[i].cmd.dma_addr);
 	}
 
 	return 0;
@@ -625,7 +627,7 @@ static int rsxx_eeh_fifo_flush_poll(struct rsxx_cardinfo *card)
 }
 
 static pci_ers_result_t rsxx_error_detected(struct pci_dev *dev,
-					    enum pci_channel_state error)
+					    pci_channel_state_t error)
 {
 	int st;
 
@@ -711,15 +713,15 @@ static pci_ers_result_t rsxx_slot_reset(struct pci_dev *dev)
 failed_hw_buffers_init:
 	for (i = 0; i < card->n_targets; i++) {
 		if (card->ctrl[i].status.buf)
-			pci_free_consistent(card->dev,
-					STATUS_BUFFER_SIZE8,
-					card->ctrl[i].status.buf,
-					card->ctrl[i].status.dma_addr);
+			dma_free_coherent(&card->dev->dev,
+					  STATUS_BUFFER_SIZE8,
+					  card->ctrl[i].status.buf,
+					  card->ctrl[i].status.dma_addr);
 		if (card->ctrl[i].cmd.buf)
-			pci_free_consistent(card->dev,
-					COMMAND_BUFFER_SIZE8,
-					card->ctrl[i].cmd.buf,
-					card->ctrl[i].cmd.dma_addr);
+			dma_free_coherent(&card->dev->dev,
+					  COMMAND_BUFFER_SIZE8,
+					  card->ctrl[i].cmd.buf,
+					  card->ctrl[i].cmd.dma_addr);
 	}
 failed_hw_setup:
 	rsxx_eeh_failure(dev);

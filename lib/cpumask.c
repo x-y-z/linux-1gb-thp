@@ -227,22 +227,27 @@ static int find_nearest_node(int *node_dist, bool *used)
 
 static unsigned int __cpumask_local_spread(unsigned int i, int node)
 {
-	int cpu;
+	int cpu, hk_flags;
+	const struct cpumask *mask;
 
+	hk_flags = HK_FLAG_DOMAIN | HK_FLAG_MANAGED_IRQ;
+	mask = housekeeping_cpumask(hk_flags);
 	/* Wrap: we always want a cpu. */
-	i %= num_online_cpus();
+	i %= cpumask_weight(mask);
 
 	if (node == NUMA_NO_NODE) {
-		for_each_cpu(cpu, cpu_online_mask)
+		for_each_cpu(cpu, mask) {
 			if (i-- == 0)
 				return cpu;
+		}
 	} else {
 		/* NUMA first. */
-		for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask)
+		for_each_cpu_and(cpu, cpumask_of_node(node), mask) {
 			if (i-- == 0)
 				return cpu;
+		}
 
-		for_each_cpu(cpu, cpu_online_mask) {
+		for_each_cpu(cpu, mask) {
 			/* Skip NUMA nodes, done above. */
 			if (cpumask_test_cpu(cpu, cpumask_of_node(node)))
 				continue;

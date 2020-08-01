@@ -2972,10 +2972,7 @@ static int sci_init_single(struct platform_device *dev,
 	port->fifosize		= sci_port->params->fifosize;
 
 	if (port->type == PORT_SCI) {
-		if (sci_port->reg_size >= 0x20)
-			port->regshift = 2;
-		else
-			port->regshift = 1;
+		port->regshift = sci_port->reg_size >> 4;
 	}
 
 	/*
@@ -3300,9 +3297,6 @@ static int sci_probe_single(struct platform_device *dev,
 		}
 		sciport->port.flags |= UPF_HARD_FLOW;
 	}
-
-	if (sci_uart_driver.cons->index == sciport->port.line)
-		spin_lock_init(&sciport->port.lock);
 
 	ret = uart_add_one_port(&sci_uart_driver, &sciport->port);
 	if (ret) {

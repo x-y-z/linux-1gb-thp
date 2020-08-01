@@ -226,7 +226,7 @@ static int cec_error_inj_open(struct inode *inode, struct file *file)
 static const struct file_operations cec_error_inj_fops = {
 	.open = cec_error_inj_open,
 	.write = cec_error_inj_write,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
@@ -265,7 +265,6 @@ struct cec_adapter *cec_allocate_adapter(const struct cec_adap_ops *ops,
 	adap->sequence = 0;
 	adap->ops = ops;
 	adap->priv = priv;
-	memset(adap->phys_addrs, 0xff, sizeof(adap->phys_addrs));
 	mutex_init(&adap->lock);
 	INIT_LIST_HEAD(&adap->transmit_queue);
 	INIT_LIST_HEAD(&adap->wait_queue);

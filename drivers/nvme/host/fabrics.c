@@ -547,7 +547,7 @@ static struct nvmf_transport_ops *nvmf_lookup_transport(
 blk_status_t nvmf_fail_nonready_command(struct nvme_ctrl *ctrl,
 		struct request *rq)
 {
-	if (ctrl->state != NVME_CTRL_DELETING &&
+	if (ctrl->state != NVME_CTRL_DELETING_NOIO &&
 	    ctrl->state != NVME_CTRL_DEAD &&
 	    !blk_noretry_request(rq) && !(rq->cmd_flags & REQ_NVME_MPATH))
 		return BLK_STS_RESOURCE;
@@ -1140,7 +1140,7 @@ static int nvmf_dev_release(struct inode *inode, struct file *file)
 static const struct file_operations nvmf_dev_fops = {
 	.owner		= THIS_MODULE,
 	.write		= nvmf_dev_write,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.open		= nvmf_dev_open,
 	.release	= nvmf_dev_release,
 };

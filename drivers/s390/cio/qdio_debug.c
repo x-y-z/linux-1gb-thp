@@ -165,7 +165,7 @@ static int qstat_show(struct seq_file *m, void *v)
 	}
 
 	seq_printf(m, "\n1          2..        4..        8..        "
-		   "16..       32..       64..       127\n");
+		   "16..       32..       64..       128\n");
 	for (i = 0; i < ARRAY_SIZE(q->q_stats.nr_sbals); i++)
 		seq_printf(m, "%-10u ", q->q_stats.nr_sbals[i]);
 	seq_printf(m, "\nError      NOP        Total\n%-10u %-10u %-10u\n\n",
@@ -281,7 +281,7 @@ static int qperf_seq_open(struct inode *inode, struct file *filp)
 static const struct file_operations debugfs_perf_fops = {
 	.owner	 = THIS_MODULE,
 	.open	 = qperf_seq_open,
-	.read	 = seq_read,
+	.read_iter	 = seq_read_iter,
 	.write	 = qperf_seq_write,
 	.llseek  = seq_lseek,
 	.release = single_release,

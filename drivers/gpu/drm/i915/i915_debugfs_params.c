@@ -48,7 +48,7 @@ static ssize_t i915_param_int_write(struct file *file,
 static const struct file_operations i915_param_int_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_param_int_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.write = i915_param_int_write,
 	.llseek = default_llseek,
 	.release = single_release,
@@ -57,7 +57,7 @@ static const struct file_operations i915_param_int_fops = {
 static const struct file_operations i915_param_int_fops_ro = {
 	.owner = THIS_MODULE,
 	.open = i915_param_int_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = default_llseek,
 	.release = single_release,
 };
@@ -101,7 +101,7 @@ static ssize_t i915_param_uint_write(struct file *file,
 static const struct file_operations i915_param_uint_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_param_uint_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.write = i915_param_uint_write,
 	.llseek = default_llseek,
 	.release = single_release,
@@ -110,7 +110,7 @@ static const struct file_operations i915_param_uint_fops = {
 static const struct file_operations i915_param_uint_fops_ro = {
 	.owner = THIS_MODULE,
 	.open = i915_param_uint_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = default_llseek,
 	.release = single_release,
 };
@@ -138,9 +138,6 @@ static ssize_t i915_param_charp_write(struct file *file,
 	char **s = m->private;
 	char *new, *old;
 
-	/* FIXME: remove locking after params aren't the module params */
-	kernel_param_lock(THIS_MODULE);
-
 	old = *s;
 	new = strndup_user(ubuf, PAGE_SIZE);
 	if (IS_ERR(new)) {
@@ -152,15 +149,13 @@ static ssize_t i915_param_charp_write(struct file *file,
 
 	kfree(old);
 out:
-	kernel_param_unlock(THIS_MODULE);
-
 	return len;
 }
 
 static const struct file_operations i915_param_charp_fops = {
 	.owner = THIS_MODULE,
 	.open = i915_param_charp_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.write = i915_param_charp_write,
 	.llseek = default_llseek,
 	.release = single_release,
@@ -169,7 +164,7 @@ static const struct file_operations i915_param_charp_fops = {
 static const struct file_operations i915_param_charp_fops_ro = {
 	.owner = THIS_MODULE,
 	.open = i915_param_charp_open,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = default_llseek,
 	.release = single_release,
 };
@@ -229,7 +224,7 @@ _i915_param_create_file(struct dentry *parent, const char *name,
 struct dentry *i915_debugfs_params(struct drm_i915_private *i915)
 {
 	struct drm_minor *minor = i915->drm.primary;
-	struct i915_params *params = &i915_modparams;
+	struct i915_params *params = &i915->params;
 	struct dentry *dir;
 
 	dir = debugfs_create_dir("i915_params", minor->debugfs_root);

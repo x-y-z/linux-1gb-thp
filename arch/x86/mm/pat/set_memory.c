@@ -135,7 +135,7 @@ static inline void cpa_inc_2m_checked(void)
 
 static inline void cpa_inc_4k_install(void)
 {
-	cpa_4k_install++;
+	data_race(cpa_4k_install++);
 }
 
 static inline void cpa_inc_lp_sameprot(int level)
@@ -173,7 +173,7 @@ static int cpastats_open(struct inode *inode, struct file *file)
 
 static const struct file_operations cpastats_fops = {
 	.open		= cpastats_open,
-	.read		= seq_read,
+	.read_iter		= seq_read_iter,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };

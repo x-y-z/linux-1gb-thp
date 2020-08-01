@@ -152,7 +152,7 @@ void fork_handler(void)
 	userspace(&current->thread.regs.regs, current_thread_info()->aux_fp_regs);
 }
 
-int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
+int copy_thread(unsigned long clone_flags, unsigned long sp,
 		unsigned long arg, struct task_struct * p, unsigned long tls)
 {
 	void (*handler)(void);
@@ -312,7 +312,7 @@ static ssize_t sysemu_proc_write(struct file *file, const char __user *buf,
 
 static const struct proc_ops sysemu_proc_ops = {
 	.proc_open	= sysemu_proc_open,
-	.proc_read	= seq_read,
+	.proc_read_iter	= seq_read_iter,
 	.proc_lseek	= seq_lseek,
 	.proc_release	= single_release,
 	.proc_write	= sysemu_proc_write,

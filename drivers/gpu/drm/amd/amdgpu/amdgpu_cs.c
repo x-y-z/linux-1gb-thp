@@ -57,7 +57,7 @@ static int amdgpu_cs_user_fence_chunk(struct amdgpu_cs_parser *p,
 	/* One for TTM and one for the CS job */
 	p->uf_entry.tv.num_shared = 2;
 
-	drm_gem_object_put_unlocked(gobj);
+	drm_gem_object_put(gobj);
 
 	size = amdgpu_bo_size(bo);
 	if (size != PAGE_SIZE || (data->offset + 8) > size) {
@@ -992,7 +992,7 @@ static int amdgpu_cs_process_fence_dep(struct amdgpu_cs_parser *p,
 			dma_fence_put(old);
 		}
 
-		r = amdgpu_sync_fence(&p->job->sync, fence, true);
+		r = amdgpu_sync_fence(&p->job->sync, fence);
 		dma_fence_put(fence);
 		if (r)
 			return r;
@@ -1014,7 +1014,7 @@ static int amdgpu_syncobj_lookup_and_add_to_sync(struct amdgpu_cs_parser *p,
 		return r;
 	}
 
-	r = amdgpu_sync_fence(&p->job->sync, fence, true);
+	r = amdgpu_sync_fence(&p->job->sync, fence);
 	dma_fence_put(fence);
 
 	return r;
@@ -1292,6 +1292,8 @@ int amdgpu_cs_ioctl(struct drm_device *dev, void *data, struct drm_file *filp)
 	parser.adev = adev;
 	parser.filp = filp;
 
+	down_read(&adev->reset_sem);
+
 	r = amdgpu_cs_parser_init(&parser, data);
 	if (r) {
 		DRM_ERROR("Failed to initialize parser %d!\n", r);
@@ -1330,6 +1332,8 @@ int amdgpu_cs_ioctl(struct drm_device *dev, void *data, struct drm_file *filp)
 
 out:
 	amdgpu_cs_parser_fini(&parser, r, reserved_buffers);
+
+	up_read(&adev->reset_sem);
 
 	return r;
 }

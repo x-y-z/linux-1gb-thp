@@ -154,6 +154,7 @@ int __exfat_truncate(struct inode *inode, loff_t new_size)
 		struct timespec64 ts;
 		struct exfat_dentry *ep, *ep2;
 		struct exfat_entry_set_cache *es;
+		int err;
 
 		es = exfat_get_dentry_set(sb, &(ei->dir), ei->entry,
 				ES_ALL_ENTRIES);
@@ -188,7 +189,9 @@ int __exfat_truncate(struct inode *inode, loff_t new_size)
 		}
 
 		exfat_update_dir_chksum_with_entry_set(es);
-		exfat_free_dentry_set(es, inode_needs_sync(inode));
+		err = exfat_free_dentry_set(es, inode_needs_sync(inode));
+		if (err)
+			return err;
 	}
 
 	/* cut off from the FAT chain */
@@ -369,7 +372,6 @@ const struct file_operations exfat_file_operations = {
 	.write_iter	= generic_file_write_iter,
 	.mmap		= generic_file_mmap,
 	.fsync		= exfat_file_fsync,
-	.splice_read	= generic_file_splice_read,
 	.splice_write	= iter_file_splice_write,
 };
 

@@ -45,18 +45,13 @@ static int __init early_initrdmem(char *p)
 }
 early_param("initrdmem", early_initrdmem);
 
-/*
- * This is here as the initrd keyword has been in use since 11/2018
- * on ARM, PowerPC, and MIPS.
- * It should not be; it is reserved for bootloaders.
- */
 static int __init early_initrd(char *p)
 {
 	return early_initrdmem(p);
 }
 early_param("initrd", early_initrd);
 
-static int init_linuxrc(struct subprocess_info *info, struct cred *new)
+static int __init init_linuxrc(struct subprocess_info *info, struct cred *new)
 {
 	ksys_unshare(CLONE_FS | CLONE_FILES);
 	console_on_rootfs();
@@ -74,6 +69,8 @@ static void __init handle_initrd(void)
 	static char *argv[] = { "linuxrc", NULL, };
 	extern char *envp_init[];
 	int error;
+
+	pr_warn("using deprecated initrd support, will be removed in 2021.\n");
 
 	real_root_dev = new_encode_dev(ROOT_DEV);
 	create_dev("/dev/root.old", Root_RAM0);
@@ -115,21 +112,12 @@ static void __init handle_initrd(void)
 	if (!error)
 		printk("okay\n");
 	else {
-		int fd = ksys_open("/dev/root.old", O_RDWR, 0);
 		if (error == -ENOENT)
 			printk("/initrd does not exist. Ignored.\n");
 		else
 			printk("failed\n");
 		printk(KERN_NOTICE "Unmounting old root\n");
 		ksys_umount("/old", MNT_DETACH);
-		printk(KERN_NOTICE "Trying to free ramdisk memory ... ");
-		if (fd < 0) {
-			error = fd;
-		} else {
-			error = ksys_ioctl(fd, BLKFLSBUF, 0);
-			ksys_close(fd);
-		}
-		printk(!error ? "okay\n" : "failed\n");
 	}
 }
 

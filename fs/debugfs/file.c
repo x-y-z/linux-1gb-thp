@@ -231,6 +231,10 @@ FULL_PROXY_FUNC(read, ssize_t, filp,
 			loff_t *ppos),
 		ARGS(filp, buf, size, ppos));
 
+FULL_PROXY_FUNC(read_iter, ssize_t, iocb->ki_filp,
+		PROTO(struct kiocb *iocb, struct iov_iter *iter),
+		ARGS(iocb, iter));
+
 FULL_PROXY_FUNC(write, ssize_t, filp,
 		PROTO(struct file *filp, const char __user *buf, size_t size,
 			loff_t *ppos),
@@ -273,7 +277,7 @@ static int full_proxy_release(struct inode *inode, struct file *filp)
 		r = real_fops->release(inode, filp);
 
 	replace_fops(filp, d_inode(dentry)->i_fop);
-	kfree((void *)proxy_fops);
+	kfree(proxy_fops);
 	fops_put(real_fops);
 	return r;
 }
@@ -286,6 +290,8 @@ static void __full_proxy_fops_init(struct file_operations *proxy_fops,
 		proxy_fops->llseek = full_proxy_llseek;
 	if (real_fops->read)
 		proxy_fops->read = full_proxy_read;
+	if (real_fops->read_iter)
+		proxy_fops->read_iter = full_proxy_read_iter;
 	if (real_fops->write)
 		proxy_fops->write = full_proxy_write;
 	if (real_fops->poll)
@@ -918,11 +924,6 @@ struct dentry *debugfs_create_blob(const char *name, umode_t mode,
 }
 EXPORT_SYMBOL_GPL(debugfs_create_blob);
 
-struct array_data {
-	void *array;
-	u32 elements;
-};
-
 static size_t u32_format_array(char *buf, size_t bufsize,
 			       u32 *array, int array_size)
 {
@@ -943,8 +944,8 @@ static size_t u32_format_array(char *buf, size_t bufsize,
 
 static int u32_array_open(struct inode *inode, struct file *file)
 {
-	struct array_data *data = inode->i_private;
-	int size, elements = data->elements;
+	struct debugfs_u32_array *data = inode->i_private;
+	int size, elements = data->n_elements;
 	char *buf;
 
 	/*
@@ -959,7 +960,7 @@ static int u32_array_open(struct inode *inode, struct file *file)
 	buf[size] = 0;
 
 	file->private_data = buf;
-	u32_format_array(buf, size, data->array, data->elements);
+	u32_format_array(buf, size, data->array, data->n_elements);
 
 	return nonseekable_open(inode, file);
 }
@@ -996,8 +997,7 @@ static const struct file_operations u32_array_fops = {
  * @parent: a pointer to the parent dentry for this file.  This should be a
  *          directory dentry if set.  If this parameter is %NULL, then the
  *          file will be created in the root of the debugfs filesystem.
- * @array: u32 array that provides data.
- * @elements: total number of elements in the array.
+ * @array: wrapper struct containing data pointer and size of the array.
  *
  * This function creates a file in debugfs with the given name that exports
  * @array as data. If the @mode variable is so set it can be read from.
@@ -1005,17 +1005,10 @@ static const struct file_operations u32_array_fops = {
  * Once array is created its size can not be changed.
  */
 void debugfs_create_u32_array(const char *name, umode_t mode,
-			      struct dentry *parent, u32 *array, u32 elements)
+			      struct dentry *parent,
+			      struct debugfs_u32_array *array)
 {
-	struct array_data *data = kmalloc(sizeof(*data), GFP_KERNEL);
-
-	if (data == NULL)
-		return;
-
-	data->array = array;
-	data->elements = elements;
-
-	debugfs_create_file_unsafe(name, mode, parent, data, &u32_array_fops);
+	debugfs_create_file_unsafe(name, mode, parent, array, &u32_array_fops);
 }
 EXPORT_SYMBOL_GPL(debugfs_create_u32_array);
 
@@ -1080,7 +1073,7 @@ static int debugfs_open_regset32(struct inode *inode, struct file *file)
 
 static const struct file_operations fops_regset32 = {
 	.open =		debugfs_open_regset32,
-	.read =		seq_read,
+	.read_iter =		seq_read_iter,
 	.llseek =	seq_lseek,
 	.release =	single_release,
 };
@@ -1126,7 +1119,7 @@ static const struct file_operations debugfs_devm_entry_ops = {
 	.owner = THIS_MODULE,
 	.open = debugfs_devm_entry_open,
 	.release = single_release,
-	.read = seq_read,
+	.read_iter = seq_read_iter,
 	.llseek = seq_lseek
 };
 
