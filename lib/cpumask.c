@@ -7,6 +7,7 @@
 #include <linux/memblock.h>
 #include <linux/numa.h>
 #include <linux/spinlock.h>
+#include <linux/sched/isolation.h>
 
 /**
  * cpumask_next - get the next cpu in a cpumask
