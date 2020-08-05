@@ -72,6 +72,11 @@
 #define MADV_COLD	20		/* deactivate these pages */
 #define MADV_PAGEOUT	21		/* reclaim these pages */
 
+#define MADV_SPLITHUGEPAGE	22		/* Split huge page in range once */
+#define MADV_SPLITHUGEMAP	23		/* Split huge page table entry in range once */
+#define MADV_SPLITHUGEPUDPAGE	24		/* Split huge page in range once */
+#define MADV_SPLITHUGEPUDMAP	25		/* Split huge page table entry in range once */
+
 /* compatibility flags */
 #define MAP_FILE	0
 
