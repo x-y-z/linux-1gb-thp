@@ -622,4 +622,13 @@ struct migration_target_control {
 
 void destroy_compound_gigantic_page(struct page *page,
 					unsigned int order);
+
+void __unlock_page(struct page *page);
+
+int promote_huge_pmd_address(struct vm_area_struct *vma, unsigned long haddr);
+int promote_huge_pud_address(struct vm_area_struct *vma, unsigned long haddr);
+
+int promote_huge_page_address(struct vm_area_struct *vma, unsigned long haddr);
+int promote_huge_pud_page_address(struct vm_area_struct *vma, unsigned long haddr);
+
 #endif	/* __MM_INTERNAL_H */
