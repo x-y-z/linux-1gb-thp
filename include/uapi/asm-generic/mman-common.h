@@ -77,6 +77,11 @@
 #define MADV_SPLITHUGEPUDPAGE	24		/* Split huge page in range once */
 #define MADV_SPLITHUGEPUDMAP	25		/* Split huge page table entry in range once */
 
+#define MADV_PROMOTEHUGEPAGE	26		/* Promote range into huge page */
+#define MADV_PROMOTEHUGEMAP	27		/* Promote range into huge page table entry */
+#define MADV_PROMOTEHUGEPUDPAGE	28		/* Promote range into huge page */
+#define MADV_PROMOTEHUGEPUDMAP	39		/* Promote range into huge page table entry */
+
 /* compatibility flags */
 #define MAP_FILE	0
 

@@ -926,6 +926,38 @@ static long madvise_split_promote_hugepage(struct vm_area_struct *vma,
 				ret = -ENODEV;
 			addr += HPAGE_PUD_SIZE;
 			break;
+		case MADV_PROMOTEHUGEMAP:
+			haddr = addr & HPAGE_PMD_MASK;
+			if (haddr >= start && (haddr + HPAGE_PMD_SIZE) <= end)
+				promote_huge_pmd_address(vma, haddr);
+			else
+				ret = -ENODEV;
+			addr += HPAGE_PMD_SIZE;
+			break;
+		case MADV_PROMOTEHUGEPUDMAP:
+			haddr = addr & HPAGE_PUD_MASK;
+			if (haddr >= start && (haddr + HPAGE_PUD_SIZE) <= end)
+				promote_huge_pud_address(vma, haddr);
+			else
+				ret = -ENODEV;
+			addr += HPAGE_PUD_SIZE;
+			break;
+		case MADV_PROMOTEHUGEPAGE:
+			haddr = addr & HPAGE_PMD_MASK;
+			if (haddr >= start && (haddr + HPAGE_PMD_SIZE) <= end)
+				promote_huge_page_address(vma, haddr);
+			else
+				ret = -ENODEV;
+			addr += HPAGE_PMD_SIZE;
+			break;
+		case MADV_PROMOTEHUGEPUDPAGE:
+			haddr = addr & HPAGE_PUD_MASK;
+			if (haddr >= start && (haddr + HPAGE_PUD_SIZE) <= end)
+				promote_huge_pud_page_address(vma, haddr);
+			else
+				ret = -ENODEV;
+			addr += HPAGE_PUD_SIZE;
+			break;
 		default:
 			ret = -EINVAL;
 			break;
@@ -1018,6 +1050,10 @@ madvise_vma(struct task_struct *task, struct vm_area_struct *vma,
 	case MADV_SPLITHUGEMAP:
 	case MADV_SPLITHUGEPUDPAGE:
 	case MADV_SPLITHUGEPUDMAP:
+	case MADV_PROMOTEHUGEPAGE:
+	case MADV_PROMOTEHUGEMAP:
+	case MADV_PROMOTEHUGEPUDPAGE:
+	case MADV_PROMOTEHUGEPUDMAP:
 		return madvise_split_promote_hugepage(vma, prev, start, end, behavior);
 	default:
 		return madvise_behavior(vma, prev, start, end, behavior);
@@ -1059,6 +1095,10 @@ madvise_behavior_valid(int behavior)
 	case MADV_SPLITHUGEMAP:
 	case MADV_SPLITHUGEPUDPAGE:
 	case MADV_SPLITHUGEPUDMAP:
+	case MADV_PROMOTEHUGEPAGE:
+	case MADV_PROMOTEHUGEMAP:
+	case MADV_PROMOTEHUGEPUDPAGE:
+	case MADV_PROMOTEHUGEPUDMAP:
 		return true;
 
 	default:
