@@ -430,10 +430,9 @@ static void smaps_page_accumulate(struct mem_size_stats *mss,
 }
 
 static void smaps_account(struct mem_size_stats *mss, struct page *page,
-		bool compound, bool young, bool dirty, bool locked)
+		unsigned long size, bool young, bool dirty, bool locked)
 {
-	int i, nr = compound ? compound_nr(page) : 1;
-	unsigned long size = nr * PAGE_SIZE;
+	int i, nr = size / PAGE_SIZE;
 
 	/*
 	 * First accumulate quantities that depend only on |size| and the type
@@ -530,7 +529,7 @@ static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 	if (!page)
 		return;
 
-	smaps_account(mss, page, false, pte_young(*pte), pte_dirty(*pte), locked);
+	smaps_account(mss, page, PAGE_SIZE, pte_young(*pte), pte_dirty(*pte), locked);
 }
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
@@ -561,14 +560,72 @@ static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 		/* pass */;
 	else
 		mss->file_thp += HPAGE_PMD_SIZE;
-	smaps_account(mss, page, true, pmd_young(*pmd), pmd_dirty(*pmd), locked);
+	smaps_account(mss, page, HPAGE_PMD_SIZE, pmd_young(*pmd),
+		      pmd_dirty(*pmd), locked);
 }
+
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+static void smaps_pud_entry(pud_t *pud, unsigned long addr,
+		struct mm_walk *walk)
+{
+	struct mem_size_stats *mss = walk->private;
+	struct vm_area_struct *vma = walk->vma;
+	bool locked = !!(vma->vm_flags & VM_LOCKED);
+	struct page *page = NULL;
+
+	if (pud_present(*pud)) {
+		/* FOLL_DUMP will return -EFAULT on huge zero page */
+		page = follow_trans_huge_pud(vma, addr, pud, FOLL_DUMP);
+	}
+	if (IS_ERR_OR_NULL(page))
+		return;
+	if (PageAnon(page))
+		mss->anonymous_thp += HPAGE_PUD_SIZE;
+	else if (PageSwapBacked(page))
+		mss->shmem_thp += HPAGE_PUD_SIZE;
+	else if (is_zone_device_page(page))
+		/* pass */;
+	else
+		mss->file_thp += HPAGE_PUD_SIZE;
+	smaps_account(mss, page, HPAGE_PUD_SIZE, pud_young(*pud),
+		      pud_dirty(*pud), locked);
+}
+#else
+static void smaps_pud_entry(pud_t *pud, unsigned long addr,
+		struct mm_walk *walk)
+{
+}
+#endif
+
+
 #else
 static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 		struct mm_walk *walk)
 {
 }
 #endif
+
+static int smaps_pud_range(pud_t pud, pud_t *pudp, unsigned long addr,
+			unsigned long end, struct mm_walk *walk)
+{
+	struct vm_area_struct *vma = walk->vma;
+	spinlock_t *ptl;
+
+	ptl = pud_trans_huge_lock(pudp, vma);
+	if (ptl) {
+		if (memcmp(pudp, &pud, sizeof(pud)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
+		smaps_pud_entry(pudp, addr, walk);
+		spin_unlock(ptl);
+		walk->action = ACTION_CONTINUE;
+	}
+
+	cond_resched();
+	return 0;
+}
 
 static int smaps_pte_range(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
 			unsigned long end, struct mm_walk *walk)
@@ -716,6 +773,7 @@ static int smaps_hugetlb_range(pte_t *pte, unsigned long hmask,
 #endif /* HUGETLB_PAGE */
 
 static const struct mm_walk_ops smaps_walk_ops = {
+	.pud_entry		= smaps_pud_range,
 	.pmd_entry		= smaps_pte_range,
 	.hugetlb_entry		= smaps_hugetlb_range,
 };
