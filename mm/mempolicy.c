@@ -2139,7 +2139,10 @@ static struct page *alloc_page_interleave(gfp_t gfp, unsigned order,
 	struct page *page;
 
 	if (order > MAX_ORDER) {
-		page = alloc_contig_pages(1UL<<order, gfp, nid, NULL);
+		if (order == HPAGE_PUD_ORDER)
+			page = alloc_thp_pud_page(nid);
+		if (!page)
+			page = alloc_contig_pages(1UL<<order, gfp, nid, NULL);
 		if (page && (gfp & __GFP_COMP))
 			prep_compound_page(page, order);
 	} else
@@ -2219,8 +2222,11 @@ alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 			mpol_cond_put(pol);
 
 			if (order > MAX_ORDER) {
-				page = alloc_contig_pages(1UL<<order, gfp,
-							  hpage_node, NULL);
+				if (order == HPAGE_PUD_ORDER)
+					page = alloc_thp_pud_page(hpage_node);
+				if (!page)
+					page = alloc_contig_pages(1UL<<order,
+							gfp, hpage_node, NULL);
 				if (page && (gfp & __GFP_COMP))
 					prep_compound_page(page, order);
 				goto out;

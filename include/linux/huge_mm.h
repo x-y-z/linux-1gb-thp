@@ -24,6 +24,8 @@ extern struct page *follow_trans_huge_pud(struct vm_area_struct *vma,
 					  unsigned long addr,
 					  pud_t *pud,
 					  unsigned int flags);
+extern struct page *alloc_thp_pud_page(int nid);
+extern bool free_thp_pud_page(struct page *page, int order);
 #else
 static inline void huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud)
 {
@@ -42,6 +44,14 @@ struct page *follow_trans_huge_pud(struct vm_area_struct *vma,
 					  unsigned int flags)
 {
 	return NULL;
+}
+struct page *alloc_thp_pud_page(int nid)
+{
+	return NULL;
+}
+extern bool free_thp_pud_page(struct page *page, int order);
+{
+	return false;
 }
 #endif
 
@@ -560,5 +570,17 @@ static inline unsigned long thp_size(struct page *page)
 {
 	return PAGE_SIZE << thp_order(page);
 }
+
+#if defined(CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD) && defined(CONFIG_CMA)
+extern void __init thp_pud_cma_reserve(int order);
+extern void __init thp_pud_cma_check(void);
+#else
+static inline __init void thp_pud_cma_reserve(int order)
+{
+}
+static inline __init void thp_pud_cma_check(void)
+{
+}
+#endif
 
 #endif /* _LINUX_HUGE_MM_H */
