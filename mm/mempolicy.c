@@ -2139,7 +2139,12 @@ static struct page *alloc_page_interleave(gfp_t gfp, unsigned order,
 {
 	struct page *page;
 
-	page = __alloc_pages(gfp, order, nid);
+	if (order == HPAGE_PUD_ORDER) {
+		page = alloc_thp_pud_page(nid);
+		if (page && (gfp & __GFP_COMP))
+			prep_compound_page(page, order);
+	} else
+		page = __alloc_pages(gfp, order, nid);
 	/* skip NUMA_INTERLEAVE_HIT counter update if numa stats is disabled */
 	if (!static_branch_likely(&vm_numa_stat_key))
 		return page;
@@ -2213,6 +2218,13 @@ alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 		nmask = policy_nodemask(gfp, pol);
 		if (!nmask || node_isset(hpage_node, *nmask)) {
 			mpol_cond_put(pol);
+
+			if (order == HPAGE_PUD_ORDER) {
+				page = alloc_thp_pud_page(hpage_node);
+				if (page && (gfp & __GFP_COMP))
+					prep_compound_page(page, order);
+				goto out;
+			}
 			/*
 			 * First, try to allocate THP only on local node, but
 			 * don't reclaim unnecessarily, just compact.
