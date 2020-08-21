@@ -49,4 +49,19 @@ extern struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align,
 extern bool cma_release(struct cma *cma, const struct page *pages, unsigned int count);
 
 extern int cma_for_each_area(int (*it)(struct cma *cma, void *data), void *data);
+
+extern void cma_reserve(int min_order, unsigned long requested_size,
+			const char *name, struct cma *cma_struct[N_MEMORY]);
+#if defined(CONFIG_TRANSPARENT_HUGEPAGE) || defined(CONFIG_HUGETLBFS)
+extern void __init hugepage_cma_reserve(int order);
+extern void __init hugepage_cma_check(void);
+#else
+static inline void __init hugepage_cma_check(void)
+{
+}
+static inline void __init hugepage_cma_reserve(int order)
+{
+}
+#endif
+
 #endif
