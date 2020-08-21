@@ -17,7 +17,7 @@
 #include <linux/panic_notifier.h>
 #include <linux/pci.h>
 #include <linux/root_dev.h>
-#include <linux/hugetlb.h>
+#include <linux/cma.h>
 #include <linux/tboot.h>
 #include <linux/usb/xhci-dbgp.h>
 #include <linux/static_call.h>
@@ -1159,7 +1159,7 @@ void __init setup_arch(char **cmdline_p)
 	dma_contiguous_reserve(max_pfn_mapped << PAGE_SHIFT);
 
 	if (boot_cpu_has(X86_FEATURE_GBPAGES))
-		hugetlb_cma_reserve(PUD_SHIFT - PAGE_SHIFT);
+		hugepage_cma_reserve(PUD_SHIFT - PAGE_SHIFT);
 
 	/*
 	 * Reserve memory for crash kernel after SRAT is parsed so that it

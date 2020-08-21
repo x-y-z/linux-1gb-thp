@@ -1101,18 +1101,6 @@ static inline spinlock_t *huge_pte_lock(struct hstate *h,
 	return ptl;
 }
 
-#if defined(CONFIG_HUGETLB_PAGE) && defined(CONFIG_CMA)
-extern void __init hugetlb_cma_reserve(int order);
-extern void __init hugetlb_cma_check(void);
-#else
-static inline __init void hugetlb_cma_reserve(int order)
-{
-}
-static inline __init void hugetlb_cma_check(void)
-{
-}
-#endif
-
 bool want_pmd_share(struct vm_area_struct *vma, unsigned long addr);
 
 #ifndef __HAVE_ARCH_FLUSH_HUGETLB_TLB_RANGE
