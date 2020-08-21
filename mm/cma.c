@@ -625,6 +625,39 @@ bool cma_release_nowait(struct cma *cma, const struct page *pages,
 	return true;
 }
 
+/**
+ * cma_clear_bitmap_if_in_range() - clear bitmap for a given page
+ * This function clears bitmap of memory allocated by cma_alloc().
+ * It returns false when provided pages do not belong to contiguous area and
+ * true otherwise.
+ */
+bool cma_clear_bitmap_if_in_range(struct cma *cma, const struct page *pages,
+				  unsigned int count)
+{
+	struct cma_clear_bitmap_work *work;
+	unsigned long pfn;
+
+	if (!cma || !pages)
+		return false;
+
+	pfn = page_to_pfn(pages);
+
+	if (pfn < cma->base_pfn || pfn >= cma->base_pfn + cma->count)
+		return false;
+
+	if (pfn + count > cma->base_pfn + cma->count)
+		return false;
+
+	work = (struct cma_clear_bitmap_work *)kmalloc(sizeof(struct cma_clear_bitmap_work), GFP_ATOMIC);
+	INIT_WORK(&work->work, cma_clear_bitmap_fn);
+	work->cma = cma;
+	work->pfn = pfn;
+	work->count = count;
+	queue_work(cma_release_wq, &work->work);
+
+	return true;
+}
+
 int cma_for_each_area(int (*it)(struct cma *cma, void *data), void *data)
 {
 	int i;

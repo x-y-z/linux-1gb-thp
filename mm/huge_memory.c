@@ -33,6 +33,7 @@
 #include <linux/oom.h>
 #include <linux/numa.h>
 #include <linux/page_owner.h>
+#include <linux/cma.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -61,6 +62,10 @@ static struct shrinker deferred_split_shrinker;
 
 static atomic_t huge_zero_refcount;
 struct page *huge_zero_page __read_mostly;
+
+#ifdef CONFIG_CMA
+extern struct cma *hugepage_cma[MAX_NUMNODES];
+#endif
 
 bool transparent_hugepage_enabled(struct vm_area_struct *vma)
 {
@@ -2527,6 +2532,17 @@ static void __split_huge_pud_page(struct page *page, struct list_head *list,
 	/* no file-back page support yet */
 	VM_BUG_ON(!PageAnon(page));
 
+	/*
+	 * clear cma bitmap when we split pud page so the subpages can be freed
+	 * as normal pages
+	 */
+	if (IS_ENABLED(CONFIG_CMA)) {
+		struct cma *cma = hugepage_cma[page_to_nid(head)];
+
+		VM_BUG_ON(!cma_clear_bitmap_if_in_range(cma, head,
+				thp_nr_pages(head)));
+	}
+
 	for (i = HPAGE_PUD_NR - HPAGE_PMD_NR; i >= 1; i -= HPAGE_PMD_NR)
 		__split_huge_pud_page_tail(head, i, lruvec, list);
 
@@ -3764,3 +3780,21 @@ void remove_migration_pmd(struct page_vma_mapped_walk *pvmw, struct page *new)
 	update_mmu_cache_pmd(vma, address, pvmw->pmd);
 }
 #endif
+
+struct page *alloc_thp_pud_page(int nid)
+{
+	struct page *page = NULL;
+#ifdef CONFIG_CMA
+	page = cma_alloc(hugepage_cma[nid], HPAGE_PUD_NR, HPAGE_PUD_ORDER, true);
+#endif
+	return page;
+}
+
+bool free_thp_pud_page(struct page *page, int order)
+{
+	bool ret = false;
+#ifdef CONFIG_CMA
+	ret = cma_release(hugepage_cma[page_to_nid(page)], page, 1<<order);
+#endif
+	return ret;
+}

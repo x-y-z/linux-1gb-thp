@@ -24,6 +24,8 @@ extern struct page *follow_trans_huge_pud(struct vm_area_struct *vma,
 					  unsigned long addr,
 					  pud_t *pud,
 					  unsigned int flags);
+extern struct page *alloc_thp_pud_page(int nid);
+extern bool free_thp_pud_page(struct page *page, int order);
 #else
 static inline void huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud)
 {
@@ -42,6 +44,14 @@ struct page *follow_trans_huge_pud(struct vm_area_struct *vma,
 					  unsigned int flags)
 {
 	return NULL;
+}
+struct page *alloc_thp_pud_page(int nid)
+{
+	return NULL;
+}
+extern bool free_thp_pud_page(struct page *page, int order);
+{
+	return false;
 }
 #endif
 
