@@ -5636,53 +5636,8 @@ early_param("hugetlb_cma", cmdline_parse_hugetlb_cma);
 
 void __init hugetlb_cma_reserve(int order)
 {
-	unsigned long size, reserved, per_node;
-	int nid;
-
 	cma_reserve_called = true;
-
-	if (!hugetlb_cma_size)
-		return;
-
-	if (hugetlb_cma_size < (PAGE_SIZE << order)) {
-		pr_warn("hugetlb_cma: cma area should be at least %lu MiB\n",
-			(PAGE_SIZE << order) / SZ_1M);
-		return;
-	}
-
-	/*
-	 * If 3 GB area is requested on a machine with 4 numa nodes,
-	 * let's allocate 1 GB on first three nodes and ignore the last one.
-	 */
-	per_node = DIV_ROUND_UP(hugetlb_cma_size, nr_online_nodes);
-	pr_info("hugetlb_cma: reserve %lu MiB, up to %lu MiB per node\n",
-		hugetlb_cma_size / SZ_1M, per_node / SZ_1M);
-
-	reserved = 0;
-	for_each_node_state(nid, N_ONLINE) {
-		int res;
-		char name[20];
-
-		size = min(per_node, hugetlb_cma_size - reserved);
-		size = round_up(size, PAGE_SIZE << order);
-
-		snprintf(name, 20, "hugetlb%d", nid);
-		res = cma_declare_contiguous_nid(0, size, 0, PAGE_SIZE << order,
-						 0, false, name,
-						 &hugetlb_cma[nid], nid);
-		if (res) {
-			pr_warn("hugetlb_cma: reservation failed: err %d, node %d",
-				res, nid);
-			continue;
-		}
-
-		reserved += size;
-		pr_info("hugetlb_cma: reserved %lu MiB on node %d\n",
-			size / SZ_1M, nid);
-
-		if (reserved >= hugetlb_cma_size)
-			break;
-	}
+	cma_reserve(order, hugetlb_cma_size, "hugetlb", hugetlb_cma);
 }
 
 void __init hugetlb_cma_check(void)

@@ -541,3 +541,61 @@ int cma_for_each_area(int (*it)(struct cma *cma, void *data), void *data)
 
 	return 0;
 }
+
+/*
+ * cma_reserve() - reserve CMA for gigantic pages on nodes with memory
+ *
+ * must be called after free_area_init() that updates N_MEMORY via node_set_state().
+ * cma_reserve() scans over N_MEMORY nodemask and hence expects the platforms
+ * to have initialized N_MEMORY state.
+ */
+void __init cma_reserve(int min_order, unsigned long requested_size, const char *name,
+		 struct cma *cma_struct[N_ONLINE])
+{
+	unsigned long size, reserved, per_node;
+	int nid;
+
+	if (!requested_size)
+		return;
+
+	if (requested_size < (PAGE_SIZE << min_order)) {
+		pr_warn("%s_cma: cma area should be at least %lu MiB\n",
+			name, (PAGE_SIZE << min_order) / SZ_1M);
+		return;
+	}
+
+	/*
+	 * If 3 GB area is requested on a machine with 4 numa nodes,
+	 * let's allocate 1 GB on first three nodes and ignore the last one.
+	 */
+	per_node = DIV_ROUND_UP(requested_size, nr_online_nodes);
+	pr_info("%s_cma: reserve %lu MiB, up to %lu MiB per node\n",
+		name, requested_size / SZ_1M, per_node / SZ_1M);
+
+	reserved = 0;
+	for_each_node_state(nid, N_ONLINE) {
+		int res;
+		char node_name[20];
+
+		size = min(per_node, requested_size - reserved);
+		size = round_up(size, PAGE_SIZE << min_order);
+
+		snprintf(node_name, 20, "%s%d", name, nid);
+		res = cma_declare_contiguous_nid(0, size, 0,
+						 PAGE_SIZE << min_order,
+						 0, false, node_name,
+						 &cma_struct[nid], nid);
+		if (res) {
+			pr_warn("%s_cma: reservation failed: err %d, node %d",
+				name, res, nid);
+			continue;
+		}
+
+		reserved += size;
+		pr_info("%s_cma: reserved %lu MiB on node %d\n",
+			name, size / SZ_1M, nid);
+
+		if (reserved >= requested_size)
+			break;
+	}
+}
