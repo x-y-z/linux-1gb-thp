@@ -713,6 +713,6 @@ void __init gigantic_hugetlb_cma_reserve(void)
 
 	if (order) {
 		VM_WARN_ON(order < MAX_ORDER);
-		hugetlb_cma_reserve(order);
+		hugepage_cma_reserve(order);
 	}
 }
