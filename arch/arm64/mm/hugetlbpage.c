@@ -52,7 +52,7 @@ void __init arm64_hugetlb_cma_reserve(void)
 	 * breaking this assumption.
 	 */
 	WARN_ON(order <= MAX_ORDER);
-	hugetlb_cma_reserve(order);
+	hugepage_cma_reserve(order);
 }
 #endif /* CONFIG_CMA */
 
