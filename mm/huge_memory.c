@@ -33,6 +33,7 @@
 #include <linux/oom.h>
 #include <linux/numa.h>
 #include <linux/page_owner.h>
+#include <linux/cma.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -61,6 +62,10 @@ static struct shrinker deferred_split_shrinker;
 
 static atomic_t huge_zero_refcount;
 struct page *huge_zero_page __read_mostly;
+
+#ifdef CONFIG_CMA
+extern struct cma *hugepage_cma[MAX_NUMNODES];
+#endif
 
 bool transparent_hugepage_enabled(struct vm_area_struct *vma)
 {
@@ -3568,3 +3573,21 @@ void remove_migration_pmd(struct page_vma_mapped_walk *pvmw, struct page *new)
 	update_mmu_cache_pmd(vma, address, pvmw->pmd);
 }
 #endif
+
+struct page *alloc_thp_pud_page(int nid)
+{
+	struct page *page = NULL;
+#ifdef CONFIG_CMA
+	page = cma_alloc(hugepage_cma[nid], HPAGE_PUD_NR, HPAGE_PUD_ORDER, true);
+#endif
+	return page;
+}
+
+bool free_thp_pud_page(struct page *page, int order)
+{
+	bool ret = false;
+#ifdef CONFIG_CMA
+	ret = cma_release(hugepage_cma[page_to_nid(page)], page, 1<<order);
+#endif
+	return ret;
+}
