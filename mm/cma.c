@@ -98,6 +98,7 @@ static void __init cma_activate_area(struct cma *cma)
 	unsigned long base_pfn = cma->base_pfn, pfn = base_pfn;
 	unsigned i = cma->count >> pageblock_order;
 	struct zone *zone;
+	unsigned long saved_base_pfn = cma->base_pfn, saved_count = cma->count;
 
 	cma->bitmap = bitmap_zalloc(cma_bitmap_maxno(cma), GFP_KERNEL);
 	if (!cma->bitmap)
@@ -106,6 +107,9 @@ static void __init cma_activate_area(struct cma *cma)
 	WARN_ON_ONCE(!pfn_valid(pfn));
 	zone = page_zone(pfn_to_page(pfn));
 
+	/* avoid freeing pages via cma_release at initialization phase. */
+	cma->base_pfn = 0;
+	cma->count = 0;
 	do {
 		unsigned j;
 
@@ -124,6 +128,8 @@ static void __init cma_activate_area(struct cma *cma)
 		init_cma_reserved_pageblock(pfn_to_page(base_pfn));
 	} while (--i);
 
+	cma->base_pfn = saved_base_pfn;
+	cma->count = saved_count;
 	mutex_init(&cma->lock);
 
 #ifdef CONFIG_CMA_DEBUGFS

@@ -1509,6 +1509,8 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 		if (!free_thp_pud_page(page, order))
 			free_contig_range(page_to_pfn(page), 1 << order);
 	} else {
+		if (free_thp_pud_page(page, order))
+			return;
 		migratetype = get_pfnblock_migratetype(page, pfn);
 		local_irq_save(flags);
 		__count_vm_events(PGFREE, 1 << order);
