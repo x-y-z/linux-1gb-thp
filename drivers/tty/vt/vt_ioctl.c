@@ -181,7 +181,7 @@ static void vt_event_wait(struct vt_event_wait *vw)
 
 /**
  *	vt_event_wait_ioctl	-	event ioctl handler
- *	@arg: argument to ioctl
+ *	@event: argument to ioctl (the event)
  *
  *	Implement the VT_WAITEVENT ioctl using the VT event interface
  */
@@ -208,7 +208,6 @@ static int vt_event_wait_ioctl(struct vt_event __user *event)
 
 /**
  *	vt_waitactive	-	active console wait
- *	@event: event code
  *	@n: new console
  *
  *	Helper for event waits. Used to implement the legacy
@@ -806,12 +805,22 @@ static int vt_resizex(struct vc_data *vc, struct vt_consize __user *cs)
 		console_lock();
 		vcp = vc_cons[i].d;
 		if (vcp) {
+			int ret;
+			int save_scan_lines = vcp->vc_scan_lines;
+			int save_font_height = vcp->vc_font.height;
+
 			if (v.v_vlin)
 				vcp->vc_scan_lines = v.v_vlin;
 			if (v.v_clin)
 				vcp->vc_font.height = v.v_clin;
 			vcp->vc_resize_user = 1;
-			vc_resize(vcp, v.v_cols, v.v_rows);
+			ret = vc_resize(vcp, v.v_cols, v.v_rows);
+			if (ret) {
+				vcp->vc_scan_lines = save_scan_lines;
+				vcp->vc_font.height = save_font_height;
+				console_unlock();
+				return ret;
+			}
 		}
 		console_unlock();
 	}

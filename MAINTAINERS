@@ -802,6 +802,13 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/interrupt-controller/amazon,al-fic.txt
 F:	drivers/irqchip/irq-al-fic.c
 
+AMAZON ANNAPURNA LABS MEMORY CONTROLLER EDAC
+M:	Talel Shenhar <talel@amazon.com>
+M:	Talel Shenhar <talelshenhar@gmail.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/edac/amazon,al-mc-edac.yaml
+F:	drivers/edac/al_mc_edac.c
+
 AMAZON ANNAPURNA LABS THERMAL MMIO DRIVER
 M:	Talel Shenhar <talel@amazon.com>
 S:	Maintained
@@ -2219,8 +2226,8 @@ ARM/OPENMOKO NEO FREERUNNER (GTA02) MACHINE SUPPORT
 L:	openmoko-kernel@lists.openmoko.org (subscribers-only)
 S:	Orphan
 W:	http://wiki.openmoko.org/wiki/Neo_FreeRunner
-F:	arch/arm/mach-s3c24xx/gta02.h
-F:	arch/arm/mach-s3c24xx/mach-gta02.c
+F:	arch/arm/mach-s3c/gta02.h
+F:	arch/arm/mach-s3c/mach-gta02.c
 
 ARM/Orion SoC/Technologic Systems TS-78xx platform support
 M:	Alexander Clouter <alex@digriz.org.uk>
@@ -2409,10 +2416,8 @@ F:	arch/arm/boot/dts/exynos*
 F:	arch/arm/boot/dts/s3c*
 F:	arch/arm/boot/dts/s5p*
 F:	arch/arm/mach-exynos*/
-F:	arch/arm/mach-s3c24*/
-F:	arch/arm/mach-s3c64xx/
+F:	arch/arm/mach-s3c/
 F:	arch/arm/mach-s5p*/
-F:	arch/arm/plat-samsung/
 F:	arch/arm64/boot/dts/exynos/
 F:	drivers/*/*/*s3c24*
 F:	drivers/*/*s3c24*
@@ -2423,6 +2428,9 @@ F:	drivers/soc/samsung/
 F:	drivers/tty/serial/samsung*
 F:	include/linux/soc/samsung/
 N:	exynos
+N:	s3c2410
+N:	s3c64xx
+N:	s5pv210
 
 ARM/SAMSUNG MOBILE MACHINE SUPPORT
 M:	Kyungmin Park <kyungmin.park@samsung.com>
@@ -2504,7 +2512,7 @@ S:	Maintained
 F:	drivers/clk/socfpga/
 
 ARM/SOCFPGA EDAC SUPPORT
-M:	Thor Thayer <thor.thayer@linux.intel.com>
+M:	Dinh Nguyen <dinguyen@kernel.org>
 S:	Maintained
 F:	drivers/edac/altera_edac.
 
@@ -4694,6 +4702,15 @@ S:	Supported
 W:	http://www.chelsio.com
 F:	drivers/crypto/chelsio
 
+CXGB4 INLINE CRYPTO DRIVER
+M:	Ayush Sawal <ayush.sawal@chelsio.com>
+M:	Vinay Kumar Yadav <vinay.yadav@chelsio.com>
+M:	Rohit Maheshwari <rohitm@chelsio.com>
+L:	netdev@vger.kernel.org
+S:	Supported
+W:	http://www.chelsio.com
+F:	drivers/net/ethernet/chelsio/inline_crypto/
+
 CXGB4 ETHERNET DRIVER (CXGB4)
 M:	Vishal Kulkarni <vishal@chelsio.com>
 L:	netdev@vger.kernel.org
@@ -5241,6 +5258,7 @@ DOCUMENTATION
 M:	Jonathan Corbet <corbet@lwn.net>
 L:	linux-doc@vger.kernel.org
 S:	Maintained
+P:	Documentation/doc-guide/maintainer-profile.rst
 T:	git git://git.lwn.net/linux.git docs-next
 F:	Documentation/
 F:	scripts/documentation-file-ref-check
@@ -6168,7 +6186,7 @@ S:	Supported
 F:	drivers/edac/bluefield_edac.c
 
 EDAC-CALXEDA
-M:	Robert Richter <rric@kernel.org>
+M:	Andre Przywara <andre.przywara@arm.com>
 L:	linux-edac@vger.kernel.org
 S:	Maintained
 F:	drivers/edac/highbank*
@@ -6812,6 +6830,7 @@ F:	drivers/net/ethernet/nvidia/*
 
 FPGA DFL DRIVERS
 M:	Wu Hao <hao.wu@intel.com>
+R:	Tom Rix <trix@redhat.com>
 L:	linux-fpga@vger.kernel.org
 S:	Maintained
 F:	Documentation/fpga/dfl.rst
@@ -6820,6 +6839,7 @@ F:	include/uapi/linux/fpga-dfl.h
 
 FPGA MANAGER FRAMEWORK
 M:	Moritz Fischer <mdf@kernel.org>
+R:	Tom Rix <trix@redhat.com>
 L:	linux-fpga@vger.kernel.org
 S:	Maintained
 W:	http://www.rocketboards.org
@@ -6884,6 +6904,14 @@ M:	Zhang Wei <zw@zh-kernel.org>
 L:	linuxppc-dev@lists.ozlabs.org
 S:	Maintained
 F:	drivers/dma/fsldma.*
+
+FREESCALE DSPI DRIVER
+M:	Vladimir Oltean <olteanv@gmail.com>
+L:	linux-spi@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/spi/spi-fsl-dspi.txt
+F:	drivers/spi/spi-fsl-dspi.c
+F:	include/linux/spi/spi-fsl-dspi.h
 
 FREESCALE ENETC ETHERNET DRIVERS
 M:	Claudiu Manoil <claudiu.manoil@nxp.com>
@@ -7173,7 +7201,7 @@ FUSE: FILESYSTEM IN USERSPACE
 M:	Miklos Szeredi <miklos@szeredi.hu>
 L:	linux-fsdevel@vger.kernel.org
 S:	Maintained
-W:	http://fuse.sourceforge.net/
+W:	https://github.com/libfuse/
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/mszeredi/fuse.git
 F:	Documentation/filesystems/fuse.rst
 F:	fs/fuse/
@@ -7903,6 +7931,12 @@ F:	drivers/crypto/hisilicon/sec2/sec.h
 F:	drivers/crypto/hisilicon/sec2/sec_crypto.c
 F:	drivers/crypto/hisilicon/sec2/sec_crypto.h
 F:	drivers/crypto/hisilicon/sec2/sec_main.c
+
+HISILICON STAGING DRIVERS FOR HIKEY 960/970
+M:	Mauro Carvalho Chehab <mchehab+huawei@kernel.org>
+L:	devel@driverdev.osuosl.org
+S:	Maintained
+F:	drivers/staging/hikey9xx/
 
 HISILICON TRUE RANDOM NUMBER GENERATOR V2 SUPPORT
 M:	Zaibo Xu <xuzaibo@huawei.com>
@@ -12431,6 +12465,13 @@ F:	drivers/iio/gyro/fxas21002c_core.c
 F:	drivers/iio/gyro/fxas21002c_i2c.c
 F:	drivers/iio/gyro/fxas21002c_spi.c
 
+NXP PTN5150A CC LOGIC AND EXTCON DRIVER
+M:	Krzysztof Kozlowski <krzk@kernel.org>
+L:	linux-kernel@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/extcon/extcon-ptn5150.yaml
+F:	drivers/extcon/extcon-ptn5150.c
+
 NXP SGTL5000 DRIVER
 M:	Fabio Estevam <festevam@gmail.com>
 L:	alsa-devel@alsa-project.org (moderated for non-subscribers)
@@ -13925,6 +13966,7 @@ PRINTK
 M:	Petr Mladek <pmladek@suse.com>
 M:	Sergey Senozhatsky <sergey.senozhatsky@gmail.com>
 R:	Steven Rostedt <rostedt@goodmis.org>
+R:	John Ogness <john.ogness@linutronix.de>
 S:	Maintained
 F:	include/linux/printk.h
 F:	kernel/printk/
@@ -14042,6 +14084,13 @@ S:	Maintained
 T:	git git://linuxtv.org/media_tree.git
 F:	Documentation/admin-guide/media/pulse8-cec.rst
 F:	drivers/media/cec/usb/pulse8/
+
+PURISM LIBREM 5
+M:	Purism Kernel Team <kernel@puri.sm>
+S:	Supported
+B:	https://source.puri.sm/Librem5/linux-next/issues
+T:	https://source.puri.sm/Librem5/linux-next
+F:	arch/arm64/boot/dts/freescale/imx8mq-librem5*
 
 PVRUSB2 VIDEO4LINUX DRIVER
 M:	Mike Isely <isely@pobox.com>
@@ -15302,6 +15351,8 @@ F:	Documentation/devicetree/bindings/clock/samsung,s3c*
 F:	Documentation/devicetree/bindings/clock/samsung,s5p*
 F:	drivers/clk/samsung/
 F:	include/dt-bindings/clock/exynos*.h
+F:	include/linux/clk/samsung.h
+F:	include/linux/platform_data/clk-s3c2410.h
 
 SAMSUNG SPI DRIVERS
 M:	Kukjin Kim <kgene@kernel.org>
@@ -15313,6 +15364,7 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/spi/spi-samsung.txt
 F:	drivers/spi/spi-s3c*
 F:	include/linux/platform_data/spi-s3c64xx.h
+F:	include/linux/spi/s3c24xx-fiq.h
 
 SAMSUNG SXGBE DRIVERS
 M:	Byungho An <bh74.an@samsung.com>
@@ -15570,6 +15622,7 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/pcmoore/selinux.git
 F:	Documentation/ABI/obsolete/sysfs-selinux-checkreqprot
 F:	Documentation/ABI/obsolete/sysfs-selinux-disable
 F:	Documentation/admin-guide/LSM/SELinux.rst
+F:	include/trace/events/avc.h
 F:	include/uapi/linux/selinux_netlink.h
 F:	scripts/selinux/
 F:	security/selinux/
@@ -15826,19 +15879,17 @@ F:	drivers/video/fbdev/simplefb.c
 F:	include/linux/platform_data/simplefb.h
 
 SIMTEC EB110ATX (Chalice CATS)
-M:	Vincent Sanders <vince@simtec.co.uk>
 M:	Simtec Linux Team <linux@simtec.co.uk>
 S:	Supported
 W:	http://www.simtec.co.uk/products/EB110ATX/
 
 SIMTEC EB2410ITX (BAST)
-M:	Vincent Sanders <vince@simtec.co.uk>
 M:	Simtec Linux Team <linux@simtec.co.uk>
 S:	Supported
 W:	http://www.simtec.co.uk/products/EB2410ITX/
-F:	arch/arm/mach-s3c24xx/bast-ide.c
-F:	arch/arm/mach-s3c24xx/bast-irq.c
-F:	arch/arm/mach-s3c24xx/mach-bast.c
+F:	arch/arm/mach-s3c/bast-ide.c
+F:	arch/arm/mach-s3c/bast-irq.c
+F:	arch/arm/mach-s3c/mach-bast.c
 
 SIOX
 M:	Thorsten Scherer <t.scherer@eckelmann.de>
@@ -17117,8 +17168,8 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/arm/keystone/ti,k3-sci-common.yaml
 F:	Documentation/devicetree/bindings/arm/keystone/ti,sci.txt
 F:	Documentation/devicetree/bindings/clock/ti,sci-clk.txt
-F:	Documentation/devicetree/bindings/interrupt-controller/ti,sci-inta.txt
-F:	Documentation/devicetree/bindings/interrupt-controller/ti,sci-intr.txt
+F:	Documentation/devicetree/bindings/interrupt-controller/ti,sci-inta.yaml
+F:	Documentation/devicetree/bindings/interrupt-controller/ti,sci-intr.yaml
 F:	Documentation/devicetree/bindings/reset/ti,sci-reset.txt
 F:	Documentation/devicetree/bindings/soc/ti/sci-pm-domain.txt
 F:	drivers/clk/keystone/sci-clk.c
@@ -17511,8 +17562,9 @@ S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/paulmck/linux-rcu.git dev
 F:	Documentation/RCU/torture.rst
 F:	kernel/locking/locktorture.c
-F:	kernel/rcu/rcuperf.c
+F:	kernel/rcu/rcuscale.c
 F:	kernel/rcu/rcutorture.c
+F:	kernel/rcu/refscale.c
 F:	kernel/torture.c
 
 TOSHIBA ACPI EXTRAS DRIVER
@@ -18757,7 +18809,7 @@ F:	Documentation/devicetree/bindings/mfd/wm831x.txt
 F:	Documentation/devicetree/bindings/regulator/wlf,arizona.yaml
 F:	Documentation/devicetree/bindings/sound/wlf,arizona.yaml
 F:	Documentation/hwmon/wm83??.rst
-F:	arch/arm/mach-s3c64xx/mach-crag6410*
+F:	arch/arm/mach-s3c/mach-crag6410*
 F:	drivers/clk/clk-wm83*.c
 F:	drivers/extcon/extcon-arizona.c
 F:	drivers/gpio/gpio-*wm*.c
