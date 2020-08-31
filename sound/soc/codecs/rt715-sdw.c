@@ -527,8 +527,8 @@ static int rt715_sdw_probe(struct sdw_slave *slave,
 
 	/* Regmap Initialization */
 	sdw_regmap = devm_regmap_init_sdw(slave, &rt715_sdw_regmap);
-	if (!sdw_regmap)
-		return -EINVAL;
+	if (IS_ERR(sdw_regmap))
+		return PTR_ERR(sdw_regmap);
 
 	regmap = devm_regmap_init(&slave->dev, NULL, &slave->dev,
 		&rt715_regmap);
@@ -541,7 +541,7 @@ static int rt715_sdw_probe(struct sdw_slave *slave,
 }
 
 static const struct sdw_device_id rt715_id[] = {
-	SDW_SLAVE_ENTRY(0x025d, 0x715, 0),
+	SDW_SLAVE_ENTRY_EXT(0x025d, 0x715, 0x2, 0, 0),
 	{},
 };
 MODULE_DEVICE_TABLE(sdw, rt715_id);

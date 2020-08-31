@@ -157,10 +157,11 @@ static int bpf_map_update_value(struct bpf_map *map, struct fd f, void *key,
 	if (bpf_map_is_dev_bound(map)) {
 		return bpf_map_offload_update_elem(map, key, value, flags);
 	} else if (map->map_type == BPF_MAP_TYPE_CPUMAP ||
-		   map->map_type == BPF_MAP_TYPE_SOCKHASH ||
-		   map->map_type == BPF_MAP_TYPE_SOCKMAP ||
 		   map->map_type == BPF_MAP_TYPE_STRUCT_OPS) {
 		return map->ops->map_update_elem(map, key, value, flags);
+	} else if (map->map_type == BPF_MAP_TYPE_SOCKHASH ||
+		   map->map_type == BPF_MAP_TYPE_SOCKMAP) {
+		return sock_map_update_elem_sys(map, key, value, flags);
 	} else if (IS_FD_PROG_ARRAY(map)) {
 		return bpf_fd_array_map_update_elem(map, f.file, key, value,
 						    flags);
@@ -768,7 +769,8 @@ static int map_check_btf(struct bpf_map *map, const struct btf *btf,
 		if (map->map_type != BPF_MAP_TYPE_HASH &&
 		    map->map_type != BPF_MAP_TYPE_ARRAY &&
 		    map->map_type != BPF_MAP_TYPE_CGROUP_STORAGE &&
-		    map->map_type != BPF_MAP_TYPE_SK_STORAGE)
+		    map->map_type != BPF_MAP_TYPE_SK_STORAGE &&
+		    map->map_type != BPF_MAP_TYPE_INODE_STORAGE)
 			return -ENOTSUPP;
 		if (map->spin_lock_off + sizeof(struct bpf_spin_lock) >
 		    map->value_size) {
@@ -2634,7 +2636,7 @@ static int bpf_raw_tp_link_fill_link_info(const struct bpf_link *link,
 	u32 ulen = info->raw_tracepoint.tp_name_len;
 	size_t tp_len = strlen(tp_name);
 
-	if (ulen && !ubuf)
+	if (!ulen ^ !ubuf)
 		return -EINVAL;
 
 	info->raw_tracepoint.tp_name_len = tp_len + 1;
@@ -4014,9 +4016,31 @@ static int link_detach(union bpf_attr *attr)
 	return ret;
 }
 
-static int bpf_link_inc_not_zero(struct bpf_link *link)
+static struct bpf_link *bpf_link_inc_not_zero(struct bpf_link *link)
 {
-	return atomic64_fetch_add_unless(&link->refcnt, 1, 0) ? 0 : -ENOENT;
+	return atomic64_fetch_add_unless(&link->refcnt, 1, 0) ? link : ERR_PTR(-ENOENT);
+}
+
+struct bpf_link *bpf_link_by_id(u32 id)
+{
+	struct bpf_link *link;
+
+	if (!id)
+		return ERR_PTR(-ENOENT);
+
+	spin_lock_bh(&link_idr_lock);
+	/* before link is "settled", ID is 0, pretend it doesn't exist yet */
+	link = idr_find(&link_idr, id);
+	if (link) {
+		if (link->id)
+			link = bpf_link_inc_not_zero(link);
+		else
+			link = ERR_PTR(-EAGAIN);
+	} else {
+		link = ERR_PTR(-ENOENT);
+	}
+	spin_unlock_bh(&link_idr_lock);
+	return link;
 }
 
 #define BPF_LINK_GET_FD_BY_ID_LAST_FIELD link_id
@@ -4025,7 +4049,7 @@ static int bpf_link_get_fd_by_id(const union bpf_attr *attr)
 {
 	struct bpf_link *link;
 	u32 id = attr->link_id;
-	int fd, err;
+	int fd;
 
 	if (CHECK_ATTR(BPF_LINK_GET_FD_BY_ID))
 		return -EINVAL;
@@ -4033,21 +4057,9 @@ static int bpf_link_get_fd_by_id(const union bpf_attr *attr)
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
-	spin_lock_bh(&link_idr_lock);
-	link = idr_find(&link_idr, id);
-	/* before link is "settled", ID is 0, pretend it doesn't exist yet */
-	if (link) {
-		if (link->id)
-			err = bpf_link_inc_not_zero(link);
-		else
-			err = -EAGAIN;
-	} else {
-		err = -ENOENT;
-	}
-	spin_unlock_bh(&link_idr_lock);
-
-	if (err)
-		return err;
+	link = bpf_link_by_id(id);
+	if (IS_ERR(link))
+		return PTR_ERR(link);
 
 	fd = bpf_link_new_fd(link);
 	if (fd < 0)

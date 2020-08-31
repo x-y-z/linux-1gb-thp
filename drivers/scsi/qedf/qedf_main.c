@@ -1558,6 +1558,17 @@ static void qedf_rport_event_handler(struct fc_lport *lport,
 		if (port_id == FC_FID_DIR_SERV)
 			break;
 
+		if (rdata->spp_type != FC_TYPE_FCP) {
+			QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_DISC,
+			    "No action since spp type isn't FCP\n");
+			break;
+		}
+		if (!(rdata->ids.roles & FC_RPORT_ROLE_FCP_TARGET)) {
+			QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_DISC,
+			    "Not FCP target so no action\n");
+			break;
+		}
+
 		if (!rport) {
 			QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_DISC,
 			    "port_id=%x - rport notcreated Yet!!\n", port_id);
@@ -3863,7 +3874,7 @@ void qedf_stag_change_work(struct work_struct *work)
 	    container_of(work, struct qedf_ctx, stag_work.work);
 
 	if (!qedf) {
-		QEDF_ERR(&qedf->dbg_ctx, "qedf is NULL");
+		QEDF_ERR(NULL, "qedf is NULL");
 		return;
 	}
 	QEDF_ERR(&qedf->dbg_ctx, "Performing software context reset.\n");

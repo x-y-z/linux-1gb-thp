@@ -650,12 +650,12 @@ mt7615_mcu_add_beacon_offload(struct mt7615_dev *dev,
 	memcpy(req.pkt + MT_TXD_SIZE, skb->data, skb->len);
 	req.pkt_len = cpu_to_le16(MT_TXD_SIZE + skb->len);
 	req.tim_ie_pos = cpu_to_le16(MT_TXD_SIZE + offs.tim_offset);
-	if (offs.csa_counter_offs[0]) {
+	if (offs.cntdwn_counter_offs[0]) {
 		u16 csa_offs;
 
-		csa_offs = MT_TXD_SIZE + offs.csa_counter_offs[0] - 4;
+		csa_offs = MT_TXD_SIZE + offs.cntdwn_counter_offs[0] - 4;
 		req.csa_ie_pos = cpu_to_le16(csa_offs);
-		req.csa_cnt = skb->data[offs.csa_counter_offs[0]];
+		req.csa_cnt = skb->data[offs.cntdwn_counter_offs[0]];
 	}
 	dev_kfree_skb(skb);
 
@@ -1713,10 +1713,10 @@ mt7615_mcu_uni_add_beacon_offload(struct mt7615_dev *dev,
 	req.beacon_tlv.pkt_len = cpu_to_le16(MT_TXD_SIZE + skb->len);
 	req.beacon_tlv.tim_ie_pos = cpu_to_le16(MT_TXD_SIZE + offs.tim_offset);
 
-	if (offs.csa_counter_offs[0]) {
+	if (offs.cntdwn_counter_offs[0]) {
 		u16 csa_offs;
 
-		csa_offs = MT_TXD_SIZE + offs.csa_counter_offs[0] - 4;
+		csa_offs = MT_TXD_SIZE + offs.cntdwn_counter_offs[0] - 4;
 		req.beacon_tlv.csa_ie_pos = cpu_to_le16(csa_offs);
 	}
 	dev_kfree_skb(skb);
@@ -2128,7 +2128,8 @@ static int mt7615_load_n9(struct mt7615_dev *dev, const char *name)
 		 sizeof(dev->mt76.hw->wiphy->fw_version),
 		 "%.10s-%.15s", hdr->fw_ver, hdr->build_date);
 
-	if (!strncmp(hdr->fw_ver, "2.0", sizeof(hdr->fw_ver))) {
+	if (!is_mt7615(&dev->mt76) &&
+	    !strncmp(hdr->fw_ver, "2.0", sizeof(hdr->fw_ver))) {
 		dev->fw_ver = MT7615_FIRMWARE_V2;
 		dev->mcu_ops = &sta_update_ops;
 	} else {

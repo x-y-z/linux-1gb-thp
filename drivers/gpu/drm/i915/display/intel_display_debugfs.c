@@ -417,6 +417,9 @@ static int i915_edp_psr_status(struct seq_file *m, void *data)
 			su_blocks = su_blocks >> PSR2_SU_STATUS_SHIFT(frame);
 			seq_printf(m, "%d\t%d\n", frame, su_blocks);
 		}
+
+		seq_printf(m, "PSR2 selective fetch: %s\n",
+			   enableddisabled(psr->psr2_sel_fetch_enabled));
 	}
 
 unlock:
@@ -1066,10 +1069,18 @@ static void drrs_status_per_crtc(struct seq_file *m,
 
 	drm_connector_list_iter_begin(dev, &conn_iter);
 	drm_for_each_connector_iter(connector, &conn_iter) {
+		bool supported = false;
+
 		if (connector->state->crtc != &intel_crtc->base)
 			continue;
 
 		seq_printf(m, "%s:\n", connector->name);
+
+		if (connector->connector_type == DRM_MODE_CONNECTOR_eDP &&
+		    drrs->type == SEAMLESS_DRRS_SUPPORT)
+			supported = true;
+
+		seq_printf(m, "\tDRRS Supported: %s\n", yesno(supported));
 	}
 	drm_connector_list_iter_end(&conn_iter);
 
@@ -1080,7 +1091,7 @@ static void drrs_status_per_crtc(struct seq_file *m,
 
 		mutex_lock(&drrs->mutex);
 		/* DRRS Supported */
-		seq_puts(m, "\tDRRS Supported: Yes\n");
+		seq_puts(m, "\tDRRS Enabled: Yes\n");
 
 		/* disable_drrs() will make drrs->dp NULL */
 		if (!drrs->dp) {
@@ -1115,7 +1126,7 @@ static void drrs_status_per_crtc(struct seq_file *m,
 		mutex_unlock(&drrs->mutex);
 	} else {
 		/* DRRS not supported. Print the VBT parameter*/
-		seq_puts(m, "\tDRRS Supported : No");
+		seq_puts(m, "\tDRRS Enabled : No");
 	}
 	seq_puts(m, "\n");
 }

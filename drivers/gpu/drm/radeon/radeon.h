@@ -2391,6 +2391,7 @@ struct radeon_device {
 	struct radeon_wb		wb;
 	struct radeon_dummy_page	dummy_page;
 	bool				shutdown;
+	bool				need_dma32;
 	bool				need_swiotlb;
 	bool				accel_working;
 	bool				fastfb_working; /* IGP feature*/
@@ -2857,7 +2858,7 @@ int radeon_vm_clear_invalids(struct radeon_device *rdev,
 			     struct radeon_vm *vm);
 int radeon_vm_bo_update(struct radeon_device *rdev,
 			struct radeon_bo_va *bo_va,
-			struct ttm_mem_reg *mem);
+			struct ttm_resource *mem);
 void radeon_vm_bo_invalidate(struct radeon_device *rdev,
 			     struct radeon_bo *bo);
 struct radeon_bo_va *radeon_vm_bo_find(struct radeon_vm *vm,
