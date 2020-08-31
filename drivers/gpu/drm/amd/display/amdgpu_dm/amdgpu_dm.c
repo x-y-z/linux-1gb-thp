@@ -3027,8 +3027,6 @@ static int get_brightness_range(const struct amdgpu_dm_backlight_caps *caps,
 	}
 	return 1;
 }
-<<<<<<< HEAD
-
 static u32 convert_brightness_from_user(const struct amdgpu_dm_backlight_caps *caps,
 					uint32_t brightness)
 {
@@ -3047,27 +3045,6 @@ static u32 convert_brightness_to_user(const struct amdgpu_dm_backlight_caps *cap
 {
 	unsigned min, max;
 
-=======
-
-static u32 convert_brightness_from_user(const struct amdgpu_dm_backlight_caps *caps,
-					uint32_t brightness)
-{
-	unsigned min, max;
-
-	if (!get_brightness_range(caps, &min, &max))
-		return brightness;
-
-	// Rescale 0..255 to min..max
-	return min + DIV_ROUND_CLOSEST((max - min) * brightness,
-				       AMDGPU_MAX_BL_LEVEL);
-}
-
-static u32 convert_brightness_to_user(const struct amdgpu_dm_backlight_caps *caps,
-				      uint32_t brightness)
-{
-	unsigned min, max;
-
->>>>>>> linux-next/akpm-base
 	if (!get_brightness_range(caps, &min, &max))
 		return brightness;
 
