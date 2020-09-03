@@ -58,7 +58,7 @@ static int walk_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 	return err;
 }
 
-static int walk_pmd_range(pud_t *pud, unsigned long addr, unsigned long end,
+static int walk_pmd_range(pud_t pud, unsigned long addr, unsigned long end,
 			  struct mm_walk *walk)
 {
 	pmd_t *pmd;
@@ -67,7 +67,7 @@ static int walk_pmd_range(pud_t *pud, unsigned long addr, unsigned long end,
 	int err = 0;
 	int depth = real_depth(3);
 
-	pmd = pmd_offset(pud, addr);
+	pmd = pmd_offset(&pud, addr);
 	do {
 again:
 		next = pmd_addr_end(addr, end);
@@ -119,17 +119,19 @@ again:
 static int walk_pud_range(p4d_t *p4d, unsigned long addr, unsigned long end,
 			  struct mm_walk *walk)
 {
-	pud_t *pud;
+	pud_t *pudp;
+	pud_t pud;
 	unsigned long next;
 	const struct mm_walk_ops *ops = walk->ops;
 	int err = 0;
 	int depth = real_depth(2);
 
-	pud = pud_offset(p4d, addr);
+	pudp = pud_offset(p4d, addr);
 	do {
  again:
+		pud = READ_ONCE(*pudp);
 		next = pud_addr_end(addr, end);
-		if (pud_none(*pud) || (!walk->vma && !walk->no_vma)) {
+		if (pud_none(pud) || (!walk->vma && !walk->no_vma)) {
 			if (ops->pte_hole)
 				err = ops->pte_hole(addr, next, depth, walk);
 			if (err)
@@ -140,27 +142,29 @@ static int walk_pud_range(p4d_t *p4d, unsigned long addr, unsigned long end,
 		walk->action = ACTION_SUBTREE;
 
 		if (ops->pud_entry)
-			err = ops->pud_entry(pud, addr, next, walk);
+			err = ops->pud_entry(pud, pudp, addr, next, walk);
 		if (err)
 			break;
 
 		if (walk->action == ACTION_AGAIN)
 			goto again;
 
-		if ((!walk->vma && (pud_leaf(*pud) || !pud_present(*pud))) ||
+		if ((!walk->vma && (pud_leaf(pud) || !pud_present(pud))) ||
 		    walk->action == ACTION_CONTINUE ||
 		    !(ops->pmd_entry || ops->pte_entry))
 			continue;
 
-		if (walk->vma)
-			split_huge_pud(walk->vma, pud, addr);
-		if (pud_none(*pud))
-			goto again;
+		if (walk->vma) {
+			split_huge_pud(walk->vma, pudp, addr);
+			pud = READ_ONCE(*pudp);
+			if (pud_none(pud))
+				goto again;
+		}
 
 		err = walk_pmd_range(pud, addr, next, walk);
 		if (err)
 			break;
-	} while (pud++, addr = next, addr != end);
+	} while (pudp++, addr = next, addr != end);
 
 	return err;
 }
