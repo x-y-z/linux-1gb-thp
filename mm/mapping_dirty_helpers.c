@@ -150,11 +150,9 @@ static int wp_clean_pmd_entry(pmd_t *pmd, unsigned long addr, unsigned long end,
  * causes dirty info loss. The pagefault handler should do
  * that if needed.
  */
-static int wp_clean_pud_entry(pud_t *pud, unsigned long addr, unsigned long end,
-			      struct mm_walk *walk)
+static int wp_clean_pud_entry(pud_t pudval, pud_t *pudp, unsigned long addr,
+			      unsigned long end, struct mm_walk *walk)
 {
-	pud_t pudval = READ_ONCE(*pud);
-
 	if (!pud_trans_unstable(&pudval))
 		return 0;
 
