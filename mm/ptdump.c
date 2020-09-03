@@ -65,11 +65,10 @@ static int ptdump_p4d_entry(p4d_t *p4d, unsigned long addr,
 	return 0;
 }
 
-static int ptdump_pud_entry(pud_t *pud, unsigned long addr,
+static int ptdump_pud_entry(pud_t val, pud_t *pudp, unsigned long addr,
 			    unsigned long next, struct mm_walk *walk)
 {
 	struct ptdump_state *st = walk->private;
-	pud_t val = READ_ONCE(*pud);
 
 #if CONFIG_PGTABLE_LEVELS > 2 && defined(CONFIG_KASAN)
 	if (pud_page(val) == virt_to_page(lm_alias(kasan_early_shadow_pmd)))
