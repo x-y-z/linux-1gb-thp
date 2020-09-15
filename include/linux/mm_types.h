@@ -522,6 +522,9 @@ struct mm_struct {
 		/* pgtable deposit list head, protected by page_table_lock */
 		struct llist_head deposit_head_pmd;
 #endif
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+		struct llist_head deposit_head_pud; /* protected by page_table_lock */
+#endif
 #ifdef CONFIG_NUMA_BALANCING
 		/*
 		 * numa_next_scan is the next time that the PTEs will be marked
