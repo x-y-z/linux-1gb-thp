@@ -2330,6 +2330,8 @@ static inline spinlock_t *pud_lock(struct mm_struct *mm, pud_t *pud)
 	return ptl;
 }
 
+#define huge_pud_deposit_head(mm, pud) ((mm)->deposit_head_pud)
+
 extern void __init pagecache_init(void);
 extern void __init free_area_init_memoryless_node(int nid);
 extern void free_initmem(void);

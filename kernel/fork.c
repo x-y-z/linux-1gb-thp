@@ -664,6 +664,9 @@ static void check_mm(struct mm_struct *mm)
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
 	VM_BUG_ON_MM(!llist_empty(&mm->deposit_head_pmd), mm);
 #endif
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+	VM_BUG_ON_MM(!llist_empty(&mm->deposit_head_pud), mm);
+#endif
 }
 
 #define allocate_mm()	(kmem_cache_alloc(mm_cachep, GFP_KERNEL))
@@ -1026,6 +1029,9 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	init_tlb_flush_pending(mm);
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
 	init_llist_head(&mm->deposit_head_pmd);
+#endif
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+	init_llist_head(&mm->deposit_head_pud);
 #endif
 	mm_init_uprobes_state(mm);
 

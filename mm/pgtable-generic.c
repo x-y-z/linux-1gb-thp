@@ -166,6 +166,15 @@ void pgtable_trans_huge_deposit(struct mm_struct *mm, pmd_t *pmdp,
 	/* FIFO */
 	llist_add(&pgtable->deposit_node, &huge_pmd_deposit_head(mm, pmdp));
 }
+
+void pgtable_trans_huge_pud_deposit(struct mm_struct *mm, pud_t *pudp,
+				pgtable_t pgtable)
+{
+	assert_spin_locked(pud_lockptr(mm, pudp));
+
+	/* FIFO */
+	llist_add(&pgtable->deposit_node, &huge_pud_deposit_head(mm, pudp));
+}
 #endif
 
 #ifndef __HAVE_ARCH_PGTABLE_WITHDRAW
@@ -180,6 +189,20 @@ pgtable_t pgtable_trans_huge_withdraw(struct mm_struct *mm, pmd_t *pmdp)
 	VM_BUG_ON(llist_empty(&huge_pmd_deposit_head(mm, pmdp)));
 	/* FIFO */
 	pgtable = llist_entry(llist_del_first(&huge_pmd_deposit_head(mm, pmdp)),
+			struct page, deposit_node);
+	return pgtable;
+}
+
+pgtable_t pgtable_trans_huge_pud_withdraw(struct mm_struct *mm, pud_t *pudp)
+{
+	pgtable_t pgtable;
+
+	assert_spin_locked(pud_lockptr(mm, pudp));
+
+	/* only withdraw from a non empty list */
+	VM_BUG_ON(llist_empty(&huge_pud_deposit_head(mm, pudp)));
+	/* FIFO */
+	pgtable = llist_entry(llist_del_first(&huge_pud_deposit_head(mm, pmdp)),
 			struct page, deposit_node);
 	return pgtable;
 }
