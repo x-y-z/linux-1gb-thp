@@ -10,6 +10,7 @@
 #include <linux/gfp.h>
 #include <linux/bug.h>
 #include <linux/list.h>
+#include <linux/llist.h>
 #include <linux/mmzone.h>
 #include <linux/rbtree.h>
 #include <linux/atomic.h>
@@ -2236,7 +2237,7 @@ static inline spinlock_t *pmd_lockptr(struct mm_struct *mm, pmd_t *pmd)
 static inline bool pmd_ptlock_init(struct page *page)
 {
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	page->pmd_huge_pte = NULL;
+	init_llist_head(&page->deposit_head);
 #endif
 	return ptlock_init(page);
 }
@@ -2244,12 +2245,12 @@ static inline bool pmd_ptlock_init(struct page *page)
 static inline void pmd_ptlock_free(struct page *page)
 {
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	VM_BUG_ON_PAGE(page->pmd_huge_pte, page);
+	VM_BUG_ON_PAGE(!llist_empty(&page->deposit_head), page);
 #endif
 	ptlock_free(page);
 }
 
-#define pmd_huge_pte(mm, pmd) (pmd_to_page(pmd)->pmd_huge_pte)
+#define huge_pmd_deposit_head(mm, pmd) (pmd_to_page(pmd)->deposit_head)
 
 #else
 
@@ -2261,7 +2262,7 @@ static inline spinlock_t *pmd_lockptr(struct mm_struct *mm, pmd_t *pmd)
 static inline bool pmd_ptlock_init(struct page *page) { return true; }
 static inline void pmd_ptlock_free(struct page *page) {}
 
-#define pmd_huge_pte(mm, pmd) ((mm)->pmd_huge_pte)
+#define huge_pmd_deposit_head(mm, pmd) ((mm)->deposit_head_pmd)
 
 #endif
 
