@@ -6,6 +6,7 @@
 
 #include <linux/auxvec.h>
 #include <linux/list.h>
+#include <linux/llist.h>
 #include <linux/spinlock.h>
 #include <linux/rbtree.h>
 #include <linux/rwsem.h>
@@ -143,8 +144,8 @@ struct page {
 			struct list_head deferred_list;
 		};
 		struct {	/* Page table pages */
-			unsigned long _pt_pad_1;	/* compound_head */
-			pgtable_t pmd_huge_pte; /* protected by page->ptl */
+			struct llist_head deposit_head; /* pgtable deposit list head */
+			struct llist_node deposit_node; /* pgtable deposit list node */
 			unsigned long _pt_pad_2;	/* mapping */
 			union {
 				struct mm_struct *pt_mm; /* x86 pgds only */
@@ -521,7 +522,8 @@ struct mm_struct {
 		struct mmu_notifier_subscriptions *notifier_subscriptions;
 #endif
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
-		pgtable_t pmd_huge_pte; /* protected by page_table_lock */
+		/* pgtable deposit list head, protected by page_table_lock */
+		struct llist_head deposit_head_pmd;
 #endif
 #ifdef CONFIG_NUMA_BALANCING
 		/*
