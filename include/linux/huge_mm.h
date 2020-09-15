@@ -267,7 +267,7 @@ static inline unsigned int thp_order(struct page *page)
 {
 	VM_BUG_ON_PGFLAGS(PageTail(page), page);
 	if (PageHead(page))
-		return HPAGE_PMD_ORDER;
+		return page[1].compound_order;
 	return 0;
 }
 
@@ -279,7 +279,7 @@ static inline int thp_nr_pages(struct page *page)
 {
 	VM_BUG_ON_PGFLAGS(PageTail(page), page);
 	if (PageHead(page))
-		return HPAGE_PMD_NR;
+		return (1<<page[1].compound_order);
 	return 1;
 }
 
