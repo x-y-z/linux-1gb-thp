@@ -33,6 +33,31 @@ pgtable_t pte_alloc_one(struct mm_struct *mm)
 	return __pte_alloc_one(mm, __userpte_alloc_gfp);
 }
 
+pgtable_t pte_alloc_order(struct mm_struct *mm, unsigned long address, int order)
+{
+	struct page *pte;
+	int i;
+
+	pte = alloc_pages(__userpte_alloc_gfp, order);
+	if (!pte)
+		return NULL;
+	split_page(pte, order);
+	for (i = 1; i < (1 << order); i++)
+		set_page_private(pte + i, 0);
+
+	for (i = 0; i < (1<<order); i++) {
+		if (!pgtable_pte_page_ctor(&pte[i])) {
+			__free_page(&pte[i]);
+			while (--i >= 0) {
+				pgtable_pte_page_dtor(&pte[i]);
+				__free_page(&pte[i]);
+			}
+			return NULL;
+		}
+	}
+	return pte;
+}
+
 static int __init setup_userpte(char *arg)
 {
 	if (!arg)
