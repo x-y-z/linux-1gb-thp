@@ -164,11 +164,7 @@ void pgtable_trans_huge_deposit(struct mm_struct *mm, pmd_t *pmdp,
 	assert_spin_locked(pmd_lockptr(mm, pmdp));
 
 	/* FIFO */
-	if (!pmd_huge_pte(mm, pmdp))
-		INIT_LIST_HEAD(&pgtable->lru);
-	else
-		list_add(&pgtable->lru, &pmd_huge_pte(mm, pmdp)->lru);
-	pmd_huge_pte(mm, pmdp) = pgtable;
+	llist_add(&pgtable->deposit_node, &huge_pmd_deposit_head(mm, pmdp));
 }
 #endif
 
@@ -180,12 +176,11 @@ pgtable_t pgtable_trans_huge_withdraw(struct mm_struct *mm, pmd_t *pmdp)
 
 	assert_spin_locked(pmd_lockptr(mm, pmdp));
 
+	/* only withdraw from a non empty list */
+	VM_BUG_ON(llist_empty(&huge_pmd_deposit_head(mm, pmdp)));
 	/* FIFO */
-	pgtable = pmd_huge_pte(mm, pmdp);
-	pmd_huge_pte(mm, pmdp) = list_first_entry_or_null(&pgtable->lru,
-							  struct page, lru);
-	if (pmd_huge_pte(mm, pmdp))
-		list_del(&pgtable->lru);
+	pgtable = llist_entry(llist_del_first(&huge_pmd_deposit_head(mm, pmdp)),
+			struct page, deposit_node);
 	return pgtable;
 }
 #endif
