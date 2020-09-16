@@ -188,12 +188,12 @@ static void cma_debugfs_add_one(struct cma *cma, struct dentry *root_dentry)
 static int __init cma_debugfs_init(void)
 {
 	struct dentry *cma_debugfs_root;
-	int i;
+	struct cma *c;
 
 	cma_debugfs_root = debugfs_create_dir("cma", NULL);
 
-	for (i = 0; i < cma_area_count; i++)
-		cma_debugfs_add_one(&cma_areas[i], cma_debugfs_root);
+	list_for_each_entry(c, &cma_areas, areas)
+		cma_debugfs_add_one(c, cma_debugfs_root);
 
 	return 0;
 }
