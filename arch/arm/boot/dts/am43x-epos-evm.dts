@@ -833,6 +833,10 @@
 	status = "okay";
 };
 
+&rtc_target {
+	status = "disabled";
+};
+
 &tscadc {
 	status = "okay";
 
@@ -948,7 +952,7 @@
 };
 
 &dss {
-	status = "ok";
+	status = "okay";
 
 	pinctrl-names = "default";
 	pinctrl-0 = <&dss_pins>;

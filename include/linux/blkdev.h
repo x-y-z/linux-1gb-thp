@@ -25,6 +25,7 @@
 #include <linux/percpu-refcount.h>
 #include <linux/scatterlist.h>
 #include <linux/blkzoned.h>
+#include <linux/pm.h>
 
 struct module;
 struct scsi_ioctl_command;
@@ -459,7 +460,7 @@ struct request_queue {
 
 #ifdef CONFIG_PM
 	struct device		*dev;
-	int			rpm_status;
+	enum rpm_status		rpm_status;
 	unsigned int		nr_pending;
 #endif
 
@@ -484,6 +485,8 @@ struct request_queue {
 
 	struct timer_list	timeout;
 	struct work_struct	timeout_work;
+
+	atomic_t		nr_active_requests_shared_sbitmap;
 
 	struct list_head	icq_list;
 #ifdef CONFIG_BLK_CGROUP
@@ -616,6 +619,7 @@ struct request_queue {
 #define QUEUE_FLAG_PCI_P2PDMA	25	/* device supports PCI p2p requests */
 #define QUEUE_FLAG_ZONE_RESETALL 26	/* supports Zone Reset All */
 #define QUEUE_FLAG_RQ_ALLOC_TIME 27	/* record rq->alloc_time_ns */
+#define QUEUE_FLAG_HCTX_ACTIVE 28	/* at least one blk-mq hctx is active */
 
 #define QUEUE_FLAG_MQ_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_SAME_COMP))
@@ -1456,10 +1460,9 @@ static inline int bdev_alignment_offset(struct block_device *bdev)
 
 	if (q->limits.misaligned)
 		return -1;
-
 	if (bdev != bdev->bd_contains)
-		return bdev->bd_part->alignment_offset;
-
+		return queue_limit_alignment_offset(&q->limits,
+				bdev->bd_part->start_sect);
 	return q->limits.alignment_offset;
 }
 
@@ -1499,8 +1502,8 @@ static inline int bdev_discard_alignment(struct block_device *bdev)
 	struct request_queue *q = bdev_get_queue(bdev);
 
 	if (bdev != bdev->bd_contains)
-		return bdev->bd_part->discard_alignment;
-
+		return queue_limit_discard_alignment(&q->limits,
+				bdev->bd_part->start_sect);
 	return q->limits.discard_alignment;
 }
 
@@ -1931,6 +1934,11 @@ unsigned long disk_start_io_acct(struct gendisk *disk, unsigned int sectors,
 void disk_end_io_acct(struct gendisk *disk, unsigned int op,
 		unsigned long start_time);
 
+unsigned long part_start_io_acct(struct gendisk *disk, struct hd_struct **part,
+				 struct bio *bio);
+void part_end_io_acct(struct hd_struct *part, struct bio *bio,
+		      unsigned long start_time);
+
 /**
  * bio_start_io_acct - start I/O accounting for bio based drivers
  * @bio:	bio to start account for
@@ -1985,10 +1993,17 @@ void bdput(struct block_device *);
 
 #ifdef CONFIG_BLOCK
 void invalidate_bdev(struct block_device *bdev);
+int truncate_bdev_range(struct block_device *bdev, fmode_t mode, loff_t lstart,
+			loff_t lend);
 int sync_blockdev(struct block_device *bdev);
 #else
 static inline void invalidate_bdev(struct block_device *bdev)
 {
+}
+static inline int truncate_bdev_range(struct block_device *bdev, fmode_t mode,
+				      loff_t lstart, loff_t lend)
+{
+	return 0;
 }
 static inline int sync_blockdev(struct block_device *bdev)
 {

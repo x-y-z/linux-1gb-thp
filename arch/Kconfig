@@ -24,6 +24,9 @@ config KEXEC_ELF
 config HAVE_IMA_KEXEC
 	bool
 
+config SET_FS
+	bool
+
 config HOTPLUG_SMT
 	bool
 
@@ -105,6 +108,12 @@ config STATIC_KEYS_SELFTEST
 	depends on JUMP_LABEL
 	help
 	  Boot time self-test of the branch patching code.
+
+config STATIC_CALL_SELFTEST
+	bool "Static call selftest"
+	depends on HAVE_STATIC_CALL
+	help
+	  Boot time self-test of the call patching code.
 
 config OPTPROBES
 	def_bool y
@@ -974,6 +983,13 @@ config HAVE_SPARSE_SYSCALL_NR
 
 config ARCH_HAS_VDSO_DATA
 	bool
+
+config HAVE_STATIC_CALL
+	bool
+
+config HAVE_STATIC_CALL_INLINE
+	bool
+	depends on HAVE_STATIC_CALL
 
 source "kernel/gcov/Kconfig"
 

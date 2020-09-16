@@ -6,6 +6,8 @@
 #include <linux/types.h>
 #include <linux/numa.h>
 
+#define CMA_MAX_NAME 64
+
 struct cma;
 
 extern unsigned long totalcma_pages;

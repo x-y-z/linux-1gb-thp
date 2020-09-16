@@ -10,6 +10,7 @@
 
 #include <asm/uaccess.h>
 
+#ifdef CONFIG_SET_FS
 /*
  * Force the uaccess routines to be wired up for actual userspace access,
  * overriding any possible set_fs(KERNEL_DS) still lingering around.  Undone
@@ -27,6 +28,23 @@ static inline void force_uaccess_end(mm_segment_t oldfs)
 {
 	set_fs(oldfs);
 }
+#else /* CONFIG_SET_FS */
+typedef struct {
+	/* empty dummy */
+} mm_segment_t;
+
+#define uaccess_kernel()		(false)
+#define user_addr_max()			(TASK_SIZE_MAX)
+
+static inline mm_segment_t force_uaccess_begin(void)
+{
+	return (mm_segment_t) { };
+}
+
+static inline void force_uaccess_end(mm_segment_t oldfs)
+{
+}
+#endif /* CONFIG_SET_FS */
 
 /*
  * Architectures should provide two primitives (raw_copy_{to,from}_user())
@@ -186,6 +204,15 @@ copy_in_user(void __user *to, const void __user *from, unsigned long n)
 	if (access_ok(to, n) && access_ok(from, n))
 		n = raw_copy_in_user(to, from, n);
 	return n;
+}
+#endif
+
+#ifndef copy_mc_to_kernel
+static inline unsigned long __must_check
+copy_mc_to_kernel(void *dst, const void *src, size_t cnt)
+{
+	memcpy(dst, src, cnt);
+	return 0;
 }
 #endif
 

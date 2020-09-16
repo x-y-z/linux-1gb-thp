@@ -157,7 +157,7 @@ int qedr_query_device(struct ib_device *ibdev,
 
 	attr->local_ca_ack_delay = qattr->dev_ack_delay;
 	attr->max_fast_reg_page_list_len = qattr->max_mr / 8;
-	attr->max_pkeys = QEDR_ROCE_PKEY_MAX;
+	attr->max_pkeys = qattr->max_pkey;
 	attr->max_ah = qattr->max_ah;
 
 	return 0;
@@ -231,15 +231,16 @@ int qedr_query_port(struct ib_device *ibdev, u8 port, struct ib_port_attr *attr)
 		attr->phys_state = IB_PORT_PHYS_STATE_DISABLED;
 	}
 	attr->max_mtu = IB_MTU_4096;
-	attr->active_mtu = iboe_get_mtu(dev->ndev->mtu);
 	attr->lid = 0;
 	attr->lmc = 0;
 	attr->sm_lid = 0;
 	attr->sm_sl = 0;
 	attr->ip_gids = true;
 	if (rdma_protocol_iwarp(&dev->ibdev, 1)) {
+		attr->active_mtu = iboe_get_mtu(dev->iwarp_max_mtu);
 		attr->gid_tbl_len = 1;
 	} else {
+		attr->active_mtu = iboe_get_mtu(dev->ndev->mtu);
 		attr->gid_tbl_len = QEDR_MAX_SGID;
 		attr->pkey_tbl_len = QEDR_ROCE_PKEY_TABLE_LEN;
 	}
@@ -471,13 +472,14 @@ int qedr_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 	return 0;
 }
 
-void qedr_dealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
+int qedr_dealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 {
 	struct qedr_dev *dev = get_qedr_dev(ibpd->device);
 	struct qedr_pd *pd = get_qedr_pd(ibpd);
 
 	DP_DEBUG(dev, QEDR_MSG_INIT, "Deallocating PD %d\n", pd->pd_id);
 	dev->ops->rdma_dealloc_pd(dev->rdma_ctx, pd->pd_id);
+	return 0;
 }
 
 static void qedr_free_pbl(struct qedr_dev *dev,
@@ -600,11 +602,9 @@ static void qedr_populate_pbls(struct qedr_dev *dev, struct ib_umem *umem,
 			       struct qedr_pbl_info *pbl_info, u32 pg_shift)
 {
 	int pbe_cnt, total_num_pbes = 0;
-	u32 fw_pg_cnt, fw_pg_per_umem_pg;
 	struct qedr_pbl *pbl_tbl;
-	struct sg_dma_page_iter sg_iter;
+	struct ib_block_iter biter;
 	struct regpair *pbe;
-	u64 pg_addr;
 
 	if (!pbl_info->num_pbes)
 		return;
@@ -625,32 +625,25 @@ static void qedr_populate_pbls(struct qedr_dev *dev, struct ib_umem *umem,
 
 	pbe_cnt = 0;
 
-	fw_pg_per_umem_pg = BIT(PAGE_SHIFT - pg_shift);
+	rdma_umem_for_each_dma_block (umem, &biter, BIT(pg_shift)) {
+		u64 pg_addr = rdma_block_iter_dma_address(&biter);
 
-	for_each_sg_dma_page (umem->sg_head.sgl, &sg_iter, umem->nmap, 0) {
-		pg_addr = sg_page_iter_dma_address(&sg_iter);
-		for (fw_pg_cnt = 0; fw_pg_cnt < fw_pg_per_umem_pg;) {
-			pbe->lo = cpu_to_le32(pg_addr);
-			pbe->hi = cpu_to_le32(upper_32_bits(pg_addr));
+		pbe->lo = cpu_to_le32(pg_addr);
+		pbe->hi = cpu_to_le32(upper_32_bits(pg_addr));
 
-			pg_addr += BIT(pg_shift);
-			pbe_cnt++;
-			total_num_pbes++;
-			pbe++;
+		pbe_cnt++;
+		total_num_pbes++;
+		pbe++;
 
-			if (total_num_pbes == pbl_info->num_pbes)
-				return;
+		if (total_num_pbes == pbl_info->num_pbes)
+			return;
 
-			/* If the given pbl is full storing the pbes,
-			 * move to next pbl.
-			 */
-			if (pbe_cnt == (pbl_info->pbl_size / sizeof(u64))) {
-				pbl_tbl++;
-				pbe = (struct regpair *)pbl_tbl->va;
-				pbe_cnt = 0;
-			}
-
-			fw_pg_cnt++;
+		/* If the given pbl is full storing the pbes, move to next pbl.
+		 */
+		if (pbe_cnt == (pbl_info->pbl_size / sizeof(u64))) {
+			pbl_tbl++;
+			pbe = (struct regpair *)pbl_tbl->va;
+			pbe_cnt = 0;
 		}
 	}
 }
@@ -792,9 +785,7 @@ static inline int qedr_init_user_queue(struct ib_udata *udata,
 		return PTR_ERR(q->umem);
 	}
 
-	fw_pages = ib_umem_page_count(q->umem) <<
-	    (PAGE_SHIFT - FW_PAGE_SHIFT);
-
+	fw_pages = ib_umem_num_dma_blocks(q->umem, 1 << FW_PAGE_SHIFT);
 	rc = qedr_prepare_pbl_tbl(dev, &q->pbl_info, fw_pages, 0);
 	if (rc)
 		goto err0;
@@ -999,7 +990,7 @@ int qedr_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 		/* Generate doorbell address. */
 		cq->db.data.icid = cq->icid;
 		cq->db_addr = dev->db_addr + db_offset;
-		cq->db.data.params = DB_AGG_CMD_SET <<
+		cq->db.data.params = DB_AGG_CMD_MAX <<
 		    RDMA_PWM_VAL32_DATA_AGG_CMD_SHIFT;
 
 		/* point to the very last element, passing it we will toggle */
@@ -1051,7 +1042,7 @@ int qedr_resize_cq(struct ib_cq *ibcq, int new_cnt, struct ib_udata *udata)
 #define QEDR_DESTROY_CQ_MAX_ITERATIONS		(10)
 #define QEDR_DESTROY_CQ_ITER_DURATION		(10)
 
-void qedr_destroy_cq(struct ib_cq *ibcq, struct ib_udata *udata)
+int qedr_destroy_cq(struct ib_cq *ibcq, struct ib_udata *udata)
 {
 	struct qedr_dev *dev = get_qedr_dev(ibcq->device);
 	struct qed_rdma_destroy_cq_out_params oparams;
@@ -1066,7 +1057,7 @@ void qedr_destroy_cq(struct ib_cq *ibcq, struct ib_udata *udata)
 	/* GSIs CQs are handled by driver, so they don't exist in the FW */
 	if (cq->cq_type == QEDR_CQ_TYPE_GSI) {
 		qedr_db_recovery_del(dev, cq->db_addr, &cq->db.data);
-		return;
+		return 0;
 	}
 
 	iparams.icid = cq->icid;
@@ -1114,6 +1105,7 @@ void qedr_destroy_cq(struct ib_cq *ibcq, struct ib_udata *udata)
 	 * Since the destroy CQ ramrod has also been received on the EQ we can
 	 * be certain that there's no event handler in process.
 	 */
+	return 0;
 }
 
 static inline int get_gid_info_from_table(struct ib_qp *ibqp,
@@ -1248,8 +1240,8 @@ static int qedr_copy_srq_uresp(struct qedr_dev *dev,
 }
 
 static void qedr_copy_rq_uresp(struct qedr_dev *dev,
-			      struct qedr_create_qp_uresp *uresp,
-			      struct qedr_qp *qp)
+			       struct qedr_create_qp_uresp *uresp,
+			       struct qedr_qp *qp)
 {
 	/* iWARP requires two doorbells per RQ. */
 	if (rdma_protocol_iwarp(&dev->ibdev, 1)) {
@@ -1591,7 +1583,7 @@ err0:
 	return -EFAULT;
 }
 
-void qedr_destroy_srq(struct ib_srq *ibsrq, struct ib_udata *udata)
+int qedr_destroy_srq(struct ib_srq *ibsrq, struct ib_udata *udata)
 {
 	struct qed_rdma_destroy_srq_in_params in_params = {};
 	struct qedr_dev *dev = get_qedr_dev(ibsrq->device);
@@ -1609,6 +1601,7 @@ void qedr_destroy_srq(struct ib_srq *ibsrq, struct ib_udata *udata)
 	DP_DEBUG(dev, QEDR_MSG_SRQ,
 		 "destroy srq: destroyed srq with srq_id=0x%0x\n",
 		 srq->srq_id);
+	return 0;
 }
 
 int qedr_modify_srq(struct ib_srq *ibsrq, struct ib_srq_attr *attr,
@@ -2636,7 +2629,7 @@ int qedr_query_qp(struct ib_qp *ibqp,
 	qp_attr->cap.max_recv_wr = qp->rq.max_wr;
 	qp_attr->cap.max_send_sge = qp->sq.max_sges;
 	qp_attr->cap.max_recv_sge = qp->rq.max_sges;
-	qp_attr->cap.max_inline_data = ROCE_REQ_MAX_INLINE_DATA_SIZE;
+	qp_attr->cap.max_inline_data = dev->attr.max_inline;
 	qp_init_attr->cap = qp_attr->cap;
 
 	qp_attr->ah_attr.type = RDMA_AH_ATTR_TYPE_ROCE;
@@ -2752,6 +2745,8 @@ int qedr_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 
 	if (rdma_protocol_iwarp(&dev->ibdev, 1))
 		qedr_iw_qp_rem_ref(&qp->ibqp);
+	else
+		kfree(qp);
 
 	return 0;
 }
@@ -2766,11 +2761,12 @@ int qedr_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 	return 0;
 }
 
-void qedr_destroy_ah(struct ib_ah *ibah, u32 flags)
+int qedr_destroy_ah(struct ib_ah *ibah, u32 flags)
 {
 	struct qedr_ah *ah = get_qedr_ah(ibah);
 
 	rdma_destroy_ah_attr(&ah->attr);
+	return 0;
 }
 
 static void free_mr_info(struct qedr_dev *dev, struct mr_info *info)
@@ -2861,7 +2857,8 @@ struct ib_mr *qedr_reg_user_mr(struct ib_pd *ibpd, u64 start, u64 len,
 		goto err0;
 	}
 
-	rc = init_mr_info(dev, &mr->info, ib_umem_page_count(mr->umem), 1);
+	rc = init_mr_info(dev, &mr->info,
+			  ib_umem_num_dma_blocks(mr->umem, PAGE_SIZE), 1);
 	if (rc)
 		goto err1;
 
@@ -2888,10 +2885,8 @@ struct ib_mr *qedr_reg_user_mr(struct ib_pd *ibpd, u64 start, u64 len,
 	mr->hw_mr.pbl_two_level = mr->info.pbl_info.two_layered;
 	mr->hw_mr.pbl_page_size_log = ilog2(mr->info.pbl_info.pbl_size);
 	mr->hw_mr.page_size_log = PAGE_SHIFT;
-	mr->hw_mr.fbo = ib_umem_offset(mr->umem);
 	mr->hw_mr.length = len;
 	mr->hw_mr.vaddr = usr_addr;
-	mr->hw_mr.zbva = false;
 	mr->hw_mr.phy_mr = false;
 	mr->hw_mr.dma_mr = false;
 
@@ -2984,10 +2979,8 @@ static struct qedr_mr *__qedr_alloc_mr(struct ib_pd *ibpd,
 	mr->hw_mr.pbl_ptr = 0;
 	mr->hw_mr.pbl_two_level = mr->info.pbl_info.two_layered;
 	mr->hw_mr.pbl_page_size_log = ilog2(mr->info.pbl_info.pbl_size);
-	mr->hw_mr.fbo = 0;
 	mr->hw_mr.length = 0;
 	mr->hw_mr.vaddr = 0;
-	mr->hw_mr.zbva = false;
 	mr->hw_mr.phy_mr = true;
 	mr->hw_mr.dma_mr = false;
 

@@ -30,6 +30,7 @@ Hardware Monitoring Kernel Drivers
    adm1026
    adm1031
    adm1177
+   adm1266
    adm1275
    adm9240
    ads7828
@@ -158,6 +159,7 @@ Hardware Monitoring Kernel Drivers
    smsc47b397
    smsc47m192
    smsc47m1
+   sparx5-temp
    tc654
    tc74
    thmc50

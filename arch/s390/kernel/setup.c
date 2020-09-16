@@ -119,6 +119,7 @@ EXPORT_SYMBOL(VMALLOC_END);
 
 struct page *vmemmap;
 EXPORT_SYMBOL(vmemmap);
+unsigned long vmemmap_size;
 
 unsigned long MODULES_VADDR;
 unsigned long MODULES_END;
@@ -126,6 +127,12 @@ unsigned long MODULES_END;
 /* An array with a pointer to the lowcore of every CPU. */
 struct lowcore *lowcore_ptr[NR_CPUS];
 EXPORT_SYMBOL(lowcore_ptr);
+
+/*
+ * The Write Back bit position in the physaddr is given by the SLPC PCI.
+ * Leaving the mask zero always uses write through which is safe
+ */
+unsigned long mio_wb_bit_mask __ro_after_init;
 
 /*
  * This is set up by the setup-routine at boot-time
@@ -402,7 +409,6 @@ static void __init setup_lowcore_dat_off(void)
 	memcpy(lc->alt_stfle_fac_list, S390_lowcore.alt_stfle_fac_list,
 	       sizeof(lc->alt_stfle_fac_list));
 	nmi_alloc_boot_cpu(lc);
-	vdso_alloc_boot_cpu(lc);
 	lc->sync_enter_timer = S390_lowcore.sync_enter_timer;
 	lc->async_enter_timer = S390_lowcore.async_enter_timer;
 	lc->exit_timer = S390_lowcore.exit_timer;
@@ -590,6 +596,7 @@ static void __init setup_memory_end(void)
 	memory_end = min(memory_end, KASAN_SHADOW_START);
 	vmemmap = max(vmemmap, (struct page *)KASAN_SHADOW_END);
 #endif
+	vmemmap_size = SECTION_ALIGN_UP(memory_end / PAGE_SIZE) * sizeof(struct page);
 	max_pfn = max_low_pfn = PFN_DOWN(memory_end);
 	memblock_remove(memory_end, ULONG_MAX);
 
@@ -625,7 +632,7 @@ static struct notifier_block kdump_mem_nb = {
 /*
  * Make sure that the area behind memory_end is protected
  */
-static void reserve_memory_end(void)
+static void __init reserve_memory_end(void)
 {
 	if (memory_end_set)
 		memblock_reserve(memory_end, ULONG_MAX);
@@ -634,7 +641,7 @@ static void reserve_memory_end(void)
 /*
  * Make sure that oldmem, where the dump is stored, is protected
  */
-static void reserve_oldmem(void)
+static void __init reserve_oldmem(void)
 {
 #ifdef CONFIG_CRASH_DUMP
 	if (OLDMEM_BASE)
@@ -646,7 +653,7 @@ static void reserve_oldmem(void)
 /*
  * Make sure that oldmem, where the dump is stored, is protected
  */
-static void remove_oldmem(void)
+static void __init remove_oldmem(void)
 {
 #ifdef CONFIG_CRASH_DUMP
 	if (OLDMEM_BASE)

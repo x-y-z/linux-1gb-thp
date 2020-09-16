@@ -106,6 +106,7 @@ config ARM64
 	select GENERIC_CPU_VULNERABILITIES
 	select GENERIC_EARLY_IOREMAP
 	select GENERIC_IDLE_POLL_SETUP
+	select GENERIC_IRQ_IPI
 	select GENERIC_IRQ_MULTI_HANDLER
 	select GENERIC_IRQ_PROBE
 	select GENERIC_IRQ_SHOW
@@ -192,6 +193,7 @@ config ARM64
 	select PCI_SYSCALL if PCI
 	select POWER_RESET
 	select POWER_SUPPLY
+	select SET_FS
 	select SPARSE_IRQ
 	select SWIOTLB
 	select SYSCTL_EXCEPTION_TRACE
@@ -211,10 +213,16 @@ config ARM64_PAGE_SHIFT
 	default 14 if ARM64_16K_PAGES
 	default 12
 
-config ARM64_CONT_SHIFT
+config ARM64_CONT_PTE_SHIFT
 	int
 	default 5 if ARM64_64K_PAGES
 	default 7 if ARM64_16K_PAGES
+	default 4
+
+config ARM64_CONT_PMD_SHIFT
+	int
+	default 5 if ARM64_64K_PAGES
+	default 5 if ARM64_16K_PAGES
 	default 4
 
 config ARCH_MMAP_RND_BITS_MIN
@@ -1873,6 +1881,10 @@ config SYSVIPC_COMPAT
 config ARCH_ENABLE_HUGEPAGE_MIGRATION
 	def_bool y
 	depends on HUGETLB_PAGE && MIGRATION
+
+config ARCH_ENABLE_THP_MIGRATION
+	def_bool y
+	depends on TRANSPARENT_HUGEPAGE
 
 menu "Power management options"
 

@@ -1193,6 +1193,8 @@ struct snd_soc_pcm_runtime {
 	     ((i) < (rtd)->num_cpus + (rtd)->num_codecs) &&		\
 		     ((dai) = (rtd)->dais[i]);				\
 	     (i)++)
+#define for_each_rtd_dais_rollback(rtd, i, dai)		\
+	for (; (--(i) >= 0) && ((dai) = (rtd)->dais[i]);)
 
 void snd_soc_close_delayed_work(struct snd_soc_pcm_runtime *rtd);
 
@@ -1331,6 +1333,7 @@ void snd_soc_of_parse_audio_prefix(struct snd_soc_card *card,
 
 int snd_soc_of_parse_audio_routing(struct snd_soc_card *card,
 				   const char *propname);
+int snd_soc_of_parse_aux_devs(struct snd_soc_card *card, const char *propname);
 unsigned int snd_soc_of_parse_daifmt(struct device_node *np,
 				     const char *prefix,
 				     struct device_node **bitclkmaster,
@@ -1360,6 +1363,8 @@ struct snd_soc_dai *devm_snd_soc_register_dai(struct device *dev,
 void snd_soc_unregister_dai(struct snd_soc_dai *dai);
 
 struct snd_soc_dai *snd_soc_find_dai(
+	const struct snd_soc_dai_link_component *dlc);
+struct snd_soc_dai *snd_soc_find_dai_with_mutex(
 	const struct snd_soc_dai_link_component *dlc);
 
 #include <sound/soc-dai.h>

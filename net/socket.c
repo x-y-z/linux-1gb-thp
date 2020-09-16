@@ -2192,6 +2192,17 @@ SYSCALL_DEFINE5(getsockopt, int, fd, int, level, int, optname,
  *	Shutdown a socket.
  */
 
+int __sys_shutdown_sock(struct socket *sock, int how)
+{
+	int err;
+
+	err = security_socket_shutdown(sock, how);
+	if (!err)
+		err = sock->ops->shutdown(sock, how);
+
+	return err;
+}
+
 int __sys_shutdown(int fd, int how)
 {
 	int err, fput_needed;
@@ -2199,9 +2210,7 @@ int __sys_shutdown(int fd, int how)
 
 	sock = sockfd_lookup_light(fd, &err, &fput_needed);
 	if (sock != NULL) {
-		err = security_socket_shutdown(sock, how);
-		if (!err)
-			err = sock->ops->shutdown(sock, how);
+		err = __sys_shutdown_sock(sock, how);
 		fput_light(sock->file, fput_needed);
 	}
 	return err;
@@ -2628,9 +2637,11 @@ long __sys_recvmsg_sock(struct socket *sock, struct msghdr *msg,
 			struct user_msghdr __user *umsg,
 			struct sockaddr __user *uaddr, unsigned int flags)
 {
-	/* disallow ancillary data requests from this path */
-	if (msg->msg_control || msg->msg_controllen)
-		return -EINVAL;
+	if (msg->msg_control || msg->msg_controllen) {
+		/* disallow ancillary data reqs unless cmsg is plain data */
+		if (!(sock->ops->flags & PROTO_CMSG_DATA_ONLY))
+			return -EINVAL;
+	}
 
 	return ____sys_recvmsg(sock, msg, umsg, uaddr, flags, 0);
 }
