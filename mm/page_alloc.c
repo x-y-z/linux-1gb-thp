@@ -5976,7 +5976,7 @@ overlap_memmap_init(unsigned long zone, unsigned long *pfn)
  */
 void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 				unsigned long start_pfn,
-				enum memmap_context context,
+				enum meminit_context context,
 				struct vmem_altmap *altmap, int migratetype)
 {
 	unsigned long pfn, end_pfn = start_pfn + size;
@@ -6008,7 +6008,7 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		 * There can be holes in boot-time mem_map[]s handed to this
 		 * function.  They do not exist on hotplugged memory.
 		 */
-		if (context == MEMMAP_EARLY) {
+		if (context == MEMINIT_EARLY) {
 			if (overlap_memmap_init(zone, &pfn))
 				continue;
 			if (defer_init(nid, pfn, end_pfn))
@@ -6017,7 +6017,7 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 
 		page = pfn_to_page(pfn);
 		__init_single_page(page, pfn, zone, nid);
-		if (context == MEMMAP_HOTPLUG)
+		if (context == MEMINIT_HOTPLUG)
 			__SetPageReserved(page);
 
 		/*
@@ -6088,7 +6088,7 @@ void __ref memmap_init_zone_device(struct zone *zone,
 		 * the address space during boot when many long-lived
 		 * kernel allocations are made.
 		 *
-		 * Please note that MEMMAP_HOTPLUG path doesn't clear memmap
+		 * Please note that MEMINIT_HOTPLUG path doesn't clear memmap
 		 * because this is done early in section_activate()
 		 */
 		if (IS_ALIGNED(pfn, pageblock_nr_pages)) {
@@ -6126,7 +6126,7 @@ void __meminit __weak memmap_init(unsigned long size, int nid,
 		if (end_pfn > start_pfn) {
 			size = end_pfn - start_pfn;
 			memmap_init_zone(size, nid, zone, start_pfn,
-					 MEMMAP_EARLY, NULL, MIGRATE_MOVABLE);
+					 MEMINIT_EARLY, NULL, MIGRATE_MOVABLE);
 		}
 	}
 }
