@@ -160,7 +160,7 @@ static int walk_pud_range(p4d_t *p4d, unsigned long addr, unsigned long end,
 		if (walk->vma) {
 			split_huge_pud(walk->vma, pudp, addr);
 			pud = READ_ONCE(*pudp);
-			if (pud_none(pud))
+			if (pud_trans_unstable(&pud))
 				goto again;
 		}
 
