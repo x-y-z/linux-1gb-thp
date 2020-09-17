@@ -809,6 +809,24 @@ static inline int compound_mapcount(struct page *page)
 	return head_compound_mapcount(page);
 }
 
+static inline unsigned int compound_order(struct page *page);
+static inline atomic_t *sub_compound_mapcount_ptr(struct page *page, int sub_level)
+{
+	struct page *head = compound_head(page);
+
+	VM_BUG_ON_PAGE(!PageCompound(page), page);
+	VM_BUG_ON_PAGE(compound_order(head) != HPAGE_PUD_ORDER, page);
+	VM_BUG_ON_PAGE((page - head) % HPAGE_PMD_NR, page);
+	VM_BUG_ON_PAGE(sub_level != 1, page);
+	return &page[2 + sub_level].compound_mapcount;
+}
+
+/* Only works for PUD pages */
+static inline int sub_compound_mapcount(struct page *page)
+{
+	return atomic_read(sub_compound_mapcount_ptr(page, 1)) + 1;
+}
+
 /*
  * The atomic page->_mapcount, starts from -1: so that transitions
  * both from it and to it can be tracked, using atomic_inc_and_test
@@ -899,13 +917,6 @@ static inline void destroy_compound_page(struct page *page)
 {
 	VM_BUG_ON_PAGE(page[1].compound_dtor >= NR_COMPOUND_DTORS, page);
 	compound_page_dtors[page[1].compound_dtor](page);
-}
-
-static inline unsigned int compound_order(struct page *page)
-{
-	if (!PageHead(page))
-		return 0;
-	return page[1].compound_order;
 }
 
 static inline bool hpage_pincount_available(struct page *page)
