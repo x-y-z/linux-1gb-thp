@@ -99,7 +99,7 @@ int mfill_atomic_install_pte(struct mm_struct *dst_mm, pmd_t *dst_pmd,
 	if (page_in_cache)
 		page_add_file_rmap(page, false);
 	else
-		page_add_new_anon_rmap(page, dst_vma, dst_addr, false);
+		page_add_new_anon_rmap(page, dst_vma, dst_addr, 0);
 
 	/*
 	 * Must happen after rmap, as mm_counter() checks mapping (via
