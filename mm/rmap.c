@@ -1292,7 +1292,7 @@ static void page_remove_file_rmap(struct page *page, bool compound)
 		clear_page_mlock(page);
 }
 
-static void page_remove_anon_compound_rmap(struct page *page)
+static void page_remove_anon_compound_rmap(struct page *page, int map_order)
 {
 	int i, nr;
 
@@ -1306,7 +1306,7 @@ static void page_remove_anon_compound_rmap(struct page *page)
 	if (!IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE))
 		return;
 
-	if (thp_nr_pages(page) == HPAGE_PMD_NR)
+	if (map_order == HPAGE_PMD_ORDER)
 		__dec_lruvec_page_state(page, NR_ANON_THPS);
 	else
 		__dec_lruvec_page_state(page, NR_ANON_THPS_PUD);
@@ -1357,7 +1357,7 @@ void page_remove_rmap(struct page *page, int map_order)
 	}
 
 	if (compound) {
-		page_remove_anon_compound_rmap(page);
+		page_remove_anon_compound_rmap(page, map_order);
 		goto out;
 	}
 
