@@ -1364,6 +1364,19 @@ void huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud)
 unlock:
 	spin_unlock(vmf->ptl);
 }
+
+vm_fault_t do_huge_pud_wp_page(struct vm_fault *vmf, pud_t orig_pud)
+{
+	struct vm_area_struct *vma = vmf->vma;
+
+	/*
+	 * split pud directly. a whole pud page is not swappable, so there is
+	 * no need to try reuse_swap_page
+	 */
+	__split_huge_pud(vma, vmf->pud, vmf->address, false, NULL);
+	return VM_FAULT_FALLBACK;
+}
+
 #endif /* CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD */
 
 void huge_pmd_set_accessed(struct vm_fault *vmf, pmd_t orig_pmd)
