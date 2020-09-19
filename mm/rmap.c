@@ -1329,6 +1329,9 @@ static void page_remove_anon_compound_rmap(struct page *page, int map_order)
 				}
 				__dec_node_page_state(page, NR_ANON_THPS);
 			}
+			/* deferred split huge pud page if PUD map is gone */
+			if (!compound_mapcount(head))
+				deferred_split_huge_page(head);
 			nr += HPAGE_PMD_NR;
 			__mod_node_page_state(page_pgdat(head), NR_ANON_MAPPED, -nr);
 			return;
