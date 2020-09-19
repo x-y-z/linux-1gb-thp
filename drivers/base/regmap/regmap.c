@@ -209,6 +209,18 @@ static bool regmap_volatile_range(struct regmap *map, unsigned int reg,
 	return true;
 }
 
+static void regmap_format_12_20_write(struct regmap *map,
+				     unsigned int reg, unsigned int val)
+{
+	u8 *out = map->work_buf;
+
+	out[0] = reg >> 4;
+	out[1] = (reg << 4) | (val >> 16);
+	out[2] = val >> 8;
+	out[3] = val;
+}
+
+
 static void regmap_format_2_6_write(struct regmap *map,
 				     unsigned int reg, unsigned int val)
 {
@@ -581,14 +593,34 @@ static void regmap_range_exit(struct regmap *map)
 	kfree(map->selector_work_buf);
 }
 
+static int regmap_set_name(struct regmap *map, const struct regmap_config *config)
+{
+	if (config->name) {
+		const char *name = kstrdup_const(config->name, GFP_KERNEL);
+
+		if (!name)
+			return -ENOMEM;
+
+		kfree_const(map->name);
+		map->name = name;
+	}
+
+	return 0;
+}
+
 int regmap_attach_dev(struct device *dev, struct regmap *map,
 		      const struct regmap_config *config)
 {
 	struct regmap **m;
+	int ret;
 
 	map->dev = dev;
 
-	regmap_debugfs_init(map, config->name);
+	ret = regmap_set_name(map, config);
+	if (ret)
+		return ret;
+
+	regmap_debugfs_init(map);
 
 	/* Add a devres resource for dev_get_regmap() */
 	m = devres_alloc(dev_get_regmap_release, sizeof(*m), GFP_KERNEL);
@@ -674,9 +706,9 @@ struct regmap *__regmap_init(struct device *dev,
 			     const char *lock_name)
 {
 	struct regmap *map;
-	int ret = -EINVAL;
 	enum regmap_endian reg_endian, val_endian;
 	int i, j;
+	int ret;
 
 	if (!config)
 		goto err;
@@ -687,21 +719,19 @@ struct regmap *__regmap_init(struct device *dev,
 		goto err;
 	}
 
-	if (config->name) {
-		map->name = kstrdup_const(config->name, GFP_KERNEL);
-		if (!map->name) {
-			ret = -ENOMEM;
-			goto err_map;
-		}
-	}
+	ret = regmap_set_name(map, config);
+	if (ret)
+		goto err_map;
 
 	if (config->disable_locking) {
 		map->lock = map->unlock = regmap_lock_unlock_none;
+		map->can_sleep = config->can_sleep;
 		regmap_debugfs_disable(map);
 	} else if (config->lock && config->unlock) {
 		map->lock = config->lock;
 		map->unlock = config->unlock;
 		map->lock_arg = config->lock_arg;
+		map->can_sleep = config->can_sleep;
 	} else if (config->use_hwlock) {
 		map->hwlock = hwspin_lock_request_specific(config->hwlock_id);
 		if (!map->hwlock) {
@@ -737,6 +767,7 @@ struct regmap *__regmap_init(struct device *dev,
 			mutex_init(&map->mutex);
 			map->lock = regmap_lock_mutex;
 			map->unlock = regmap_unlock_mutex;
+			map->can_sleep = true;
 			lockdep_set_class_and_name(&map->mutex,
 						   lock_key, lock_name);
 		}
@@ -861,6 +892,16 @@ struct regmap *__regmap_init(struct device *dev,
 		switch (config->val_bits) {
 		case 14:
 			map->format.format_write = regmap_format_10_14_write;
+			break;
+		default:
+			goto err_hwlock;
+		}
+		break;
+
+	case 12:
+		switch (config->val_bits) {
+		case 20:
+			map->format.format_write = regmap_format_12_20_write;
 			break;
 		default:
 			goto err_hwlock;
@@ -1137,7 +1178,7 @@ skip_format_initialization:
 		if (ret != 0)
 			goto err_regcache;
 	} else {
-		regmap_debugfs_init(map, config->name);
+		regmap_debugfs_init(map);
 	}
 
 	return map;
@@ -1297,6 +1338,8 @@ EXPORT_SYMBOL_GPL(regmap_field_free);
  */
 int regmap_reinit_cache(struct regmap *map, const struct regmap_config *config)
 {
+	int ret;
+
 	regcache_exit(map);
 	regmap_debugfs_exit(map);
 
@@ -1309,7 +1352,11 @@ int regmap_reinit_cache(struct regmap *map, const struct regmap_config *config)
 	map->readable_noinc_reg = config->readable_noinc_reg;
 	map->cache_type = config->cache_type;
 
-	regmap_debugfs_init(map, config->name);
+	ret = regmap_set_name(map, config);
+	if (ret)
+		return ret;
+
+	regmap_debugfs_init(map);
 
 	map->cache_bypass = false;
 	map->cache_only = false;
@@ -2230,8 +2277,12 @@ static int _regmap_range_multi_paged_reg_write(struct regmap *map,
 				if (ret != 0)
 					return ret;
 
-				if (regs[i].delay_us)
-					udelay(regs[i].delay_us);
+				if (regs[i].delay_us) {
+					if (map->can_sleep)
+						fsleep(regs[i].delay_us);
+					else
+						udelay(regs[i].delay_us);
+				}
 
 				base += n;
 				n = 0;
@@ -2267,8 +2318,12 @@ static int _regmap_multi_reg_write(struct regmap *map,
 			if (ret != 0)
 				return ret;
 
-			if (regs[i].delay_us)
-				udelay(regs[i].delay_us);
+			if (regs[i].delay_us) {
+				if (map->can_sleep)
+					fsleep(regs[i].delay_us);
+				else
+					udelay(regs[i].delay_us);
+			}
 		}
 		return 0;
 	}
