@@ -1803,7 +1803,7 @@ static int shmem_getpage_gfp(struct inode *inode, pgoff_t index,
 	struct mm_struct *charge_mm;
 	struct page *page;
 	enum sgp_type sgp_huge = sgp;
-	pgoff_t hindex;
+	pgoff_t hindex = index;
 	int error;
 	int once = 0;
 	int alloced = 0;
@@ -1832,6 +1832,8 @@ repeat:
 		return error;
 	}
 
+	if (page)
+		hindex = page->index;
 	if (page && sgp == SGP_WRITE)
 		mark_page_accessed(page);
 
@@ -1842,6 +1844,7 @@ repeat:
 		unlock_page(page);
 		put_page(page);
 		page = NULL;
+		hindex = index;
 	}
 	if (page || sgp == SGP_READ)
 		goto out;
@@ -1992,7 +1995,7 @@ clear:
 		goto unlock;
 	}
 out:
-	*pagep = page + index - page->index;
+	*pagep = page + index - hindex;
 	return 0;
 
 	/*
