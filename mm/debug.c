@@ -57,7 +57,9 @@ static void __dump_page(struct page *page)
 	int mapcount;
 	char *type = "";
 
-	if (page < head || (page >= head + MAX_ORDER_NR_PAGES)) {
+	if (page < head ||
+	    (page >= head + max_t(unsigned long, compound_nr(head),
+				  (unsigned long)MAX_ORDER_NR_PAGES))) {
 		/*
 		 * Corrupt page, so we cannot call page_mapping. Instead, do a
 		 * safe subset of the steps that page_mapping() does. Caution:
@@ -98,6 +100,8 @@ static void __dump_page(struct page *page)
 					head, compound_order(head),
 					head_compound_mapcount(head));
 		}
+		if (compound_order(head) == HPAGE_PUD_ORDER && PMDPageInPUD(page))
+			pr_warn("pmd_compound_mapcount:%d\n", pmd_compound_mapcount(page));
 	}
 
 #ifdef CONFIG_MEMCG
