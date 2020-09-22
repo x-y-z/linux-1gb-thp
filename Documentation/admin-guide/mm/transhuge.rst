@@ -159,6 +159,7 @@ Some userspace (such as a test program, or an optimized memory allocation
 library) may want to know the size (in bytes) of a transparent hugepage::
 
 	cat /sys/kernel/mm/transparent_hugepage/hpage_pmd_size
+	cat /sys/kernel/mm/transparent_hugepage/hpage_pud_size
 
 khugepaged will be automatically started when
 transparent_hugepage/enabled is set to "always" or "madvise, and it'll
