@@ -340,12 +340,25 @@ static ssize_t hpage_pmd_size_show(struct kobject *kobj,
 static struct kobj_attribute hpage_pmd_size_attr =
 	__ATTR_RO(hpage_pmd_size);
 
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+static ssize_t hpage_pud_size_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%lu\n", HPAGE_PUD_SIZE);
+}
+static struct kobj_attribute hpage_pud_size_attr =
+	__ATTR_RO(hpage_pud_size);
+#endif
+
 static struct attribute *hugepage_attr[] = {
 	&enabled_attr.attr,
 	&enabled_pud_thp_attr.attr,
 	&defrag_attr.attr,
 	&use_zero_page_attr.attr,
 	&hpage_pmd_size_attr.attr,
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+	&hpage_pud_size_attr.attr,
+#endif
 #ifdef CONFIG_SHMEM
 	&shmem_enabled_attr.attr,
 #endif
