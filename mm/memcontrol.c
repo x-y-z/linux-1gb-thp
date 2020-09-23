@@ -5818,7 +5818,7 @@ static inline enum mc_target_type get_mctgt_type_thp(struct vm_area_struct *vma,
 }
 #endif
 
-static int mem_cgroup_count_precharge_pte_range(pmd_t *pmd,
+static int mem_cgroup_count_precharge_pte_range(pmd_t pmd, pmd_t *pmdp,
 					unsigned long addr, unsigned long end,
 					struct mm_walk *walk)
 {
@@ -5826,22 +5826,27 @@ static int mem_cgroup_count_precharge_pte_range(pmd_t *pmd,
 	pte_t *pte;
 	spinlock_t *ptl;
 
-	ptl = pmd_trans_huge_lock(pmd, vma);
+	ptl = pmd_trans_huge_lock(pmdp, vma);
 	if (ptl) {
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
 		/*
 		 * Note their can not be MC_TARGET_DEVICE for now as we do not
 		 * support transparent huge page with MEMORY_DEVICE_PRIVATE but
 		 * this might change.
 		 */
-		if (get_mctgt_type_thp(vma, addr, *pmd, NULL) == MC_TARGET_PAGE)
+		if (get_mctgt_type_thp(vma, addr, pmd, NULL) == MC_TARGET_PAGE)
 			mc.precharge += HPAGE_PMD_NR;
 		spin_unlock(ptl);
 		return 0;
 	}
 
-	if (pmd_trans_unstable(pmd))
+	if (pmd_trans_unstable(&pmd))
 		return 0;
-	pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+	pte = pte_offset_map_lock(vma->vm_mm, pmdp, addr, &ptl);
 	for (; addr != end; pte++, addr += PAGE_SIZE)
 		if (get_mctgt_type(vma, addr, *pte, NULL))
 			mc.precharge++;	/* increment precharge temporarily */
@@ -6014,7 +6019,7 @@ static void mem_cgroup_cancel_attach(struct cgroup_taskset *tset)
 		mem_cgroup_clear_mc();
 }
 
-static int mem_cgroup_move_charge_pte_range(pmd_t *pmd,
+static int mem_cgroup_move_charge_pte_range(pmd_t pmd, pmd_t *pmdp,
 				unsigned long addr, unsigned long end,
 				struct mm_walk *walk)
 {
@@ -6026,13 +6031,18 @@ static int mem_cgroup_move_charge_pte_range(pmd_t *pmd,
 	union mc_target target;
 	struct page *page;
 
-	ptl = pmd_trans_huge_lock(pmd, vma);
+	ptl = pmd_trans_huge_lock(pmdp, vma);
 	if (ptl) {
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
 		if (mc.precharge < HPAGE_PMD_NR) {
 			spin_unlock(ptl);
 			return 0;
 		}
-		target_type = get_mctgt_type_thp(vma, addr, *pmd, &target);
+		target_type = get_mctgt_type_thp(vma, addr, pmd, &target);
 		if (target_type == MC_TARGET_PAGE) {
 			page = target.page;
 			if (!isolate_lru_page(page)) {
@@ -6057,10 +6067,10 @@ static int mem_cgroup_move_charge_pte_range(pmd_t *pmd,
 		return 0;
 	}
 
-	if (pmd_trans_unstable(pmd))
+	if (pmd_trans_unstable(&pmd))
 		return 0;
 retry:
-	pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+	pte = pte_offset_map_lock(vma->vm_mm, pmdp, addr, &ptl);
 	for (; addr != end; addr += PAGE_SIZE) {
 		pte_t ptent = *(pte++);
 		bool device = false;
