@@ -570,28 +570,33 @@ static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 }
 #endif
 
-static int smaps_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
-			   struct mm_walk *walk)
+static int smaps_pte_range(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
+			unsigned long end, struct mm_walk *walk)
 {
 	struct vm_area_struct *vma = walk->vma;
 	pte_t *pte;
 	spinlock_t *ptl;
 
-	ptl = pmd_trans_huge_lock(pmd, vma);
+	ptl = pmd_trans_huge_lock(pmdp, vma);
 	if (ptl) {
-		smaps_pmd_entry(pmd, addr, walk);
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
+		smaps_pmd_entry(pmdp, addr, walk);
 		spin_unlock(ptl);
 		goto out;
 	}
 
-	if (pmd_trans_unstable(pmd))
+	if (pmd_trans_unstable(&pmd))
 		goto out;
 	/*
 	 * The mmap_lock held all the way back in m_start() is what
 	 * keeps khugepaged out of here and from collapsing things
 	 * in here.
 	 */
-	pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+	pte = pte_offset_map_lock(vma->vm_mm, pmdp, addr, &ptl);
 	for (; addr != end; pte++, addr += PAGE_SIZE)
 		smaps_pte_entry(pte, addr, walk);
 	pte_unmap_unlock(pte - 1, ptl);
@@ -1095,7 +1100,7 @@ static inline void clear_soft_dirty_pmd(struct vm_area_struct *vma,
 }
 #endif
 
-static int clear_refs_pte_range(pmd_t *pmd, unsigned long addr,
+static int clear_refs_pte_range(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
 				unsigned long end, struct mm_walk *walk)
 {
 	struct clear_refs_private *cp = walk->private;
@@ -1104,20 +1109,25 @@ static int clear_refs_pte_range(pmd_t *pmd, unsigned long addr,
 	spinlock_t *ptl;
 	struct page *page;
 
-	ptl = pmd_trans_huge_lock(pmd, vma);
+	ptl = pmd_trans_huge_lock(pmdp, vma);
 	if (ptl) {
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
 		if (cp->type == CLEAR_REFS_SOFT_DIRTY) {
-			clear_soft_dirty_pmd(vma, addr, pmd);
+			clear_soft_dirty_pmd(vma, addr, pmdp);
 			goto out;
 		}
 
-		if (!pmd_present(*pmd))
+		if (!pmd_present(pmd))
 			goto out;
 
-		page = pmd_page(*pmd);
+		page = pmd_page(pmd);
 
 		/* Clear accessed and referenced bits. */
-		pmdp_test_and_clear_young(vma, addr, pmd);
+		pmdp_test_and_clear_young(vma, addr, pmdp);
 		test_and_clear_page_young(page);
 		ClearPageReferenced(page);
 out:
@@ -1125,10 +1135,10 @@ out:
 		return 0;
 	}
 
-	if (pmd_trans_unstable(pmd))
+	if (pmd_trans_unstable(&pmd))
 		return 0;
 
-	pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+	pte = pte_offset_map_lock(vma->vm_mm, pmdp, addr, &ptl);
 	for (; addr != end; pte++, addr += PAGE_SIZE) {
 		ptent = *pte;
 
@@ -1392,8 +1402,8 @@ static pagemap_entry_t pte_to_pagemap_entry(struct pagemapread *pm,
 	return make_pme(frame, flags);
 }
 
-static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
-			     struct mm_walk *walk)
+static int pagemap_pmd_range(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
+			unsigned long end, struct mm_walk *walk)
 {
 	struct vm_area_struct *vma = walk->vma;
 	struct pagemapread *pm = walk->private;
@@ -1405,8 +1415,13 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 	ptl = pmd_trans_huge_lock(pmdp, vma);
 	if (ptl) {
 		u64 flags = 0, frame = 0;
-		pmd_t pmd = *pmdp;
 		struct page *page = NULL;
+
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
 
 		if (vma->vm_flags & VM_SOFTDIRTY)
 			flags |= PM_SOFT_DIRTY;
@@ -1460,7 +1475,7 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 		return err;
 	}
 
-	if (pmd_trans_unstable(pmdp))
+	if (pmd_trans_unstable(&pmd))
 		return 0;
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
@@ -1772,7 +1787,7 @@ static struct page *can_gather_numa_stats_pmd(pmd_t pmd,
 }
 #endif
 
-static int gather_pte_stats(pmd_t *pmd, unsigned long addr,
+static int gather_pte_stats(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
 		unsigned long end, struct mm_walk *walk)
 {
 	struct numa_maps *md = walk->private;
@@ -1782,22 +1797,28 @@ static int gather_pte_stats(pmd_t *pmd, unsigned long addr,
 	pte_t *pte;
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	ptl = pmd_trans_huge_lock(pmd, vma);
+	ptl = pmd_trans_huge_lock(pmdp, vma);
 	if (ptl) {
 		struct page *page;
 
-		page = can_gather_numa_stats_pmd(*pmd, vma, addr);
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
+
+		page = can_gather_numa_stats_pmd(pmd, vma, addr);
 		if (page)
-			gather_stats(page, md, pmd_dirty(*pmd),
+			gather_stats(page, md, pmd_dirty(pmd),
 				     HPAGE_PMD_SIZE/PAGE_SIZE);
 		spin_unlock(ptl);
 		return 0;
 	}
 
-	if (pmd_trans_unstable(pmd))
+	if (pmd_trans_unstable(&pmd))
 		return 0;
 #endif
-	orig_pte = pte = pte_offset_map_lock(walk->mm, pmd, addr, &ptl);
+	orig_pte = pte = pte_offset_map_lock(walk->mm, pmdp, addr, &ptl);
 	do {
 		struct page *page = can_gather_numa_stats(*pte, vma, addr);
 		if (!page)
