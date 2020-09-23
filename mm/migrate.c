@@ -2243,7 +2243,7 @@ static int migrate_vma_collect_hole(unsigned long start,
 	return 0;
 }
 
-static int migrate_vma_collect_pmd(pmd_t *pmdp,
+static int migrate_vma_collect_pmd(pmd_t pmd, pmd_t *pmdp,
 				   unsigned long start,
 				   unsigned long end,
 				   struct mm_walk *walk)
@@ -2255,18 +2255,22 @@ static int migrate_vma_collect_pmd(pmd_t *pmdp,
 	spinlock_t *ptl;
 	pte_t *ptep;
 
-again:
-	if (pmd_none(*pmdp))
-		return migrate_vma_collect_hole(start, end, -1, walk);
-
-	if (pmd_trans_huge(*pmdp)) {
-		struct page *page;
-
-		ptl = pmd_lock(mm, pmdp);
-		if (unlikely(!pmd_trans_huge(*pmdp))) {
+	ptl = pmd_trans_huge_lock(pmdp, vma);
+	if (ptl) {
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
 			spin_unlock(ptl);
-			goto again;
+			return 0;
 		}
+	}
+
+	if (pmd_none(pmd)) {
+		spin_unlock(ptl);
+		return migrate_vma_collect_hole(start, end, -1, walk);
+	}
+
+	if (pmd_trans_huge(pmd)) {
+		struct page *page;
 
 		page = pmd_page(*pmdp);
 		if (is_huge_zero_page(page)) {

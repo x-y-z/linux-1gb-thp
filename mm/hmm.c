@@ -316,7 +316,7 @@ fault:
 	return hmm_vma_fault(addr, end, required_fault, walk);
 }
 
-static int hmm_vma_walk_pmd(pmd_t *pmdp,
+static int hmm_vma_walk_pmd(pmd_t pmd, pmd_t *pmdp,
 			    unsigned long start,
 			    unsigned long end,
 			    struct mm_walk *walk)
@@ -328,10 +328,8 @@ static int hmm_vma_walk_pmd(pmd_t *pmdp,
 	unsigned long npages = (end - start) >> PAGE_SHIFT;
 	unsigned long addr = start;
 	pte_t *ptep;
-	pmd_t pmd;
 
 again:
-	pmd = READ_ONCE(*pmdp);
 	if (pmd_none(pmd))
 		return hmm_vma_walk_hole(start, end, -1, walk);
 

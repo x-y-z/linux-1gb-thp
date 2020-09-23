@@ -122,23 +122,21 @@ static int clean_record_pte(pte_t *pte, unsigned long addr,
  * causes dirty info loss. The pagefault handler should do
  * that if needed.
  */
-static int wp_clean_pmd_entry(pmd_t *pmd, unsigned long addr, unsigned long end,
+static int wp_clean_pmd_entry(pmd_t pmd, pmd_t *pmdp, unsigned long addr, unsigned long end,
 			      struct mm_walk *walk)
 {
-	pmd_t pmdval = pmd_read_atomic(pmd);
-
-	if (!pmd_trans_unstable(&pmdval))
+	if (!pmd_trans_unstable(&pmd))
 		return 0;
 
-	if (pmd_none(pmdval)) {
+	if (pmd_none(pmd)) {
 		walk->action = ACTION_AGAIN;
 		return 0;
 	}
 
 	/* Huge pmd, present or migrated */
 	walk->action = ACTION_CONTINUE;
-	if (pmd_trans_huge(pmdval) || pmd_devmap(pmdval))
-		WARN_ON(pmd_write(pmdval) || pmd_dirty(pmdval));
+	if (pmd_trans_huge(pmd) || pmd_devmap(pmd))
+		WARN_ON(pmd_write(pmd) || pmd_dirty(pmd));
 
 	return 0;
 }

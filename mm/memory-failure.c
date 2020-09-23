@@ -627,7 +627,7 @@ static int check_hwpoisoned_pmd_entry(pmd_t *pmdp, unsigned long addr,
 }
 #endif
 
-static int hwpoison_pte_range(pmd_t *pmdp, unsigned long addr,
+static int hwpoison_pte_range(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
 			      unsigned long end, struct mm_walk *walk)
 {
 	struct hwp_walk *hwp = (struct hwp_walk *)walk->private;
@@ -637,6 +637,12 @@ static int hwpoison_pte_range(pmd_t *pmdp, unsigned long addr,
 
 	ptl = pmd_trans_huge_lock(pmdp, walk->vma);
 	if (ptl) {
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
+
 		ret = check_hwpoisoned_pmd_entry(pmdp, addr, hwp);
 		spin_unlock(ptl);
 		goto out;
