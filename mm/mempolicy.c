@@ -516,7 +516,7 @@ out:
  * -EIO - only MPOL_MF_STRICT was specified and an existing page was already
  *        on a node that does not follow the policy.
  */
-static int queue_pages_pte_range(pmd_t *pmd, unsigned long addr,
+static int queue_pages_pte_range(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
 			unsigned long end, struct mm_walk *walk)
 {
 	struct vm_area_struct *vma = walk->vma;
@@ -528,18 +528,23 @@ static int queue_pages_pte_range(pmd_t *pmd, unsigned long addr,
 	pte_t *pte, *mapped_pte;
 	spinlock_t *ptl;
 
-	ptl = pmd_trans_huge_lock(pmd, vma);
+	ptl = pmd_trans_huge_lock(pmdp, vma);
 	if (ptl) {
-		ret = queue_pages_pmd(pmd, ptl, addr, end, walk);
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
+			spin_unlock(ptl);
+			return 0;
+		}
+		ret = queue_pages_pmd(pmdp, ptl, addr, end, walk);
 		if (ret != 2)
 			return ret;
 	}
 	/* THP was split, fall through to pte walk */
 
-	if (pmd_trans_unstable(pmd))
+	if (pmd_trans_unstable(&pmd))
 		return 0;
 
-	mapped_pte = pte = pte_offset_map_lock(walk->mm, pmd, addr, &ptl);
+	mapped_pte = pte = pte_offset_map_lock(walk->mm, pmdp, addr, &ptl);
 	for (; addr != end; pte++, addr += PAGE_SIZE) {
 		if (!pte_present(*pte))
 			continue;
