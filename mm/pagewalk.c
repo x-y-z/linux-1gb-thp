@@ -61,17 +61,19 @@ static int walk_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 static int walk_pmd_range(pud_t pud, unsigned long addr, unsigned long end,
 			  struct mm_walk *walk)
 {
-	pmd_t *pmd;
+	pmd_t *pmdp;
+	pmd_t pmd;
 	unsigned long next;
 	const struct mm_walk_ops *ops = walk->ops;
 	int err = 0;
 	int depth = real_depth(3);
 
-	pmd = pmd_offset(&pud, addr);
+	pmdp = pmd_offset(&pud, addr);
 	do {
 again:
+		pmd = READ_ONCE(*pmdp);
 		next = pmd_addr_end(addr, end);
-		if (pmd_none(*pmd) || (!walk->vma && !walk->no_vma)) {
+		if (pmd_none(pmd) || (!walk->vma && !walk->no_vma)) {
 			if (ops->pte_hole)
 				err = ops->pte_hole(addr, next, depth, walk);
 			if (err)
@@ -86,7 +88,7 @@ again:
 		 * needs to know about pmd_trans_huge() pmds
 		 */
 		if (ops->pmd_entry)
-			err = ops->pmd_entry(pmd, addr, next, walk);
+			err = ops->pmd_entry(pmd, pmdp, addr, next, walk);
 		if (err)
 			break;
 
@@ -97,21 +99,22 @@ again:
 		 * Check this here so we only break down trans_huge
 		 * pages when we _need_ to
 		 */
-		if ((!walk->vma && (pmd_leaf(*pmd) || !pmd_present(*pmd))) ||
+		if ((!walk->vma && (pmd_leaf(pmd) || !pmd_present(pmd))) ||
 		    walk->action == ACTION_CONTINUE ||
 		    !(ops->pte_entry))
 			continue;
 
 		if (walk->vma) {
-			split_huge_pmd(walk->vma, pmd, addr);
-			if (pmd_trans_unstable(pmd))
+			split_huge_pmd(walk->vma, pmdp, addr);
+			pmd = READ_ONCE(*pmdp);
+			if (pmd_trans_unstable(&pmd))
 				goto again;
 		}
 
-		err = walk_pte_range(pmd, addr, next, walk);
+		err = walk_pte_range(pmdp, addr, next, walk);
 		if (err)
 			break;
-	} while (pmd++, addr = next, addr != end);
+	} while (pmdp++, addr = next, addr != end);
 
 	return err;
 }
