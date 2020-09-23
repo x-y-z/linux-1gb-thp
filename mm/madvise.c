@@ -39,6 +39,19 @@ struct madvise_walk_private {
 	bool pageout;
 };
 
+static inline int get_behavior(int behavior)
+{
+	int behavior_no_flags = behavior & MADV_BEHAVIOR_MASK;
+	/*
+	 * only MADV_HUGEPAGE and MADV_NOHUGEPAGE have extra huge page size
+	 * flags
+	 */
+	VM_BUG_ON(behavior_no_flags != MADV_HUGEPAGE &&
+		  behavior_no_flags != MADV_NOHUGEPAGE &&
+		  (behavior & (~MADV_BEHAVIOR_MASK)));
+	return behavior_no_flags;
+}
+
 /*
  * Any behaviour which results in changes to the vma->vm_flags needs to
  * take mmap_lock for writing. Others, which simply traverse vmas, need
@@ -73,7 +86,7 @@ static long madvise_behavior(struct vm_area_struct *vma,
 	pgoff_t pgoff;
 	unsigned long new_flags = vma->vm_flags;
 
-	switch (behavior) {
+	switch (get_behavior(behavior)) {
 	case MADV_NORMAL:
 		new_flags = new_flags & ~VM_RAND_READ & ~VM_SEQ_READ;
 		break;
@@ -957,7 +970,7 @@ madvise_vma(struct vm_area_struct *vma, struct vm_area_struct **prev,
 static bool
 madvise_behavior_valid(int behavior)
 {
-	switch (behavior) {
+	switch (get_behavior(behavior)) {
 	case MADV_DOFORK:
 	case MADV_DONTFORK:
 	case MADV_NORMAL:
