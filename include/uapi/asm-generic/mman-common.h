@@ -6,6 +6,7 @@
  Author: Michael S. Tsirkin <mst@mellanox.co.il>, Mellanox Technologies Ltd.
  Based on: asm-xxx/mman.h
 */
+#include <asm-generic/hugetlb_encode.h>
 
 #define PROT_READ	0x1		/* page can be read */
 #define PROT_WRITE	0x2		/* page can be written */
@@ -79,5 +80,27 @@
 #define PKEY_DISABLE_WRITE	0x2
 #define PKEY_ACCESS_MASK	(PKEY_DISABLE_ACCESS |\
 				 PKEY_DISABLE_WRITE)
+
+
+/*
+ * Huge page size encoding when MADV_HUGEPAGE is specified, and a huge page
+ * size other than the default is desired.  See hugetlb_encode.h.
+ */
+#define MADV_HUGEPAGE_SHIFT	HUGETLB_FLAG_ENCODE_SHIFT
+#define MADV_HUGEPAGE_MASK	HUGETLB_FLAG_ENCODE_MASK
+#define MADV_BEHAVIOR_MASK	((1<<MADV_HUGEPAGE_SHIFT) - 1)
+
+#define MADV_HUGEPAGE_64KB	HUGETLB_FLAG_ENCODE_64KB
+#define MADV_HUGEPAGE_512KB	HUGETLB_FLAG_ENCODE_512KB
+#define MADV_HUGEPAGE_1MB	HUGETLB_FLAG_ENCODE_1MB
+#define MADV_HUGEPAGE_2MB	HUGETLB_FLAG_ENCODE_2MB
+#define MADV_HUGEPAGE_8MB	HUGETLB_FLAG_ENCODE_8MB
+#define MADV_HUGEPAGE_16MB	HUGETLB_FLAG_ENCODE_16MB
+#define MADV_HUGEPAGE_32MB	HUGETLB_FLAG_ENCODE_32MB
+#define MADV_HUGEPAGE_256MB	HUGETLB_FLAG_ENCODE_256MB
+#define MADV_HUGEPAGE_512MB	HUGETLB_FLAG_ENCODE_512MB
+#define MADV_HUGEPAGE_1GB	HUGETLB_FLAG_ENCODE_1GB
+#define MADV_HUGEPAGE_2GB	HUGETLB_FLAG_ENCODE_2GB
+#define MADV_HUGEPAGE_16GB	HUGETLB_FLAG_ENCODE_16GB
 
 #endif /* __ASM_GENERIC_MMAN_COMMON_H */
