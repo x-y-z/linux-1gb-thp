@@ -87,21 +87,20 @@ static int ptdump_pud_entry(pud_t val, pud_t *pudp, unsigned long addr,
 	return 0;
 }
 
-static int ptdump_pmd_entry(pmd_t *pmd, unsigned long addr,
+static int ptdump_pmd_entry(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
 			    unsigned long next, struct mm_walk *walk)
 {
 	struct ptdump_state *st = walk->private;
-	pmd_t val = READ_ONCE(*pmd);
 
 #if defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KASAN_SW_TAGS)
-	if (pmd_page(val) == virt_to_page(lm_alias(kasan_early_shadow_pte)))
+	if (pmd_page(pmd) == virt_to_page(lm_alias(kasan_early_shadow_pte)))
 		return note_kasan_page_table(walk, addr);
 #endif
 
 	if (st->effective_prot)
-		st->effective_prot(st, 3, pmd_val(val));
-	if (pmd_leaf(val))
-		st->note_page(st, addr, 3, pmd_val(val));
+		st->effective_prot(st, 3, pmd_val(pmd));
+	if (pmd_leaf(pmd))
+		st->note_page(st, addr, 3, pmd_val(pmd));
 
 	return 0;
 }
