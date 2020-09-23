@@ -345,6 +345,7 @@ struct attribute_group khugepaged_attr_group = {
 int hugepage_madvise(struct vm_area_struct *vma,
 		     unsigned long *vm_flags, int advice)
 {
+	advice = advice & MADV_BEHAVIOR_MASK;
 	switch (advice) {
 	case MADV_HUGEPAGE:
 #ifdef CONFIG_S390
