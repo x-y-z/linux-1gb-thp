@@ -96,8 +96,8 @@ static int mincore_unmapped_range(unsigned long addr, unsigned long end,
 	return 0;
 }
 
-static int mincore_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
-			struct mm_walk *walk)
+static int mincore_pte_range(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
+			unsigned long end, struct mm_walk *walk)
 {
 	spinlock_t *ptl;
 	struct vm_area_struct *vma = walk->vma;
@@ -105,19 +105,19 @@ static int mincore_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 	unsigned char *vec = walk->private;
 	int nr = (end - addr) >> PAGE_SHIFT;
 
-	ptl = pmd_trans_huge_lock(pmd, vma);
+	ptl = pmd_trans_huge_lock(pmdp, vma);
 	if (ptl) {
 		memset(vec, 1, nr);
 		spin_unlock(ptl);
 		goto out;
 	}
 
-	if (pmd_trans_unstable(pmd)) {
+	if (pmd_trans_unstable(&pmd)) {
 		__mincore_unmapped_range(addr, end, vma, vec);
 		goto out;
 	}
 
-	ptep = pte_offset_map_lock(walk->mm, pmd, addr, &ptl);
+	ptep = pte_offset_map_lock(walk->mm, pmdp, addr, &ptl);
 	for (; addr != end; ptep++, addr += PAGE_SIZE) {
 		pte_t pte = *ptep;
 
