@@ -182,14 +182,14 @@ out:
 }
 
 #ifdef CONFIG_SWAP
-static int swapin_walk_pmd_entry(pmd_t *pmd, unsigned long start,
+static int swapin_walk_pmd_entry(pmd_t pmd, pmd_t *pmdp, unsigned long start,
 	unsigned long end, struct mm_walk *walk)
 {
 	pte_t *orig_pte;
 	struct vm_area_struct *vma = walk->private;
 	unsigned long index;
 
-	if (pmd_none_or_trans_huge_or_clear_bad(pmd))
+	if (pmd_none_or_trans_huge_or_clear_bad(&pmd))
 		return 0;
 
 	for (index = start; index != end; index += PAGE_SIZE) {
@@ -198,7 +198,7 @@ static int swapin_walk_pmd_entry(pmd_t *pmd, unsigned long start,
 		struct page *page;
 		spinlock_t *ptl;
 
-		orig_pte = pte_offset_map_lock(vma->vm_mm, pmd, start, &ptl);
+		orig_pte = pte_offset_map_lock(vma->vm_mm, pmdp, start, &ptl);
 		pte = *(orig_pte + ((index - start) / PAGE_SIZE));
 		pte_unmap_unlock(orig_pte, ptl);
 
@@ -303,7 +303,7 @@ static long madvise_willneed(struct vm_area_struct *vma,
 	return 0;
 }
 
-static int madvise_cold_or_pageout_pte_range(pmd_t *pmd,
+static int madvise_cold_or_pageout_pte_range(pmd_t pmd, pmd_t *pmdp,
 				unsigned long addr, unsigned long end,
 				struct mm_walk *walk)
 {
@@ -321,26 +321,29 @@ static int madvise_cold_or_pageout_pte_range(pmd_t *pmd,
 		return -EINTR;
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	if (pmd_trans_huge(*pmd)) {
-		pmd_t orig_pmd;
+	if (pmd_trans_huge(pmd)) {
 		unsigned long next = pmd_addr_end(addr, end);
 
 		tlb_change_page_size(tlb, HPAGE_PMD_SIZE);
-		ptl = pmd_trans_huge_lock(pmd, vma);
+		ptl = pmd_trans_huge_lock(pmdp, vma);
 		if (!ptl)
 			return 0;
 
-		orig_pmd = *pmd;
-		if (is_huge_zero_pmd(orig_pmd))
-			goto huge_unlock;
-
-		if (unlikely(!pmd_present(orig_pmd))) {
-			VM_BUG_ON(thp_migration_supported() &&
-					!is_pmd_migration_entry(orig_pmd));
+		if (memcmp(pmdp, &pmd, sizeof(pmd)) != 0) {
+			walk->action = ACTION_AGAIN;
 			goto huge_unlock;
 		}
 
-		page = pmd_page(orig_pmd);
+		if (is_huge_zero_pmd(pmd))
+			goto huge_unlock;
+
+		if (unlikely(!pmd_present(pmd))) {
+			VM_BUG_ON(thp_migration_supported() &&
+					!is_pmd_migration_entry(pmd));
+			goto huge_unlock;
+		}
+
+		page = pmd_page(pmd);
 
 		/* Do not interfere with other mappings of this page */
 		if (page_mapcount(page) != 1)
@@ -360,12 +363,12 @@ static int madvise_cold_or_pageout_pte_range(pmd_t *pmd,
 			return 0;
 		}
 
-		if (pmd_young(orig_pmd)) {
-			pmdp_invalidate(vma, addr, pmd);
-			orig_pmd = pmd_mkold(orig_pmd);
+		if (pmd_young(pmd)) {
+			pmdp_invalidate(vma, addr, pmdp);
+			pmd = pmd_mkold(pmd);
 
-			set_pmd_at(mm, addr, pmd, orig_pmd);
-			tlb_remove_pmd_tlb_entry(tlb, pmd, addr);
+			set_pmd_at(mm, addr, pmdp, pmd);
+			tlb_remove_pmd_tlb_entry(tlb, pmdp, addr);
 		}
 
 		ClearPageReferenced(page);
@@ -387,11 +390,11 @@ huge_unlock:
 	}
 
 regular_page:
-	if (pmd_trans_unstable(pmd))
+	if (pmd_trans_unstable(&pmd))
 		return 0;
 #endif
 	tlb_change_page_size(tlb, PAGE_SIZE);
-	orig_pte = pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+	orig_pte = pte = pte_offset_map_lock(vma->vm_mm, pmdp, addr, &ptl);
 	flush_tlb_batched_pending(mm);
 	arch_enter_lazy_mmu_mode();
 	for (; addr < end; pte++, addr += PAGE_SIZE) {
@@ -423,12 +426,12 @@ regular_page:
 			if (split_huge_page(page)) {
 				unlock_page(page);
 				put_page(page);
-				pte_offset_map_lock(mm, pmd, addr, &ptl);
+				pte_offset_map_lock(mm, pmdp, addr, &ptl);
 				break;
 			}
 			unlock_page(page);
 			put_page(page);
-			pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
+			pte = pte_offset_map_lock(mm, pmdp, addr, &ptl);
 			pte--;
 			addr -= PAGE_SIZE;
 			continue;
@@ -565,7 +568,7 @@ static long madvise_pageout(struct vm_area_struct *vma,
 	return 0;
 }
 
-static int madvise_free_pte_range(pmd_t *pmd, unsigned long addr,
+static int madvise_free_pte_range(pmd_t pmd, pmd_t *pmdp, unsigned long addr,
 				unsigned long end, struct mm_walk *walk)
 
 {
@@ -579,15 +582,15 @@ static int madvise_free_pte_range(pmd_t *pmd, unsigned long addr,
 	unsigned long next;
 
 	next = pmd_addr_end(addr, end);
-	if (pmd_trans_huge(*pmd))
-		if (madvise_free_huge_pmd(tlb, vma, pmd, addr, next))
+	if (pmd_trans_huge(pmd))
+		if (madvise_free_huge_pmd(tlb, vma, pmdp, addr, next))
 			goto next;
 
-	if (pmd_trans_unstable(pmd))
+	if (pmd_trans_unstable(&pmd))
 		return 0;
 
 	tlb_change_page_size(tlb, PAGE_SIZE);
-	orig_pte = pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
+	orig_pte = pte = pte_offset_map_lock(mm, pmdp, addr, &ptl);
 	flush_tlb_batched_pending(mm);
 	arch_enter_lazy_mmu_mode();
 	for (; addr != end; pte++, addr += PAGE_SIZE) {
@@ -633,12 +636,12 @@ static int madvise_free_pte_range(pmd_t *pmd, unsigned long addr,
 			if (split_huge_page(page)) {
 				unlock_page(page);
 				put_page(page);
-				pte_offset_map_lock(mm, pmd, addr, &ptl);
+				pte_offset_map_lock(mm, pmdp, addr, &ptl);
 				goto out;
 			}
 			unlock_page(page);
 			put_page(page);
-			pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
+			pte = pte_offset_map_lock(mm, pmdp, addr, &ptl);
 			pte--;
 			addr -= PAGE_SIZE;
 			continue;
