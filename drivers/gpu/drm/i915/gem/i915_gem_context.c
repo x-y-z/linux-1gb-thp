@@ -958,15 +958,9 @@ static int gem_context_register(struct i915_gem_context *ctx,
 	spin_lock(&i915->gem.contexts.lock);
 	list_add_tail(&ctx->link, &i915->gem.contexts.list);
 	spin_unlock(&i915->gem.contexts.lock);
-<<<<<<< HEAD
 
 	return 0;
 
-=======
-
-	return 0;
-
->>>>>>> linux-next/akpm-base
 err_pid:
 	put_pid(fetch_and_zero(&ctx->pid));
 	return ret;
