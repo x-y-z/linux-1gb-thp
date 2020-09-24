@@ -4284,16 +4284,15 @@ static vm_fault_t create_huge_pud(struct vm_fault *vmf)
 {
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) &&			\
 	defined(CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD)
-	/* No support for anonymous transparent PUD pages yet */
 	if (vma_is_anonymous(vmf->vma))
-		goto split;
+		return do_huge_pud_anonymous_page(vmf);
 	if (vmf->vma->vm_ops->huge_fault) {
 		vm_fault_t ret = vmf->vma->vm_ops->huge_fault(vmf, PE_SIZE_PUD);
 
 		if (!(ret & VM_FAULT_FALLBACK))
 			return ret;
 	}
-split:
+
 	/* COW or write-notify not handled on PUD level: split pud.*/
 	__split_huge_pud(vmf->vma, vmf->pud, vmf->address, false, NULL);
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
