@@ -87,7 +87,7 @@ extern void vm_events_fold_cpu(int cpu);
 
 /*
  * Returns scale to change how the item should be printed (/proc/vmstat
- * currently prints number of anon, file and shmem THPs.
+ * currently prints number of anon, file and shmem THPs and anon PUD THPs.
  * But the item is charged in pages).
  */
 static __always_inline unsigned long vmstat_item_print_scale(enum node_stat_item item)
@@ -101,6 +101,9 @@ static __always_inline unsigned long vmstat_item_print_scale(enum node_stat_item
 	       item == NR_SHMEM_PMDMAPPED ||
 	       item == NR_FILE_PMDMAPPED)
 		return HPAGE_PMD_NR;
+
+	if (item == NR_ANON_THPS_PUD)
+		return HPAGE_PUD_NR;
 
 	return 1UL;
 }
