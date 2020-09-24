@@ -347,6 +347,11 @@ struct attribute_group khugepaged_attr_group = {
 int hugepage_madvise(struct vm_area_struct *vma,
 		     unsigned long *vm_flags, int advice)
 {
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+	/* only support 1GB PUD THP on x86 now */
+	bool use_pud_page = advice & MADV_HUGEPAGE_1GB;
+#endif
+
 	advice = advice & MADV_BEHAVIOR_MASK;
 	switch (advice) {
 	case MADV_HUGEPAGE:
@@ -361,6 +366,11 @@ int hugepage_madvise(struct vm_area_struct *vma,
 #endif
 		*vm_flags &= ~VM_NOHUGEPAGE;
 		*vm_flags |= VM_HUGEPAGE;
+
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+		if (use_pud_page)
+			*vm_flags |= VM_HUGEPAGE_PUD;
+#endif
 		/*
 		 * If the vma become good for khugepaged to scan,
 		 * register it here without waiting a page fault that
@@ -373,6 +383,11 @@ int hugepage_madvise(struct vm_area_struct *vma,
 	case MADV_NOHUGEPAGE:
 		*vm_flags &= ~VM_HUGEPAGE;
 		*vm_flags |= VM_NOHUGEPAGE;
+
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+		if (use_pud_page)
+			*vm_flags &= ~VM_HUGEPAGE_PUD;
+#endif
 		/*
 		 * Setting VM_NOHUGEPAGE will prevent khugepaged from scanning
 		 * this vma even if we leave the mm registered in khugepaged if
