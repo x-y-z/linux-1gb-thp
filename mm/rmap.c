@@ -733,6 +733,7 @@ pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address)
 	pgd_t *pgd;
 	p4d_t *p4d;
 	pud_t *pud;
+	pud_t pude;
 	pmd_t *pmd = NULL;
 	pmd_t pmde;
 
@@ -745,7 +746,10 @@ pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address)
 		goto out;
 
 	pud = pud_offset(p4d, address);
-	if (!pud_present(*pud))
+
+	pude = *pud;
+	barrier();
+	if (!pud_present(pude) || pud_trans_huge(pude))
 		goto out;
 
 	pmd = pmd_offset(pud, address);
@@ -1149,8 +1153,12 @@ void do_page_add_anon_rmap(struct page *page,
 		 * pte lock(a spinlock) is held, which implies preemption
 		 * disabled.
 		 */
-		if (compound)
-			__mod_lruvec_page_state(page, NR_ANON_THPS, nr);
+		if (compound) {
+			if (nr == HPAGE_PMD_NR)
+				__mod_lruvec_page_state(page, NR_ANON_THPS, nr);
+			else
+				__mod_lruvec_page_state(page, NR_ANON_THPS_PUD, nr);
+		}
 		__mod_lruvec_page_state(page, NR_ANON_MAPPED, nr);
 	}
 
@@ -1192,7 +1200,10 @@ void page_add_new_anon_rmap(struct page *page,
 		if (hpage_pincount_available(page))
 			atomic_set(compound_pincount_ptr(page), 0);
 
-		__mod_lruvec_page_state(page, NR_ANON_THPS, nr);
+		if (nr == HPAGE_PMD_NR)
+			__mod_lruvec_page_state(page, NR_ANON_THPS, nr);
+		else
+			__mod_lruvec_page_state(page, NR_ANON_THPS_PUD, nr);
 	} else {
 		/* Anon THP always mapped first with PMD */
 		VM_BUG_ON_PAGE(PageTransCompound(page), page);
@@ -1306,7 +1317,11 @@ static void page_remove_anon_compound_rmap(struct page *page)
 	if (!IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE))
 		return;
 
-	__mod_lruvec_page_state(page, NR_ANON_THPS, -thp_nr_pages(page));
+	nr = thp_nr_pages(page);
+	if (nr == HPAGE_PMD_NR)
+		__mod_lruvec_page_state(page, NR_ANON_THPS, -nr);
+	else
+		__mod_lruvec_page_state(page, NR_ANON_THPS_PUD, -nr);
 
 	if (TestClearPageDoubleMap(page)) {
 		/*
