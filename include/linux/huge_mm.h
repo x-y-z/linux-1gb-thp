@@ -18,9 +18,14 @@ extern int copy_huge_pud(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 
 #ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
 extern void huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud);
+extern int do_huge_pud_anonymous_page(struct vm_fault *vmf);
 #else
 static inline void huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud)
 {
+}
+extern int do_huge_pud_anonymous_page(struct vm_fault *vmf)
+{
+	return VM_FAULT_FALLBACK;
 }
 #endif
 
@@ -320,6 +325,7 @@ struct page *mm_get_huge_zero_page(struct mm_struct *mm);
 void mm_put_huge_zero_page(struct mm_struct *mm);
 
 #define mk_huge_pmd(page, prot) pmd_mkhuge(mk_pmd(page, prot))
+#define mk_huge_pud(page, prot) pud_mkhuge(mk_pud(page, prot))
 
 static inline bool thp_migration_supported(void)
 {
