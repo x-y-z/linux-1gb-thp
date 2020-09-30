@@ -26,6 +26,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/netdevice.h>
 #include <linux/sched/signal.h>
+#include <linux/sched/mm.h>
 #include <linux/sysfs.h>
 
 #include "base.h"
@@ -1788,6 +1789,8 @@ static void device_release(struct kobject *kobj)
 	 */
 	devres_release_all(dev);
 
+	kfree(dev->dma_range_map);
+
 	if (dev->release)
 		dev->release(dev);
 	else if (dev->type && dev->type->release)
@@ -3062,6 +3065,7 @@ void device_del(struct device *dev)
 	struct device *parent = dev->parent;
 	struct kobject *glue_dir = NULL;
 	struct class_interface *class_intf;
+	unsigned int noio_flag;
 
 	device_lock(dev);
 	kill_device(dev);
@@ -3073,6 +3077,7 @@ void device_del(struct device *dev)
 	/* Notify clients of device removal.  This call must come
 	 * before dpm_sysfs_remove().
 	 */
+	noio_flag = memalloc_noio_save();
 	if (dev->bus)
 		blocking_notifier_call_chain(&dev->bus->p->bus_notifier,
 					     BUS_NOTIFY_DEL_DEVICE, dev);
@@ -3114,6 +3119,7 @@ void device_del(struct device *dev)
 	glue_dir = get_glue_dir(dev);
 	kobject_del(&dev->kobj);
 	cleanup_glue_dir(dev, glue_dir);
+	memalloc_noio_restore(noio_flag);
 	put_device(parent);
 }
 EXPORT_SYMBOL_GPL(device_del);
@@ -4061,22 +4067,21 @@ void device_shutdown(void)
  */
 
 #ifdef CONFIG_PRINTK
-static int
-create_syslog_header(const struct device *dev, char *hdr, size_t hdrlen)
+static void
+set_dev_info(const struct device *dev, struct dev_printk_info *dev_info)
 {
 	const char *subsys;
-	size_t pos = 0;
+
+	memset(dev_info, 0, sizeof(*dev_info));
 
 	if (dev->class)
 		subsys = dev->class->name;
 	else if (dev->bus)
 		subsys = dev->bus->name;
 	else
-		return 0;
+		return;
 
-	pos += snprintf(hdr + pos, hdrlen - pos, "SUBSYSTEM=%s", subsys);
-	if (pos >= hdrlen)
-		goto overflow;
+	strscpy(dev_info->subsystem, subsys, sizeof(dev_info->subsystem));
 
 	/*
 	 * Add device identifier DEVICE=:
@@ -4092,41 +4097,28 @@ create_syslog_header(const struct device *dev, char *hdr, size_t hdrlen)
 			c = 'b';
 		else
 			c = 'c';
-		pos++;
-		pos += snprintf(hdr + pos, hdrlen - pos,
-				"DEVICE=%c%u:%u",
-				c, MAJOR(dev->devt), MINOR(dev->devt));
+
+		snprintf(dev_info->device, sizeof(dev_info->device),
+			 "%c%u:%u", c, MAJOR(dev->devt), MINOR(dev->devt));
 	} else if (strcmp(subsys, "net") == 0) {
 		struct net_device *net = to_net_dev(dev);
 
-		pos++;
-		pos += snprintf(hdr + pos, hdrlen - pos,
-				"DEVICE=n%u", net->ifindex);
+		snprintf(dev_info->device, sizeof(dev_info->device),
+			 "n%u", net->ifindex);
 	} else {
-		pos++;
-		pos += snprintf(hdr + pos, hdrlen - pos,
-				"DEVICE=+%s:%s", subsys, dev_name(dev));
+		snprintf(dev_info->device, sizeof(dev_info->device),
+			 "+%s:%s", subsys, dev_name(dev));
 	}
-
-	if (pos >= hdrlen)
-		goto overflow;
-
-	return pos;
-
-overflow:
-	dev_WARN(dev, "device/subsystem name too long");
-	return 0;
 }
 
 int dev_vprintk_emit(int level, const struct device *dev,
 		     const char *fmt, va_list args)
 {
-	char hdr[128];
-	size_t hdrlen;
+	struct dev_printk_info dev_info;
 
-	hdrlen = create_syslog_header(dev, hdr, sizeof(hdr));
+	set_dev_info(dev, &dev_info);
 
-	return vprintk_emit(0, level, hdrlen ? hdr : NULL, hdrlen, fmt, args);
+	return vprintk_emit(0, level, &dev_info, fmt, args);
 }
 EXPORT_SYMBOL(dev_vprintk_emit);
 

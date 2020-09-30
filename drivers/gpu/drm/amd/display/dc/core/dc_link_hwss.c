@@ -104,6 +104,12 @@ void dp_enable_link_phy(
 	struct clock_source *dp_cs =
 			link->dc->res_pool->dp_clock_source;
 	unsigned int i;
+
+	if (link->connector_signal == SIGNAL_TYPE_EDP) {
+		link->dc->hwss.edp_power_control(link, true);
+		link->dc->hwss.edp_wait_for_hpd_ready(link, true);
+	}
+
 	/* If the current pixel clock source is not DTO(happens after
 	 * switching from HDMI passive dongle to DP on the same connector),
 	 * switch the pixel clock source to DTO.
@@ -223,6 +229,8 @@ void dp_disable_link_phy(struct dc_link *link, enum signal_type signal)
 		dp_receiver_power_ctrl(link, false);
 
 	if (signal == SIGNAL_TYPE_EDP) {
+		if (link->dc->hwss.edp_backlight_control)
+			link->dc->hwss.edp_backlight_control(link, false);
 		link->link_enc->funcs->disable_output(link->link_enc, signal);
 		link->dc->hwss.edp_power_control(link, false);
 	} else {

@@ -321,6 +321,11 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	/* Set the maxmtu to a default of JUMBO_LEN */
 	plat->maxmtu = JUMBO_LEN;
 
+	plat->vlan_fail_q_en = true;
+
+	/* Use the last Rx queue */
+	plat->vlan_fail_q = plat->rx_queues_to_use - 1;
+
 	return 0;
 }
 
@@ -653,7 +658,6 @@ static void intel_eth_pci_remove(struct pci_dev *pdev)
 
 	pci_free_irq_vectors(pdev);
 
-	clk_disable_unprepare(priv->plat->stmmac_clk);
 	clk_unregister_fixed_rate(priv->plat->stmmac_clk);
 
 	pcim_iounmap_regions(pdev, BIT(0));

@@ -105,7 +105,7 @@ static void kgd_program_sh_mem_settings(struct kgd_dev *kgd, uint32_t vmid,
 	unlock_srbm(kgd);
 }
 
-static int kgd_set_pasid_vmid_mapping(struct kgd_dev *kgd, unsigned int pasid,
+static int kgd_set_pasid_vmid_mapping(struct kgd_dev *kgd, u32 pasid,
 					unsigned int vmid)
 {
 	struct amdgpu_device *adev = get_amdgpu_device(kgd);
@@ -542,7 +542,7 @@ static int kgd_hqd_destroy(struct kgd_dev *kgd, void *mqd,
 	uint32_t temp;
 	struct v10_compute_mqd *m = get_mqd(mqd);
 
-	if (adev->in_gpu_reset)
+	if (amdgpu_in_reset(adev))
 		return -EIO;
 
 #if 0
@@ -776,6 +776,4 @@ const struct kfd2kgd_calls gfx_v10_kfd2kgd = {
 	.get_atc_vmid_pasid_mapping_info =
 			get_atc_vmid_pasid_mapping_info,
 	.set_vm_context_page_table_base = set_vm_context_page_table_base,
-	.get_hive_id = amdgpu_amdkfd_get_hive_id,
-	.get_unique_id = amdgpu_amdkfd_get_unique_id,
 };

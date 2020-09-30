@@ -36,11 +36,20 @@
 
 /* Firmware versioning. */
 #ifdef DMUB_EXPOSE_VERSION
-#define DMUB_FW_VERSION_GIT_HASH 0xe6d590b09
+#define DMUB_FW_VERSION_GIT_HASH 0xf547f0b9d
 #define DMUB_FW_VERSION_MAJOR 0
 #define DMUB_FW_VERSION_MINOR 0
-#define DMUB_FW_VERSION_REVISION 25
-#define DMUB_FW_VERSION_UCODE ((DMUB_FW_VERSION_MAJOR << 24) | (DMUB_FW_VERSION_MINOR << 16) | DMUB_FW_VERSION_REVISION)
+#define DMUB_FW_VERSION_REVISION 34
+#define DMUB_FW_VERSION_TEST 0
+#define DMUB_FW_VERSION_VBIOS 0
+#define DMUB_FW_VERSION_HOTFIX 0
+#define DMUB_FW_VERSION_UCODE (((DMUB_FW_VERSION_MAJOR & 0xFF) << 24) | \
+		((DMUB_FW_VERSION_MINOR & 0xFF) << 16) | \
+		((DMUB_FW_VERSION_REVISION & 0xFF) << 8) | \
+		((DMUB_FW_VERSION_TEST & 0x1) << 7) | \
+		((DMUB_FW_VERSION_VBIOS & 0x1) << 6) | \
+		(DMUB_FW_VERSION_HOTFIX & 0x3F))
+
 #endif
 
 //<DMUB_TYPES>==================================================================
@@ -88,6 +97,7 @@ union dmub_psr_debug_flags {
 	struct {
 		uint32_t visual_confirm : 1;
 		uint32_t use_hw_lock_mgr : 1;
+		uint32_t log_line_nums : 1;
 	} bitfields;
 
 	uint32_t u32All;
@@ -160,7 +170,7 @@ union dmub_fw_boot_status {
 		uint32_t dal_fw : 1;
 		uint32_t mailbox_rdy : 1;
 		uint32_t optimized_init_done : 1;
-		uint32_t reserved : 29;
+		uint32_t restore_required : 1;
 	} bits;
 	uint32_t all;
 };
@@ -169,6 +179,7 @@ enum dmub_fw_boot_status_bit {
 	DMUB_FW_BOOT_STATUS_BIT_DAL_FIRMWARE = (1 << 0),
 	DMUB_FW_BOOT_STATUS_BIT_MAILBOX_READY = (1 << 1),
 	DMUB_FW_BOOT_STATUS_BIT_OPTIMIZED_INIT_DONE = (1 << 2),
+	DMUB_FW_BOOT_STATUS_BIT_RESTORE_REQUIRED = (1 << 3),
 };
 
 /* Register bit definition for SCRATCH15 */
@@ -204,6 +215,7 @@ enum dmub_cmd_vbios_type {
 	DMUB_CMD__VBIOS_DIG1_TRANSMITTER_CONTROL = 1,
 	DMUB_CMD__VBIOS_SET_PIXEL_CLOCK = 2,
 	DMUB_CMD__VBIOS_ENABLE_DISP_POWER_GATING = 3,
+	DMUB_CMD__VBIOS_LVTMA_CONTROL = 15,
 };
 
 //==============================================================================
@@ -288,6 +300,10 @@ enum dmub_cmd_type {
 	DMUB_CMD__ABM = 66,
 	DMUB_CMD__HW_LOCK = 69,
 	DMUB_CMD__VBIOS = 128,
+};
+
+enum dmub_out_cmd_type {
+	DMUB_OUT_CMD__NULL = 0,
 };
 
 #pragma pack(push, 1)
@@ -781,12 +797,10 @@ static inline void dmub_rb_flush_pending(const struct dmub_rb *rb)
 
 	while (rptr != wptr) {
 		uint64_t volatile *data = (uint64_t volatile *)rb->base_address + rptr / sizeof(uint64_t);
-		//uint64_t volatile *p = (uint64_t volatile *)data;
-		uint64_t temp;
 		int i;
 
 		for (i = 0; i < DMUB_RB_CMD_SIZE / sizeof(uint64_t); i++)
-			temp = *data++;
+			*data++;
 
 		rptr += DMUB_RB_CMD_SIZE;
 		if (rptr >= rb->capacity)

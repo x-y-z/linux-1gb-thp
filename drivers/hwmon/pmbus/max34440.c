@@ -41,6 +41,8 @@ struct max34440_data {
 
 #define to_max34440_data(x)  container_of(x, struct max34440_data, info)
 
+static const struct i2c_device_id max34440_id[];
+
 static int max34440_read_word_data(struct i2c_client *client, int page,
 				   int phase, int reg)
 {
@@ -388,7 +390,6 @@ static struct pmbus_driver_info max34440_info[] = {
 		.func[18] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
 		.func[19] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
 		.func[20] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
-		.read_byte_data = max34440_read_byte_data,
 		.read_word_data = max34440_read_word_data,
 		.write_word_data = max34440_write_word_data,
 	},
@@ -419,7 +420,6 @@ static struct pmbus_driver_info max34440_info[] = {
 		.func[15] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
 		.func[16] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
 		.func[17] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
-		.read_byte_data = max34440_read_byte_data,
 		.read_word_data = max34440_read_word_data,
 		.write_word_data = max34440_write_word_data,
 	},
@@ -455,14 +455,12 @@ static struct pmbus_driver_info max34440_info[] = {
 		.func[19] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
 		.func[20] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
 		.func[21] = PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP,
-		.read_byte_data = max34440_read_byte_data,
 		.read_word_data = max34440_read_word_data,
 		.write_word_data = max34440_write_word_data,
 	},
 };
 
-static int max34440_probe(struct i2c_client *client,
-			  const struct i2c_device_id *id)
+static int max34440_probe(struct i2c_client *client)
 {
 	struct max34440_data *data;
 	int rv;
@@ -471,8 +469,8 @@ static int max34440_probe(struct i2c_client *client,
 			    GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
-	data->id = id->driver_data;
-	data->info = max34440_info[id->driver_data];
+	data->id = i2c_match_id(max34440_id, client)->driver_data;
+	data->info = max34440_info[data->id];
 
 	if (data->id == max34451) {
 		rv = max34451_set_supported_funcs(client, data);
@@ -480,7 +478,7 @@ static int max34440_probe(struct i2c_client *client,
 			return rv;
 	}
 
-	return pmbus_do_probe(client, id, &data->info);
+	return pmbus_do_probe(client, &data->info);
 }
 
 static const struct i2c_device_id max34440_id[] = {
@@ -499,7 +497,7 @@ static struct i2c_driver max34440_driver = {
 	.driver = {
 		   .name = "max34440",
 		   },
-	.probe = max34440_probe,
+	.probe_new = max34440_probe,
 	.remove = pmbus_do_remove,
 	.id_table = max34440_id,
 };

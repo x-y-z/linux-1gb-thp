@@ -597,7 +597,6 @@ extenstion||extension
 extracter||extractor
 faied||failed
 faield||failed
-falied||failed
 faild||failed
 failded||failed
 failer||failure
@@ -794,7 +793,6 @@ interrup||interrupt
 interrups||interrupts
 interruptted||interrupted
 interupted||interrupted
-interupt||interrupt
 intial||initial
 intialisation||initialisation
 intialised||initialised
@@ -970,7 +968,6 @@ occurd||occurred
 occured||occurred
 occurence||occurrence
 occure||occurred
-occured||occurred
 occuring||occurring
 offser||offset
 offet||offset
@@ -1439,7 +1436,6 @@ udpate||update
 uesd||used
 uknown||unknown
 usccess||success
-usupported||unsupported
 uncommited||uncommitted
 uncompatible||incompatible
 unconditionaly||unconditionally

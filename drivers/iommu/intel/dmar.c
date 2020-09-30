@@ -316,6 +316,9 @@ static int dmar_pci_bus_add_dev(struct dmar_pci_notify_info *info)
 	if (ret < 0 && dmar_dev_scope_status == 0)
 		dmar_dev_scope_status = ret;
 
+	if (ret >= 0)
+		intel_irq_remap_add_device(info);
+
 	return ret;
 }
 
@@ -380,7 +383,7 @@ dmar_find_dmaru(struct acpi_dmar_hardware_unit *drhd)
 	return NULL;
 }
 
-/**
+/*
  * dmar_parse_one_drhd - parses exactly one DMA remapping hardware definition
  * structure which uniquely represent one DMA remapping hardware unit
  * present in the platform
@@ -473,7 +476,7 @@ static int dmar_parse_one_rhsa(struct acpi_dmar_header *header, void *arg)
 	rhsa = (struct acpi_dmar_rhsa *)header;
 	for_each_drhd_unit(drhd) {
 		if (drhd->reg_base_addr == rhsa->base_address) {
-			int node = acpi_map_pxm_to_node(rhsa->proximity_domain);
+			int node = pxm_to_node(rhsa->proximity_domain);
 
 			if (!node_online(node))
 				node = NUMA_NO_NODE;
@@ -1482,7 +1485,7 @@ void qi_flush_dev_iotlb_pasid(struct intel_iommu *iommu, u16 sid, u16 pfsid,
 }
 
 void qi_flush_pasid_cache(struct intel_iommu *iommu, u16 did,
-			  u64 granu, int pasid)
+			  u64 granu, u32 pasid)
 {
 	struct qi_desc desc = {.qw1 = 0, .qw2 = 0, .qw3 = 0};
 
@@ -1796,7 +1799,7 @@ void dmar_msi_read(int irq, struct msi_msg *msg)
 }
 
 static int dmar_fault_do_one(struct intel_iommu *iommu, int type,
-		u8 fault_reason, int pasid, u16 source_id,
+		u8 fault_reason, u32 pasid, u16 source_id,
 		unsigned long long addr)
 {
 	const char *reason;
@@ -1846,7 +1849,8 @@ irqreturn_t dmar_fault(int irq, void *dev_id)
 		u8 fault_reason;
 		u16 source_id;
 		u64 guest_addr;
-		int type, pasid;
+		u32 pasid;
+		int type;
 		u32 data;
 		bool pasid_present;
 

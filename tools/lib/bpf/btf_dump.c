@@ -19,9 +19,6 @@
 #include "libbpf.h"
 #include "libbpf_internal.h"
 
-/* make sure libbpf doesn't use kernel-only integer typedefs */
-#pragma GCC poison u8 u16 u32 u64 s8 s16 s32 s64
-
 static const char PREFIXES[] = "\t\t\t\t\t\t\t\t\t\t\t\t\t";
 static const size_t PREFIX_CNT = sizeof(PREFIXES) - 1;
 
@@ -93,14 +90,7 @@ struct btf_dump {
 
 static size_t str_hash_fn(const void *key, void *ctx)
 {
-	const char *s = key;
-	size_t h = 0;
-
-	while (*s) {
-		h = h * 31 + *s;
-		s++;
-	}
-	return h;
+	return str_hash(key);
 }
 
 static bool str_equal_fn(const void *a, const void *b, void *ctx)
@@ -323,8 +313,7 @@ static int btf_dump_add_emit_queue_id(struct btf_dump *d, __u32 id)
 
 	if (d->emit_queue_cnt >= d->emit_queue_cap) {
 		new_cap = max(16, d->emit_queue_cap * 3 / 2);
-		new_queue = realloc(d->emit_queue,
-				    new_cap * sizeof(new_queue[0]));
+		new_queue = libbpf_reallocarray(d->emit_queue, new_cap, sizeof(new_queue[0]));
 		if (!new_queue)
 			return -ENOMEM;
 		d->emit_queue = new_queue;
@@ -1003,8 +992,7 @@ static int btf_dump_push_decl_stack_id(struct btf_dump *d, __u32 id)
 
 	if (d->decl_stack_cnt >= d->decl_stack_cap) {
 		new_cap = max(16, d->decl_stack_cap * 3 / 2);
-		new_stack = realloc(d->decl_stack,
-				    new_cap * sizeof(new_stack[0]));
+		new_stack = libbpf_reallocarray(d->decl_stack, new_cap, sizeof(new_stack[0]));
 		if (!new_stack)
 			return -ENOMEM;
 		d->decl_stack = new_stack;

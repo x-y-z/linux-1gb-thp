@@ -762,7 +762,7 @@ static int iommu_create_device_direct_mappings(struct iommu_group *group,
 
 	}
 
-	iommu_flush_tlb_all(domain);
+	iommu_flush_iotlb_all(domain);
 
 out:
 	iommu_put_resv_regions(dev, &mappings);
@@ -2316,7 +2316,7 @@ size_t iommu_unmap(struct iommu_domain *domain,
 
 	iommu_iotlb_gather_init(&iotlb_gather);
 	ret = __iommu_unmap(domain, iova, size, &iotlb_gather);
-	iommu_tlb_sync(domain, &iotlb_gather);
+	iommu_iotlb_sync(domain, &iotlb_gather);
 
 	return ret;
 }
@@ -2839,7 +2839,7 @@ void iommu_sva_unbind_device(struct iommu_sva *handle)
 }
 EXPORT_SYMBOL_GPL(iommu_sva_unbind_device);
 
-int iommu_sva_get_pasid(struct iommu_sva *handle)
+u32 iommu_sva_get_pasid(struct iommu_sva *handle)
 {
 	const struct iommu_ops *ops = handle->dev->bus->iommu_ops;
 

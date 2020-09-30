@@ -212,10 +212,6 @@ struct tile_config {
  * IH ring entry. This function allows the KFD ISR to get the VMID
  * from the fault status register as early as possible.
  *
- * @get_hive_id: Returns hive id of current  device,  0 if xgmi is not enabled
- *
- * @get_unique_id: Returns uuid id of current  device
- * 
  * This structure contains function pointers to services that the kgd driver
  * provides to amdkfd driver.
  *
@@ -226,7 +222,7 @@ struct kfd2kgd_calls {
 			uint32_t sh_mem_config,	uint32_t sh_mem_ape1_base,
 			uint32_t sh_mem_ape1_limit, uint32_t sh_mem_bases);
 
-	int (*set_pasid_vmid_mapping)(struct kgd_dev *kgd, unsigned int pasid,
+	int (*set_pasid_vmid_mapping)(struct kgd_dev *kgd, u32 pasid,
 					unsigned int vmid);
 
 	int (*init_interrupts)(struct kgd_dev *kgd, uint32_t pipe_id);
@@ -290,9 +286,6 @@ struct kfd2kgd_calls {
 	void (*set_vm_context_page_table_base)(struct kgd_dev *kgd,
 			uint32_t vmid, uint64_t page_table_base);
 	uint32_t (*read_vmid_from_vmfault_reg)(struct kgd_dev *kgd);
-	uint64_t (*get_hive_id)(struct kgd_dev *kgd);
-	uint64_t (*get_unique_id)(struct kgd_dev *kgd);
-
 };
 
 #endif	/* KGD_KFD_INTERFACE_H_INCLUDED */

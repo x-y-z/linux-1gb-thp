@@ -490,8 +490,6 @@ enum {
 	IDE_DFLAG_NOPROBE		= BIT(9),
 	/* need to do check_media_change() */
 	IDE_DFLAG_REMOVABLE		= BIT(10),
-	/* needed for removable devices */
-	IDE_DFLAG_ATTACH		= BIT(11),
 	IDE_DFLAG_FORCED_GEOM		= BIT(12),
 	/* disallow setting unmask bit */
 	IDE_DFLAG_NO_UNMASK		= BIT(13),
@@ -1394,13 +1392,7 @@ int ide_pci_init_two(struct pci_dev *, struct pci_dev *,
 		     const struct ide_port_info *, void *);
 void ide_pci_remove(struct pci_dev *);
 
-#ifdef CONFIG_PM
-int ide_pci_suspend(struct pci_dev *, pm_message_t);
-int ide_pci_resume(struct pci_dev *);
-#else
-#define ide_pci_suspend NULL
-#define ide_pci_resume NULL
-#endif
+extern const struct dev_pm_ops ide_pci_pm_ops;
 
 void ide_map_sg(ide_drive_t *, struct ide_cmd *);
 void ide_init_sg_cmd(struct ide_cmd *, unsigned int);
