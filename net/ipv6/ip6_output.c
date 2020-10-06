@@ -1492,7 +1492,7 @@ emsgsize:
 	 * Otherwise, we need to reserve fragment header and
 	 * fragment alignment (= 8-15 octects, in total).
 	 *
-	 * Note that we may need to "move" the data from the tail of
+	 * Note that we may need to "move" the data from the tail
 	 * of the buffer to the new fragment when we split
 	 * the message.
 	 *
@@ -1615,7 +1615,7 @@ alloc_new_skb:
 			if (fraggap) {
 				skb->csum = skb_copy_and_csum_bits(
 					skb_prev, maxfraglen,
-					data + transhdrlen, fraggap, 0);
+					data + transhdrlen, fraggap);
 				skb_prev->csum = csum_sub(skb_prev->csum,
 							  skb->csum);
 				data += fraggap;

@@ -51,6 +51,19 @@
 	__ret;							\
 })
 
+/* LDCW is strongly ordered and can be used as a memory barrier
+   when a suitably aligned address is available. */
+#ifdef CONFIG_SMP
+#define __ldcw_mb(a) ({						\
+	unsigned __tmp;						\
+	__asm__ __volatile__(__LDCW " 0(%1),%0"			\
+	ALTERNATIVE(ALT_COND_NO_SMP, INSN_NOP)			\
+	: "=r" (__tmp) : "r" (a) : "memory");			\
+})
+#else
+#define __ldcw_mb(a) barrier();
+#endif
+
 #ifdef CONFIG_SMP
 # define __lock_aligned __section(.data..lock_aligned)
 #endif

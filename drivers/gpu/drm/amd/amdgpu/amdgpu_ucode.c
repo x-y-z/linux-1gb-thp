@@ -391,6 +391,7 @@ amdgpu_ucode_get_load_type(struct amdgpu_device *adev, int load_type)
 	case CHIP_NAVI12:
 	case CHIP_SIENNA_CICHLID:
 	case CHIP_NAVY_FLOUNDER:
+	case CHIP_VANGOGH:
 		if (!load_type)
 			return AMDGPU_FW_LOAD_DIRECT;
 		else
@@ -408,7 +409,7 @@ static ssize_t show_##name(struct device *dev,				\
 			  char *buf)					\
 {									\
 	struct drm_device *ddev = dev_get_drvdata(dev);			\
-	struct amdgpu_device *adev = ddev->dev_private;			\
+	struct amdgpu_device *adev = drm_to_adev(ddev);			\
 									\
 	return snprintf(buf, PAGE_SIZE, "0x%08x\n", adev->field);	\
 }									\
@@ -628,7 +629,7 @@ int amdgpu_ucode_init_bo(struct amdgpu_device *adev)
 	struct amdgpu_firmware_info *ucode = NULL;
 
  /* for baremetal, the ucode is allocated in gtt, so don't need to fill the bo when reset/suspend */
-	if (!amdgpu_sriov_vf(adev) && (adev->in_gpu_reset || adev->in_suspend))
+	if (!amdgpu_sriov_vf(adev) && (amdgpu_in_reset(adev) || adev->in_suspend))
 		return 0;
 	/*
 	 * if SMU loaded firmware, it needn't add SMC, UVD, and VCE

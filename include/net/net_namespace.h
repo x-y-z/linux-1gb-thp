@@ -60,9 +60,6 @@ struct net {
 	refcount_t		passive;	/* To decide when the network
 						 * namespace should be freed.
 						 */
-	refcount_t		count;		/* To decided when the network
-						 *  namespace should be shut down.
-						 */
 	spinlock_t		rules_mod_lock;
 
 	unsigned int		dev_unreg_count;
@@ -230,7 +227,7 @@ extern struct list_head net_namespace_list;
 struct net *get_net_ns_by_pid(pid_t pid);
 struct net *get_net_ns_by_fd(int fd);
 
-u64 net_gen_cookie(struct net *net);
+u64 __net_gen_cookie(struct net *net);
 
 #ifdef CONFIG_SYSCTL
 void ipx_register_sysctl(void);
@@ -245,7 +242,7 @@ void __put_net(struct net *net);
 
 static inline struct net *get_net(struct net *net)
 {
-	refcount_inc(&net->count);
+	refcount_inc(&net->ns.count);
 	return net;
 }
 
@@ -256,14 +253,14 @@ static inline struct net *maybe_get_net(struct net *net)
 	 * exists.  If the reference count is zero this
 	 * function fails and returns NULL.
 	 */
-	if (!refcount_inc_not_zero(&net->count))
+	if (!refcount_inc_not_zero(&net->ns.count))
 		net = NULL;
 	return net;
 }
 
 static inline void put_net(struct net *net)
 {
-	if (refcount_dec_and_test(&net->count))
+	if (refcount_dec_and_test(&net->ns.count))
 		__put_net(net);
 }
 
@@ -275,7 +272,7 @@ int net_eq(const struct net *net1, const struct net *net2)
 
 static inline int check_net(const struct net *net)
 {
-	return refcount_read(&net->count) != 0;
+	return refcount_read(&net->ns.count) != 0;
 }
 
 void net_drop_ns(void *);

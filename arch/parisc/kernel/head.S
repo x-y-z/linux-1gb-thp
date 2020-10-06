@@ -342,6 +342,19 @@ smp_slave_stext:
 2:
 #endif
 
+#ifdef CONFIG_64BIT
+	/*
+	 *  Enable Wide mode early, in case smp_init_current_idle_task was
+	 *  allocated above 4GB.
+         */
+1:	mfia            %rp             /* clear upper part of pcoq */
+	ldo             2f-1b(%rp),%rp
+	depdi           0,31,32,%rp
+	bv              (%rp)
+	ssm             PSW_SM_W,%r0
+2:
+#endif
+
 	/*  Initialize the SP - monarch sets up smp_init_current_idle_task */
 	load32		PA(smp_init_current_idle_task),%sp
 	LDREG		0(%sp),%sp	/* load task address */

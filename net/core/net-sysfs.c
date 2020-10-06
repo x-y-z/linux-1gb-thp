@@ -1027,7 +1027,7 @@ net_rx_queue_update_kobjects(struct net_device *dev, int old_num, int new_num)
 	while (--i >= new_num) {
 		struct kobject *kobj = &dev->_rx[i].kobj;
 
-		if (!refcount_read(&dev_net(dev)->count))
+		if (!refcount_read(&dev_net(dev)->ns.count))
 			kobj->uevent_suppress = 1;
 		if (dev->sysfs_rx_queue_group)
 			sysfs_remove_group(kobj, dev->sysfs_rx_queue_group);
@@ -1158,8 +1158,8 @@ static ssize_t traffic_class_show(struct netdev_queue *queue,
 	 * belongs to the root device it will be reported with just the
 	 * traffic class, so just "0" for TC 0 for example.
 	 */
-	return dev->num_tc < 0 ? sprintf(buf, "%u%d\n", tc, dev->num_tc) :
-				 sprintf(buf, "%u\n", tc);
+	return dev->num_tc < 0 ? sprintf(buf, "%d%d\n", tc, dev->num_tc) :
+				 sprintf(buf, "%d\n", tc);
 }
 
 #ifdef CONFIG_XPS
@@ -1605,7 +1605,7 @@ netdev_queue_update_kobjects(struct net_device *dev, int old_num, int new_num)
 	while (--i >= new_num) {
 		struct netdev_queue *queue = dev->_tx + i;
 
-		if (!refcount_read(&dev_net(dev)->count))
+		if (!refcount_read(&dev_net(dev)->ns.count))
 			queue->kobj.uevent_suppress = 1;
 #ifdef CONFIG_BQL
 		sysfs_remove_group(&queue->kobj, &dql_group);
@@ -1852,7 +1852,7 @@ void netdev_unregister_kobject(struct net_device *ndev)
 {
 	struct device *dev = &ndev->dev;
 
-	if (!refcount_read(&dev_net(ndev)->count))
+	if (!refcount_read(&dev_net(ndev)->ns.count))
 		dev_set_uevent_suppress(dev, 1);
 
 	kobject_get(&dev->kobj);

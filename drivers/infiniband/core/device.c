@@ -158,11 +158,7 @@ static void *xan_find_marked(struct xarray *xa, unsigned long *indexp,
 	void *entry;
 
 	rcu_read_lock();
-	do {
-		entry = xas_find_marked(&xas, ULONG_MAX, filter);
-		if (xa_is_zero(entry))
-			break;
-	} while (xas_retry(&xas, entry));
+	entry = xas_find_marked(&xas, ULONG_MAX, filter);
 	rcu_read_unlock();
 
 	if (entry) {
@@ -2697,7 +2693,9 @@ void ib_set_device_ops(struct ib_device *dev, const struct ib_device_ops *ops)
 	SET_OBJ_SIZE(dev_ops, ib_ah);
 	SET_OBJ_SIZE(dev_ops, ib_counters);
 	SET_OBJ_SIZE(dev_ops, ib_cq);
+	SET_OBJ_SIZE(dev_ops, ib_mw);
 	SET_OBJ_SIZE(dev_ops, ib_pd);
+	SET_OBJ_SIZE(dev_ops, ib_rwq_ind_table);
 	SET_OBJ_SIZE(dev_ops, ib_srq);
 	SET_OBJ_SIZE(dev_ops, ib_ucontext);
 	SET_OBJ_SIZE(dev_ops, ib_xrcd);

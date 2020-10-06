@@ -654,11 +654,11 @@ xfs_fs_destroy_inode(
 	ASSERT_ALWAYS(!xfs_iflags_test(ip, XFS_IRECLAIM));
 
 	/*
-	 * We always use background reclaim here because even if the
-	 * inode is clean, it still may be under IO and hence we have
-	 * to take the flush lock. The background reclaim path handles
-	 * this more efficiently than we can here, so simply let background
-	 * reclaim tear down all inodes.
+	 * We always use background reclaim here because even if the inode is
+	 * clean, it still may be under IO and hence we have wait for IO
+	 * completion to occur before we can reclaim the inode. The background
+	 * reclaim path handles this more efficiently than we can here, so
+	 * simply let background reclaim tear down all inodes.
 	 */
 	xfs_inode_set_reclaim_tag(ip);
 }
@@ -794,8 +794,7 @@ xfs_fs_statfs(
 	statp->f_namelen = MAXNAMELEN - 1;
 
 	id = huge_encode_dev(mp->m_ddev_targp->bt_dev);
-	statp->f_fsid.val[0] = (u32)id;
-	statp->f_fsid.val[1] = (u32)(id >> 32);
+	statp->f_fsid = u64_to_fsid(id);
 
 	icount = percpu_counter_sum(&mp->m_icount);
 	ifree = percpu_counter_sum(&mp->m_ifree);
@@ -1484,8 +1483,14 @@ xfs_fc_fill_super(
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
 	sb->s_max_links = XFS_MAXLINK;
 	sb->s_time_gran = 1;
-	sb->s_time_min = S32_MIN;
-	sb->s_time_max = S32_MAX;
+	if (xfs_sb_version_hasbigtime(&mp->m_sb)) {
+		sb->s_time_min = xfs_bigtime_to_unix(XFS_BIGTIME_TIME_MIN);
+		sb->s_time_max = xfs_bigtime_to_unix(XFS_BIGTIME_TIME_MAX);
+	} else {
+		sb->s_time_min = XFS_LEGACY_TIME_MIN;
+		sb->s_time_max = XFS_LEGACY_TIME_MAX;
+	}
+	trace_xfs_inode_timestamp_range(mp, sb->s_time_min, sb->s_time_max);
 	sb->s_iflags |= SB_I_CGROUPWB;
 
 	set_posix_acl_flag(sb);
@@ -1493,6 +1498,10 @@ xfs_fc_fill_super(
 	/* version 5 superblocks support inode version counters. */
 	if (XFS_SB_VERSION_NUM(&mp->m_sb) == XFS_SB_VERSION_5)
 		sb->s_flags |= SB_I_VERSION;
+
+	if (xfs_sb_version_hasbigtime(&mp->m_sb))
+		xfs_warn(mp,
+ "EXPERIMENTAL big timestamp feature in use. Use at your own risk!");
 
 	if (mp->m_flags & XFS_MOUNT_DAX_ALWAYS) {
 		bool rtdev_is_dax = false, datadev_is_dax;
@@ -1548,6 +1557,10 @@ xfs_fc_fill_super(
 		error = -EINVAL;
 		goto out_filestream_unmount;
 	}
+
+	if (xfs_sb_version_hasinobtcounts(&mp->m_sb))
+		xfs_warn(mp,
+ "EXPERIMENTAL inode btree counters feature in use. Use at your own risk!");
 
 	error = xfs_mountfs(mp);
 	if (error)

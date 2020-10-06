@@ -50,6 +50,9 @@ struct dpp;
 struct dce_hwseq;
 
 struct hw_sequencer_funcs {
+#ifdef CONFIG_DRM_AMD_DC_DCN3_0
+	void (*hardware_release)(struct dc *dc);
+#endif
 	/* Embedded Display Related */
 	void (*edp_power_control)(struct dc_link *link, bool enable);
 	void (*edp_wait_for_hpd_ready)(struct dc_link *link, bool power_up);
@@ -66,6 +69,10 @@ struct hw_sequencer_funcs {
 			const struct dc_stream_state *stream,
 			int num_planes, struct dc_state *context);
 	void (*program_front_end_for_ctx)(struct dc *dc,
+			struct dc_state *context);
+	void (*disconnect_pipes)(struct dc *dc,
+			struct dc_state *context);
+	void (*wait_for_pending_cleared)(struct dc *dc,
 			struct dc_state *context);
 	void (*post_unlock_program_front_end)(struct dc *dc,
 			struct dc_state *context);
@@ -216,6 +223,8 @@ struct hw_sequencer_funcs {
 	bool (*apply_idle_power_optimizations)(struct dc *dc, bool enable);
 #endif
 
+	bool (*is_abm_supported)(struct dc *dc,
+			struct dc_state *context, struct dc_stream_state *stream);
 };
 
 void color_space_to_black_color(

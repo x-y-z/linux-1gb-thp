@@ -32,7 +32,7 @@
 #include <linux/pci.h>
 #include <linux/gfp.h>
 #include <linux/edd.h>
-#include <linux/frame.h>
+#include <linux/objtool.h>
 
 #include <xen/xen.h>
 #include <xen/events.h>
@@ -1014,8 +1014,6 @@ void __init xen_setup_vcpu_info_placement(void)
 }
 
 static const struct pv_info xen_info __initconst = {
-	.shared_kernel_pmd = 0,
-
 	.extra_user_64bit_cs = FLAT_USER_CS64,
 	.name = "Xen",
 };
@@ -1314,10 +1312,6 @@ asmlinkage __visible void __init xen_start_kernel(void)
 				   xen_start_info->nr_pages);
 	xen_reserve_special_pages();
 
-	/* keep using Xen gdt for now; no urgent need to change it */
-
-	pv_info.kernel_rpl = 0;
-
 	/*
 	 * We used to do this in xen_arch_setup, but that is too late
 	 * on AMD were early_cpu_init (run before ->arch_setup()) calls
@@ -1376,6 +1370,15 @@ asmlinkage __visible void __init xen_start_kernel(void)
 		x86_init.mpparse.get_smp_config = x86_init_uint_noop;
 
 		xen_boot_params_init_edd();
+
+#ifdef CONFIG_ACPI
+		/*
+		 * Disable selecting "Firmware First mode" for correctable
+		 * memory errors, as this is the duty of the hypervisor to
+		 * decide.
+		 */
+		acpi_disable_cmcff = 1;
+#endif
 	}
 
 	if (!boot_params.screen_info.orig_video_isVGA)

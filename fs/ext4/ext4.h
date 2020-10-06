@@ -27,7 +27,6 @@
 #include <linux/seqlock.h>
 #include <linux/mutex.h>
 #include <linux/timer.h>
-#include <linux/version.h>
 #include <linux/wait.h>
 #include <linux/sched/signal.h>
 #include <linux/blockgroup_lock.h>
@@ -492,7 +491,7 @@ struct flex_groups {
 
 /* Flags which are mutually exclusive to DAX */
 #define EXT4_DAX_MUT_EXCL (EXT4_VERITY_FL | EXT4_ENCRYPT_FL |\
-			   EXT4_JOURNAL_DATA_FL)
+			   EXT4_JOURNAL_DATA_FL | EXT4_INLINE_DATA_FL)
 
 /* Mask out flags that are inappropriate for the given type of inode. */
 static inline __u32 ext4_mask_flags(umode_t mode, __u32 flags)
@@ -1401,7 +1400,7 @@ struct ext4_super_block {
 #define EXT4_MF_FS_ABORTED		0x0002	/* Fatal error detected */
 
 #ifdef CONFIG_FS_ENCRYPTION
-#define DUMMY_ENCRYPTION_ENABLED(sbi) ((sbi)->s_dummy_enc_ctx.ctx != NULL)
+#define DUMMY_ENCRYPTION_ENABLED(sbi) ((sbi)->s_dummy_enc_policy.policy != NULL)
 #else
 #define DUMMY_ENCRYPTION_ENABLED(sbi) (0)
 #endif
@@ -1481,14 +1480,14 @@ struct ext4_sb_info {
 	unsigned long s_commit_interval;
 	u32 s_max_batch_time;
 	u32 s_min_batch_time;
-	struct block_device *journal_bdev;
+	struct block_device *s_journal_bdev;
 #ifdef CONFIG_QUOTA
 	/* Names of quota files with journalled quota */
 	char __rcu *s_qf_names[EXT4_MAXQUOTAS];
 	int s_jquota_fmt;			/* Format of quota to use */
 #endif
 	unsigned int s_want_extra_isize; /* New inodes should reserve # bytes */
-	struct ext4_system_blocks __rcu *system_blks;
+	struct ext4_system_blocks __rcu *s_system_blks;
 
 #ifdef EXTENTS_STATS
 	/* ext4 extents stats */
@@ -1596,8 +1595,8 @@ struct ext4_sb_info {
 	atomic_t s_warning_count;
 	atomic_t s_msg_count;
 
-	/* Encryption context for '-o test_dummy_encryption' */
-	struct fscrypt_dummy_context s_dummy_enc_ctx;
+	/* Encryption policy for '-o test_dummy_encryption' */
+	struct fscrypt_dummy_policy s_dummy_enc_policy;
 
 	/*
 	 * Barrier between writepages ops and changing any inode's JOURNAL_DATA
@@ -3012,22 +3011,24 @@ static inline int ext4_has_group_desc_csum(struct super_block *sb)
 	return ext4_has_feature_gdt_csum(sb) || ext4_has_metadata_csum(sb);
 }
 
+#define ext4_read_incompat_64bit_val(es, name) \
+	(((es)->s_feature_incompat & cpu_to_le32(EXT4_FEATURE_INCOMPAT_64BIT) \
+		? (ext4_fsblk_t)le32_to_cpu(es->name##_hi) << 32 : 0) | \
+		le32_to_cpu(es->name##_lo))
+
 static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
 {
-	return ((ext4_fsblk_t)le32_to_cpu(es->s_blocks_count_hi) << 32) |
-		le32_to_cpu(es->s_blocks_count_lo);
+	return ext4_read_incompat_64bit_val(es, s_blocks_count);
 }
 
 static inline ext4_fsblk_t ext4_r_blocks_count(struct ext4_super_block *es)
 {
-	return ((ext4_fsblk_t)le32_to_cpu(es->s_r_blocks_count_hi) << 32) |
-		le32_to_cpu(es->s_r_blocks_count_lo);
+	return ext4_read_incompat_64bit_val(es, s_r_blocks_count);
 }
 
 static inline ext4_fsblk_t ext4_free_blocks_count(struct ext4_super_block *es)
 {
-	return ((ext4_fsblk_t)le32_to_cpu(es->s_free_blocks_count_hi) << 32) |
-		le32_to_cpu(es->s_free_blocks_count_lo);
+	return ext4_read_incompat_64bit_val(es, s_free_blocks_count);
 }
 
 static inline void ext4_blocks_count_set(struct ext4_super_block *es,
@@ -3153,6 +3154,9 @@ int ext4_update_disksize_before_punch(struct inode *inode, loff_t offset,
 
 struct ext4_group_info {
 	unsigned long   bb_state;
+#ifdef AGGRESSIVE_CHECK
+	unsigned long	bb_check_counter;
+#endif
 	struct rb_root  bb_free_root;
 	ext4_grpblk_t	bb_first_free;	/* first free block */
 	ext4_grpblk_t	bb_free;	/* total free blocks */

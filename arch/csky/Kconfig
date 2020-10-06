@@ -78,6 +78,7 @@ config CSKY
 	select PCI_DOMAINS_GENERIC if PCI
 	select PCI_SYSCALL if PCI
 	select PCI_MSI if PCI
+	select SET_FS
 
 config LOCKDEP_SUPPORT
 	def_bool y
@@ -192,6 +193,22 @@ config CPU_CK860
 endchoice
 
 choice
+	prompt "PAGE OFFSET"
+	default PAGE_OFFSET_80000000
+
+config PAGE_OFFSET_80000000
+	bool "PAGE OFFSET 2G (user:kernel = 2:2)"
+
+config PAGE_OFFSET_A0000000
+	bool "PAGE OFFSET 2.5G (user:kernel = 2.5:1.5)"
+endchoice
+
+config PAGE_OFFSET
+	hex
+	default 0x80000000 if PAGE_OFFSET_80000000
+	default 0xa0000000 if PAGE_OFFSET_A0000000
+choice
+
 	prompt "C-SKY PMU type"
 	depends on PERF_EVENTS
 	depends on CPU_CK807 || CPU_CK810 || CPU_CK860
@@ -309,16 +326,3 @@ endmenu
 source "arch/csky/Kconfig.platforms"
 
 source "kernel/Kconfig.hz"
-
-config SECCOMP
-	bool "Enable seccomp to safely compute untrusted bytecode"
-	help
-	  This kernel feature is useful for number crunching applications
-	  that may need to compute untrusted bytecode during their
-	  execution. By using pipes or other transports made available to
-	  the process as file descriptors supporting the read/write
-	  syscalls, it's possible to isolate those applications in
-	  their own address space using seccomp. Once seccomp is
-	  enabled via prctl(PR_SET_SECCOMP), it cannot be disabled
-	  and the task is only allowed to execute a few safe syscalls
-	  defined by each seccomp mode.
