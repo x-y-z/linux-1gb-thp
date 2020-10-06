@@ -35,7 +35,7 @@ int get_vaddr_frames(unsigned long start, unsigned int nr_frames,
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
-	unsigned int gup_flags = FOLL_WRITE | FOLL_FORCE;
+	unsigned int gup_flags = FOLL_WRITE | FOLL_FORCE | FOLL_LONGTERM;
 	int ret = 0;
 	int err;
 	int locked;
