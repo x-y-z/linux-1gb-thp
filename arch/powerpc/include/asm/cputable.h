@@ -9,11 +9,6 @@
 
 #ifndef __ASSEMBLY__
 
-/*
- * Added to include __machine_check_early_realmode_* functions
- */
-#include <asm/mce.h>
-
 /* This structure can grow, it's real size is used by head.S code
  * via the mkdefs mechanism.
  */
@@ -170,6 +165,7 @@ static inline void cpu_feature_keys_init(void) { }
 #else	/* CONFIG_PPC32 */
 /* Define these to 0 for the sake of tests in common code */
 #define CPU_FTR_PPC_LE			(0)
+#define CPU_FTR_SPE			(0)
 #endif
 
 /*

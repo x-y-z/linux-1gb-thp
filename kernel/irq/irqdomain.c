@@ -1136,6 +1136,17 @@ static struct irq_data *irq_domain_insert_irq_data(struct irq_domain *domain,
 	return irq_data;
 }
 
+static void __irq_domain_free_hierarchy(struct irq_data *irq_data)
+{
+	struct irq_data *tmp;
+
+	while (irq_data) {
+		tmp = irq_data;
+		irq_data = irq_data->parent_data;
+		kfree(tmp);
+	}
+}
+
 static void irq_domain_free_irq_data(unsigned int virq, unsigned int nr_irqs)
 {
 	struct irq_data *irq_data, *tmp;
@@ -1147,13 +1158,48 @@ static void irq_domain_free_irq_data(unsigned int virq, unsigned int nr_irqs)
 		irq_data->parent_data = NULL;
 		irq_data->domain = NULL;
 
-		while (tmp) {
-			irq_data = tmp;
-			tmp = tmp->parent_data;
-			kfree(irq_data);
-		}
+		__irq_domain_free_hierarchy(tmp);
 	}
 }
+
+/**
+ * irq_domain_trim_hierarchy - Trim the irq hierarchy from a particular
+ *			       irq domain
+ * @virq:	IRQ number to trim where the hierarchy is to be trimmed
+ * @domain:	domain from which the hierarchy gets discarded for this
+ *		interrupt
+ *
+ * Drop the partial irq_data hierarchy from @domain (included) onward.
+ *
+ * This is only meant to be called from a .alloc() callback, when no
+ * actual mapping in the respective domains has been established yet.
+ * Its only use is to be able to trim levels of hierarchy that do not
+ * have any real meaning for this interrupt.
+ */
+int irq_domain_trim_hierarchy(unsigned int virq, struct irq_domain *domain)
+{
+	struct irq_data *tail, *irq_data = irq_get_irq_data(virq);
+
+	/* It really needs to be a hierarchy, and not a single entry */
+	if (WARN_ON(!irq_data->parent_data))
+		return -EINVAL;
+
+	/* Skip until we find the right domain */
+	while (irq_data->parent_data && irq_data->parent_data->domain != domain)
+		irq_data = irq_data->parent_data;
+
+	/* The domain doesn't exist in the hierarchy, which is pretty bad */
+	if (WARN_ON(!irq_data->parent_data))
+		return -ENOENT;
+
+	/* Sever the inner part of the hierarchy...  */
+	tail = irq_data->parent_data;
+	irq_data->parent_data = NULL;
+	__irq_domain_free_hierarchy(tail);
+
+	return 0;
+}
+
 
 static int irq_domain_alloc_irq_data(struct irq_domain *domain,
 				     unsigned int virq, unsigned int nr_irqs)

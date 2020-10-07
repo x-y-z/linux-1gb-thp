@@ -593,7 +593,8 @@ int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	if (ext4_has_feature_bigalloc(inode->i_sb)) {
 		EXT4_ERROR_INODE(inode, "Can't allocate blocks for "
 				 "non-extent mapped inodes with bigalloc");
-		return -EFSCORRUPTED;
+		err = -EFSCORRUPTED;
+		goto out;
 	}
 
 	/* Set up for the direct block allocation */
@@ -1033,7 +1034,7 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
 			brelse(bh);
 
 			/*
-			 * Everything below this this pointer has been
+			 * Everything below this pointer has been
 			 * released.  Now let this top-of-subtree go.
 			 *
 			 * We want the freeing of this indirect block to be

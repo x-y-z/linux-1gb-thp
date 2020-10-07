@@ -1017,7 +1017,7 @@ enum dc_status dce112_add_stream_to_ctx(
 		struct dc_state *new_ctx,
 		struct dc_stream_state *dc_stream)
 {
-	enum dc_status result = DC_ERROR_UNEXPECTED;
+	enum dc_status result;
 
 	result = resource_map_pool_resources(dc, new_ctx, dc_stream);
 
@@ -1240,6 +1240,7 @@ static bool dce112_resource_construct(
 	pool->base.timing_generator_count = pool->base.res_cap->num_timing_generator;
 	dc->caps.max_downscale_ratio = 200;
 	dc->caps.i2c_speed_in_khz = 100;
+	dc->caps.i2c_speed_in_khz_hdcp = 100; /*1.4 w/a not applied by default*/
 	dc->caps.max_cursor_size = 128;
 	dc->caps.dual_link_dvi = true;
 	dc->caps.extended_aux_timeout_support = false;

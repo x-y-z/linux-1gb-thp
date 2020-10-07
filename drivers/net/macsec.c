@@ -1611,7 +1611,7 @@ static const struct nla_policy macsec_genl_rxsc_policy[NUM_MACSEC_RXSC_ATTR] = {
 static const struct nla_policy macsec_genl_sa_policy[NUM_MACSEC_SA_ATTR] = {
 	[MACSEC_SA_ATTR_AN] = { .type = NLA_U8 },
 	[MACSEC_SA_ATTR_ACTIVE] = { .type = NLA_U8 },
-	[MACSEC_SA_ATTR_PN] = { .type = NLA_MIN_LEN, .len = 4 },
+	[MACSEC_SA_ATTR_PN] = NLA_POLICY_MIN_LEN(4),
 	[MACSEC_SA_ATTR_KEYID] = { .type = NLA_BINARY,
 				   .len = MACSEC_KEYID_LEN, },
 	[MACSEC_SA_ATTR_KEY] = { .type = NLA_BINARY,
@@ -3285,7 +3285,7 @@ done:
 	return skb->len;
 }
 
-static const struct genl_ops macsec_genl_ops[] = {
+static const struct genl_small_ops macsec_genl_ops[] = {
 	{
 		.cmd = MACSEC_CMD_GET_TXSC,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
@@ -3361,8 +3361,8 @@ static struct genl_family macsec_fam __ro_after_init = {
 	.policy = macsec_genl_policy,
 	.netnsok	= true,
 	.module		= THIS_MODULE,
-	.ops		= macsec_genl_ops,
-	.n_ops		= ARRAY_SIZE(macsec_genl_ops),
+	.small_ops	= macsec_genl_ops,
+	.n_small_ops	= ARRAY_SIZE(macsec_genl_ops),
 };
 
 static netdev_tx_t macsec_start_xmit(struct sk_buff *skb,

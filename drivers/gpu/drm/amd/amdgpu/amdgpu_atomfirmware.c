@@ -89,9 +89,9 @@ int amdgpu_atomfirmware_allocate_fb_scratch(struct amdgpu_device *adev)
 			(uint32_t)(ATOM_VRAM_BLOCK_SRIOV_MSG_SHARE_RESERVATION <<
 			ATOM_VRAM_OPERATION_FLAGS_SHIFT)) {
 			/* Firmware request VRAM reservation for SR-IOV */
-			adev->fw_vram_usage.start_offset = (start_addr &
+			adev->mman.fw_vram_usage_start_offset = (start_addr &
 				(~ATOM_VRAM_OPERATION_FLAGS_MASK)) << 10;
-			adev->fw_vram_usage.size = size << 10;
+			adev->mman.fw_vram_usage_size = size << 10;
 			/* Use the default scratch size */
 			usage_bytes = 0;
 		} else {
@@ -148,6 +148,10 @@ static int convert_atom_mem_type_to_vram_type(struct amdgpu_device *adev,
 		case Ddr4MemType:
 		case LpDdr4MemType:
 			vram_type = AMDGPU_VRAM_TYPE_DDR4;
+			break;
+		case Ddr5MemType:
+		case LpDdr5MemType:
+			vram_type = AMDGPU_VRAM_TYPE_DDR5;
 			break;
 		default:
 			vram_type = AMDGPU_VRAM_TYPE_UNKNOWN;
@@ -543,6 +547,7 @@ int amdgpu_mem_train_support(struct amdgpu_device *adev)
 		case HW_REV(11, 0, 0):
 		case HW_REV(11, 0, 5):
 		case HW_REV(11, 0, 7):
+		case HW_REV(11, 0, 11):
 			ret = 1;
 			break;
 		default:

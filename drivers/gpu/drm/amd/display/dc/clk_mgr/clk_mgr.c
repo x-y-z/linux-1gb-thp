@@ -34,12 +34,16 @@
 #include "dce110/dce110_clk_mgr.h"
 #include "dce112/dce112_clk_mgr.h"
 #include "dce120/dce120_clk_mgr.h"
+#include "dce60/dce60_clk_mgr.h"
 #include "dcn10/rv1_clk_mgr.h"
 #include "dcn10/rv2_clk_mgr.h"
 #include "dcn20/dcn20_clk_mgr.h"
 #include "dcn21/rn_clk_mgr.h"
 #if defined(CONFIG_DRM_AMD_DC_DCN3_0)
 #include "dcn30/dcn30_clk_mgr.h"
+#endif
+#if defined(CONFIG_DRM_AMD_DC_DCN3_01)
+#include "dcn301/vg_clk_mgr.h"
 #endif
 
 
@@ -123,6 +127,11 @@ struct clk_mgr *dc_clk_mgr_create(struct dc_context *ctx, struct pp_smu_funcs *p
 	}
 
 	switch (asic_id.chip_family) {
+#if defined(CONFIG_DRM_AMD_DC_SI)
+	case FAMILY_SI:
+		dce60_clk_mgr_construct(ctx, clk_mgr);
+		break;
+#endif
 	case FAMILY_CI:
 	case FAMILY_KV:
 		dce_clk_mgr_construct(ctx, clk_mgr);
@@ -182,6 +191,12 @@ struct clk_mgr *dc_clk_mgr_create(struct dc_context *ctx, struct pp_smu_funcs *p
 		break;
 #endif	/* Family RV and NV*/
 
+#if defined(CONFIG_DRM_AMD_DC_DCN3_01)
+	case FAMILY_VGH:
+		if (ASICREV_IS_VANGOGH(asic_id.hw_internal_rev))
+			vg_clk_mgr_construct(ctx, clk_mgr, pp_smu, dccg);
+		break;
+#endif
 	default:
 		ASSERT(0); /* Unknown Asic */
 		break;
@@ -199,8 +214,18 @@ void dc_destroy_clk_mgr(struct clk_mgr *clk_mgr_base)
 	case FAMILY_NV:
 		if (ASICREV_IS_SIENNA_CICHLID_P(clk_mgr_base->ctx->asic_id.hw_internal_rev)) {
 			dcn3_clk_mgr_destroy(clk_mgr);
-			break;
 		}
+		break;
+
+#if defined(CONFIG_DRM_AMD_DC_DCN3_01)
+	case FAMILY_VGH:
+		if (ASICREV_IS_VANGOGH(clk_mgr_base->ctx->asic_id.hw_internal_rev))
+			vg_clk_mgr_destroy(clk_mgr);
+		break;
+#endif
+
+	default:
+		break;
 	}
 #endif
 
