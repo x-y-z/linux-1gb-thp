@@ -23,6 +23,10 @@ extern void bad_srat(void);
 extern int srat_disabled(void);
 
 #else				/* CONFIG_ACPI_NUMA */
+static inline int pxm_to_node(int pxm)
+{
+	return 0;
+}
 static inline void disable_srat(void)
 {
 }
