@@ -239,7 +239,7 @@ int truncate_inode_page(struct address_space *mapping, struct page *page)
 bool truncate_inode_partial_page(struct page *page, loff_t start, loff_t end)
 {
 	loff_t pos = page_offset(page);
-	unsigned int offset, length;
+	unsigned int offset, length, left, min_subpage_size = PAGE_SIZE;
 
 	if (pos < start)
 		offset = start - pos;
@@ -250,6 +250,7 @@ bool truncate_inode_partial_page(struct page *page, loff_t start, loff_t end)
 		length = length - offset;
 	else
 		length = end + 1 - pos - offset;
+	left = thp_size(page) - offset - length;
 
 	wait_on_page_writeback(page);
 	if (length == thp_size(page)) {
@@ -269,7 +270,22 @@ bool truncate_inode_partial_page(struct page *page, loff_t start, loff_t end)
 		do_invalidatepage(page, offset, length);
 	if (!PageTransHuge(page))
 		return true;
-	return split_huge_page(page) == 0;
+
+	/* find the non-zero minium of offset, length, and left and use it to
+	 * decide the new order of the page after split */
+	if (offset && left)
+		min_subpage_size = min_t(unsigned int,
+					 min_t(unsigned int, offset, length),
+					 left);
+	else if (!offset)
+		min_subpage_size = min_t(unsigned int, length, left);
+	else /* !left */
+		min_subpage_size = min_t(unsigned int, length, offset);
+
+	min_subpage_size = max_t(unsigned int, PAGE_SIZE, min_subpage_size);
+
+	return split_huge_page_to_list_to_order(page, NULL,
+				ilog2(min_subpage_size/PAGE_SIZE)) == 0;
 }
 
 /*
