@@ -1301,7 +1301,7 @@ static inline int try_split_thp(struct page *page, struct page **page2,
 	int rc = 0;
 
 	lock_page(page);
-	rc = split_huge_page_to_list(page, from);
+	rc = split_huge_page_to_list_to_order(page, from, 0);
 	unlock_page(page);
 	if (!rc)
 		list_safe_reset_next(page, *page2, lru);
