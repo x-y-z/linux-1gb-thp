@@ -31,10 +31,11 @@ static inline void set_page_owner(struct page *page,
 		__set_page_owner(page, order, gfp_mask);
 }
 
-static inline void split_page_owner(struct page *page, unsigned int nr)
+static inline void split_page_owner(struct page *page, unsigned int nr,
+			unsigned int new_order)
 {
 	if (static_branch_unlikely(&page_owner_inited))
-		__split_page_owner(page, nr);
+		__split_page_owner(page, nr, new_order);
 }
 static inline void copy_page_owner(struct page *oldpage, struct page *newpage)
 {
@@ -60,7 +61,7 @@ static inline void set_page_owner(struct page *page,
 {
 }
 static inline void split_page_owner(struct page *page,
-			unsigned int order)
+			unsigned int nr, unsigned int new_order)
 {
 }
 static inline void copy_page_owner(struct page *oldpage, struct page *newpage)
