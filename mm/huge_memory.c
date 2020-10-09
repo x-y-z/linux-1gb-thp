@@ -2880,7 +2880,7 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 	int order = folio_order(folio);
 
 	/* complete memcg works before add pages to LRU */
-	split_page_memcg(head, order);
+	split_page_memcg(head, order, 0);
 
 	if (folio_test_anon(folio) && folio_test_swapcache(folio)) {
 		offset = swp_offset(folio->swap);
