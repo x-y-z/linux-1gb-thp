@@ -3301,15 +3301,15 @@ void obj_cgroup_uncharge(struct obj_cgroup *objcg, size_t size)
 /*
  * Because page_memcg(head) is not set on compound tails, set it now.
  */
-void mem_cgroup_split_huge_fixup(struct page *head)
+void mem_cgroup_split_huge_fixup(struct page *head, unsigned int new_order)
 {
 	struct mem_cgroup *memcg = page_memcg(head);
-	int i;
+	int i, new_nr = 1 << new_order;
 
 	if (mem_cgroup_disabled())
 		return;
 
-	for (i = 1; i < thp_nr_pages(head); i++) {
+	for (i = new_nr; i < thp_nr_pages(head); i += new_nr) {
 		css_get(&memcg->css);
 		head[i].memcg_data = (unsigned long)memcg;
 	}
