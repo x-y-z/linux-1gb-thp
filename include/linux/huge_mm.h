@@ -182,6 +182,8 @@ bool is_transparent_hugepage(struct page *page);
 
 bool can_split_huge_page(struct page *page, int *pextra_pins);
 int split_huge_page_to_list(struct page *page, struct list_head *list);
+int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
+		unsigned int new_order);
 static inline int split_huge_page(struct page *page)
 {
 	return split_huge_page_to_list(page, NULL);
@@ -382,6 +384,12 @@ can_split_huge_page(struct page *page, int *pextra_pins)
 }
 static inline int
 split_huge_page_to_list(struct page *page, struct list_head *list)
+{
+	return 0;
+}
+static inline int
+split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
+		unsigned int new_order)
 {
 	return 0;
 }
