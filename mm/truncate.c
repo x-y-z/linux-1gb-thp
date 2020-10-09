@@ -220,6 +220,14 @@ int truncate_inode_page(struct address_space *mapping, struct page *page)
 	return 0;
 }
 
+static unsigned int greatest_pow_of_two_multiplier(unsigned int num)
+{
+	if (num & 1)
+		return 0;
+	return min_t(unsigned int, ilog2(num),
+		ilog2(num - rounddown_pow_of_two(num)));
+}
+
 /*
  * Handle partial (transparent) pages.  The page may be entirely within the
  * range if a split has raced with us.  If not, we zero the part of the
@@ -234,7 +242,8 @@ int truncate_inode_page(struct address_space *mapping, struct page *page)
 bool truncate_inode_partial_page(struct page *page, loff_t start, loff_t end)
 {
 	loff_t pos = page_offset(page);
-	unsigned int offset, length;
+	unsigned int offset, length, remaining;
+	unsigned int new_order = thp_order(page);
 
 	if (pos < start)
 		offset = start - pos;
@@ -245,6 +254,7 @@ bool truncate_inode_partial_page(struct page *page, loff_t start, loff_t end)
 		length = length - offset;
 	else
 		length = end + 1 - pos - offset;
+	remaining = thp_size(page) - offset - length;
 
 	wait_on_page_writeback(page);
 	if (length == thp_size(page)) {
@@ -264,7 +274,25 @@ bool truncate_inode_partial_page(struct page *page, loff_t start, loff_t end)
 		do_invalidatepage(page, offset, length);
 	if (!PageTransHuge(page))
 		return true;
-	if (split_huge_page(page) == 0)
+	/*
+	 * Find the greatest common power of two multiplier of the non-zero
+	 * offset, length, and remaining as the new order. So we can truncate
+	 * a subpage as large as possible.
+	 */
+	if (offset)
+		new_order = greatest_pow_of_two_multiplier(offset / PAGE_SIZE);
+	if (length)
+		new_order = min_t(unsigned int, new_order,
+			greatest_pow_of_two_multiplier(length / PAGE_SIZE));
+	if (remaining)
+		new_order = min_t(unsigned int, new_order,
+			greatest_pow_of_two_multiplier(remaining / PAGE_SIZE));
+
+	/* order-1 THP not supported, downgrade to order-0 */
+	if (new_order == 1)
+		new_order = 0;
+
+	if (split_huge_page_to_list_to_order(page, NULL, new_order) == 0)
 		return true;
 	if (PageDirty(page))
 		return false;
