@@ -202,19 +202,20 @@ void __set_page_owner_migrate_reason(struct page *page, int reason)
 	page_owner->last_migrate_reason = reason;
 }
 
-void __split_page_owner(struct page *page, unsigned int nr)
+void __split_page_owner(struct page *page, unsigned short old_order,
+			unsigned short new_order)
 {
-	int i;
+	int i, old_nr = 1 << old_order, new_nr = 1 << new_order;
 	struct page_ext *page_ext = lookup_page_ext(page);
 	struct page_owner *page_owner;
 
 	if (unlikely(!page_ext))
 		return;
 
-	for (i = 0; i < nr; i++) {
+	for (i = 0; i < old_nr; i += new_nr) {
+		page_ext = lookup_page_ext(page + i);
 		page_owner = get_page_owner(page_ext);
-		page_owner->order = 0;
-		page_ext = page_ext_next(page_ext);
+		page_owner->order = new_order;
 	}
 }
 

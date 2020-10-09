@@ -2367,6 +2367,7 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 	struct lruvec *lruvec;
 	struct address_space *swap_cache = NULL;
 	unsigned long offset = 0;
+	unsigned int order = thp_order(head);
 	unsigned int nr = thp_nr_pages(head);
 	int i;
 
@@ -2408,7 +2409,7 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 	unlock_page_lruvec(lruvec);
 	/* Caller disabled irqs, so they are still disabled here */
 
-	split_page_owner(head, nr);
+	split_page_owner(head, order, 0);
 
 	/* See comment in __split_huge_page_tail() */
 	if (PageAnon(head)) {
