@@ -3330,7 +3330,7 @@ void split_page(struct page *page, unsigned int order)
 
 	for (i = 1; i < (1 << order); i++)
 		set_page_refcounted(page + i);
-	split_page_owner(page, 1 << order);
+	split_page_owner(page, order, 0);
 }
 EXPORT_SYMBOL_GPL(split_page);
 
