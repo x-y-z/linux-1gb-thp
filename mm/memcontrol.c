@@ -3298,21 +3298,23 @@ void obj_cgroup_uncharge(struct obj_cgroup *objcg, size_t size)
 /*
  * Because page_memcg(head) is not set on tails, set it now.
  */
-void split_page_memcg(struct page *head, unsigned int nr)
+void split_page_memcg(struct page *head, unsigned int nr, unsigned int new_order)
 {
 	struct mem_cgroup *memcg = page_memcg(head);
-	int i;
+	int i, new_nr = 1 << new_order;
+
+	VM_BUG_ON(nr % new_nr);
 
 	if (mem_cgroup_disabled() || !memcg)
 		return;
 
-	for (i = 1; i < nr; i++)
+	for (i = new_nr; i < thp_nr_pages(head); i += new_nr)
 		head[i].memcg_data = head->memcg_data;
 
 	if (PageMemcgKmem(head))
-		obj_cgroup_get_many(__page_objcg(head), nr - 1);
+		obj_cgroup_get_many(__page_objcg(head), nr / new_nr - 1);
 	else
-		css_get_many(&memcg->css, nr - 1);
+		css_get_many(&memcg->css, nr / new_nr - 1);
 }
 
 #ifdef CONFIG_MEMCG_SWAP
