@@ -2440,6 +2440,7 @@ static void __split_huge_page_tail(struct page *head, int tail,
 		prep_compound_page(page_tail, new_order);
 		thp_prep(page_tail);
 	}
+	VM_BUG_ON_PAGE(PageTail(page_tail), page_tail);
 
 	/* Finally unfreeze refcount. Additional reference from page cache. */
 	page_ref_unfreeze(page_tail, 1 + ((!PageAnon(head) ||
