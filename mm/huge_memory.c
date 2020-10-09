@@ -3070,10 +3070,13 @@ void vma_adjust_trans_huge(struct vm_area_struct *vma,
 static void unmap_page(struct page *page)
 {
 	enum ttu_flags ttu_flags = TTU_IGNORE_MLOCK | TTU_IGNORE_ACCESS |
-		TTU_RMAP_LOCKED | TTU_SPLIT_HUGE_PMD;
+		TTU_RMAP_LOCKED;
 	bool unmap_success;
 
 	VM_BUG_ON_PAGE(!PageHead(page), page);
+
+	if (thp_order(page) >= HPAGE_PMD_ORDER)
+		ttu_flags |= TTU_SPLIT_HUGE_PMD;
 
 	if (PageAnon(page))
 		ttu_flags |= TTU_SPLIT_FREEZE;
@@ -3082,21 +3085,22 @@ static void unmap_page(struct page *page)
 	VM_BUG_ON_PAGE(!unmap_success, page);
 }
 
-static void remap_page(struct page *page, unsigned int nr)
+static void remap_page(struct page *page, unsigned int nr, unsigned int new_nr)
 {
 	int i;
-	if (PageTransHuge(page)) {
+	if (thp_nr_pages(page) == nr) {
 		remove_migration_ptes(page, page, true);
 	} else {
-		for (i = 0; i < nr; i++)
+		for (i = 0; i < nr; i += new_nr)
 			remove_migration_ptes(page + i, page + i, true);
 	}
 }
 
 static void __split_huge_page_tail(struct page *head, int tail,
-		struct lruvec *lruvec, struct list_head *list)
+		struct lruvec *lruvec, struct list_head *list, unsigned int new_order)
 {
 	struct page *page_tail = head + tail;
+	unsigned long compound_head_flag = new_order ? (1L << PG_head) : 0;
 
 	VM_BUG_ON_PAGE(atomic_read(&page_tail->_mapcount) != -1, page_tail);
 
@@ -3120,6 +3124,7 @@ static void __split_huge_page_tail(struct page *head, int tail,
 #ifdef CONFIG_64BIT
 			 (1L << PG_arch_2) |
 #endif
+			 compound_head_flag |
 			 (1L << PG_dirty)));
 
 	/* ->mapping in first tail page is compound_mapcount */
@@ -3138,10 +3143,15 @@ static void __split_huge_page_tail(struct page *head, int tail,
 	 * which needs correct compound_head().
 	 */
 	clear_compound_head(page_tail);
+	if (new_order) {
+		prep_compound_page(page_tail, new_order);
+		prep_transhuge_page(page_tail);
+	}
 
 	/* Finally unfreeze refcount. Additional reference from page cache. */
-	page_ref_unfreeze(page_tail, 1 + (!PageAnon(head) ||
-					  PageSwapCache(head)));
+	page_ref_unfreeze(page_tail, 1 + ((!PageAnon(head) ||
+					   PageSwapCache(head)) ?
+						thp_nr_pages(page_tail) : 0 ));
 
 	if (page_is_young(head))
 		set_page_young(page_tail);
@@ -3159,7 +3169,7 @@ static void __split_huge_page_tail(struct page *head, int tail,
 }
 
 static void __split_huge_page(struct page *page, struct list_head *list,
-		pgoff_t end, unsigned long flags)
+		pgoff_t end, unsigned long flags, unsigned int new_order)
 {
 	struct page *head = compound_head(page);
 	pg_data_t *pgdat = page_pgdat(head);
@@ -3167,12 +3177,13 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 	struct address_space *swap_cache = NULL;
 	unsigned long offset = 0;
 	unsigned int nr = thp_nr_pages(head);
+	unsigned int new_nr = 1 << new_order;
 	int i;
 
 	lruvec = mem_cgroup_page_lruvec(head, pgdat);
 
 	/* complete memcg works before add pages to LRU */
-	mem_cgroup_split_huge_fixup(head, 1);
+	mem_cgroup_split_huge_fixup(head, new_nr);
 
 	if (PageAnon(head) && PageSwapCache(head)) {
 		swp_entry_t entry = { .val = page_private(head) };
@@ -3182,14 +3193,25 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 		xa_lock(&swap_cache->i_pages);
 	}
 
-	for (i = nr - 1; i >= 1; i--) {
-		__split_huge_page_tail(head, i, lruvec, list);
+	/*
+	 * clear cma bitmap when we split pud page so the subpages can be freed
+	 * as normal pages
+	 */
+	if (thp_order(head) == HPAGE_PUD_ORDER && IS_ENABLED(CONFIG_CMA)) {
+		struct cma *cma = hugepage_cma[page_to_nid(head)];
+
+		VM_BUG_ON(!cma_clear_bitmap_if_in_range(cma, head,
+				thp_nr_pages(head)));
+	}
+
+	for (i = nr - new_nr; i >= new_nr; i -= new_nr) {
+		__split_huge_page_tail(head, i, lruvec, list, new_order);
 		/* Some pages can be beyond i_size: drop them from page cache */
 		if (head[i].index >= end) {
 			ClearPageDirty(head + i);
 			__delete_from_page_cache(head + i, NULL);
 			if (IS_ENABLED(CONFIG_SHMEM) && PageSwapBacked(head))
-				shmem_uncharge(head->mapping->host, 1);
+				shmem_uncharge(head->mapping->host, new_nr);
 			put_page(head + i);
 		} else if (!PageAnon(page)) {
 			__xa_store(&head->mapping->i_pages, head[i].index,
@@ -3200,30 +3222,33 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 		}
 	}
 
-	ClearPageCompound(head);
+	if (!new_order)
+		ClearPageCompound(head);
+	else
+		set_compound_order(head, new_order);
 
-	split_page_owner(head, nr, 1);
+	split_page_owner(head, nr, new_nr);
 
 	/* See comment in __split_huge_page_tail() */
 	if (PageAnon(head)) {
 		/* Additional pin to swap cache */
 		if (PageSwapCache(head)) {
-			page_ref_add(head, 2);
+			page_ref_add(head, 1 + new_nr);
 			xa_unlock(&swap_cache->i_pages);
 		} else {
 			page_ref_inc(head);
 		}
 	} else {
 		/* Additional pin to page cache */
-		page_ref_add(head, 2);
+		page_ref_add(head, 1 + new_nr);
 		xa_unlock(&head->mapping->i_pages);
 	}
 
 	spin_unlock_irqrestore(&pgdat->lru_lock, flags);
 
-	remap_page(head, nr);
+	remap_page(head, nr, new_nr);
 
-	for (i = 0; i < nr; i++) {
+	for (i = 0; i < nr; i += new_nr) {
 		struct page *subpage = head + i;
 		if (subpage == page)
 			continue;
@@ -3396,18 +3421,32 @@ bool can_split_huge_page(struct page *page, int *pextra_pins)
  */
 int split_huge_page_to_list(struct page *page, struct list_head *list)
 {
+	return split_huge_page_to_order_to_list(page, list, 0);
+}
+
+int split_huge_page_to_order_to_list(struct page *page, struct list_head *list,
+				     unsigned int new_order)
+{
 	struct page *head = compound_head(page);
 	struct pglist_data *pgdata = NODE_DATA(page_to_nid(head));
 	struct deferred_split *ds_queue = get_deferred_split_queue(head);
+	/* reset xarray order to new order after split */
+	/* XA_STATE_ORDER(xas, &head->mapping->i_pages, head->index, new_order); */
 	struct anon_vma *anon_vma = NULL;
 	struct address_space *mapping = NULL;
 	int count, mapcount, extra_pins, ret;
 	unsigned long flags;
 	pgoff_t end;
 
+	VM_BUG_ON(thp_order(head) <= new_order);
 	VM_BUG_ON_PAGE(is_huge_zero_page(head), head);
 	VM_BUG_ON_PAGE(!PageLocked(head), head);
 	VM_BUG_ON_PAGE(!PageCompound(head), head);
+
+	if (IS_ENABLED(CONFIG_THP_SWAP) && PageSwapCache(head) && new_order) {
+		WARN_ONCE(1, "Split THP in swap to non-zero order not support");
+		return -EINVAL;
+	}
 
 	if (PageWriteback(head))
 		return -EBUSY;
@@ -3485,17 +3524,19 @@ int split_huge_page_to_list(struct page *page, struct list_head *list)
 	if (!mapcount && page_ref_freeze(head, 1 + extra_pins)) {
 		if (!list_empty(page_deferred_list(head))) {
 			ds_queue->split_queue_len--;
-			list_del(page_deferred_list(head));
+			list_del_init(page_deferred_list(head));
 		}
 		spin_unlock(&ds_queue->split_queue_lock);
 		if (mapping) {
 			if (PageSwapBacked(head))
 				__dec_node_page_state(head, NR_SHMEM_THPS);
-			else
-				__dec_node_page_state(head, NR_FILE_THPS);
+			else if (!new_order)
+				__mod_node_page_state(page_pgdat(head),
+						NR_FILE_THPS,
+						-thp_nr_pages(head));
 		}
 
-		__split_huge_page(page, list, end, flags);
+		__split_huge_page(page, list, end, flags, new_order);
 		if (PageSwapCache(head)) {
 			swp_entry_t entry = { .val = page_private(head) };
 
@@ -3515,7 +3556,7 @@ int split_huge_page_to_list(struct page *page, struct list_head *list)
 fail:		if (mapping)
 			xa_unlock(&mapping->i_pages);
 		spin_unlock_irqrestore(&pgdata->lru_lock, flags);
-		remap_page(head, thp_nr_pages(head));
+		remap_page(head, thp_nr_pages(head), 0);
 		ret = -EBUSY;
 	}
 
