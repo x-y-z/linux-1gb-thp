@@ -3245,7 +3245,7 @@ void obj_cgroup_uncharge(struct obj_cgroup *objcg, size_t size)
  * Because tail pages are not marked as "used", set it. We're under
  * pgdat->lru_lock and migration entries setup in all page mappings.
  */
-void mem_cgroup_split_huge_fixup(struct page *head)
+void mem_cgroup_split_huge_fixup(struct page *head, unsigned int new_nr)
 {
 	struct mem_cgroup *memcg = page_memcg(head);
 	int i;
@@ -3253,7 +3253,7 @@ void mem_cgroup_split_huge_fixup(struct page *head)
 	if (mem_cgroup_disabled())
 		return;
 
-	for (i = 1; i < HPAGE_PMD_NR; i++) {
+	for (i = new_nr; i < thp_nr_pages(head); i += new_nr) {
 		css_get(&memcg->css);
 		head[i].memcg_data = (unsigned long)memcg;
 	}
