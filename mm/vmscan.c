@@ -1245,7 +1245,7 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 					goto try_to_swap;
 				if (compound_order(page) == HPAGE_PUD_ORDER) {
 					/* cannot split THP, skip it */
-					if (!can_split_huge_pud_page(page, NULL))
+					if (!can_split_huge_page(page, NULL))
 						goto activate_locked;
 					/* Split PUD THPs before swapping */
 					if (split_huge_pud_page_to_list(page, page_list))

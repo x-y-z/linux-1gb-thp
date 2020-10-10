@@ -2433,160 +2433,6 @@ void split_huge_pud_address(struct vm_area_struct *vma, unsigned long address,
 	__split_huge_pud(vma, pud, address, freeze, page);
 }
 
-static void unmap_pud_page(struct page *page)
-{
-	enum ttu_flags ttu_flags = TTU_IGNORE_MLOCK | TTU_IGNORE_ACCESS |
-		TTU_RMAP_LOCKED | TTU_SPLIT_HUGE_PUD;
-	bool unmap_success;
-
-	VM_BUG_ON_PAGE(!PageHead(page), page);
-
-	if (PageAnon(page))
-		ttu_flags |= TTU_SPLIT_FREEZE;
-
-	unmap_success = try_to_unmap(page, ttu_flags);
-	VM_BUG_ON_PAGE(!unmap_success, page);
-}
-
-static void remap_pud_page(struct page *page)
-{
-	int i;
-
-	VM_BUG_ON(!PageTransHuge(page));
-	if (compound_order(page) == HPAGE_PUD_ORDER) {
-		remove_migration_ptes(page, page, true);
-	} else if (compound_order(page) == HPAGE_PMD_ORDER) {
-		for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR)
-			remove_migration_ptes(page + i, page + i, true);
-	} else
-		VM_BUG_ON_PAGE(1, page);
-}
-
-static void __split_huge_pud_page_tail(struct page *head, int tail,
-		struct lruvec *lruvec, struct list_head *list)
-{
-	struct page *page_tail = head + tail;
-
-	VM_BUG_ON_PAGE(page_ref_count(page_tail) != 0, page_tail);
-
-	/*
-	 * Clone page flags before unfreezing refcount.
-	 *
-	 * After successful get_page_unless_zero() might follow flags change,
-	 * for example lock_page() which set PG_waiters.
-	 */
-
-	page_tail->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
-	page_tail->flags |= (head->flags &
-			((1L << PG_referenced) |
-			 (1L << PG_swapbacked) |
-			 (1L << PG_swapcache) |
-			 (1L << PG_mlocked) |
-			 (1L << PG_uptodate) |
-			 (1L << PG_active) |
-			 (1L << PG_locked) |
-			 (1L << PG_unevictable) |
-			 (1L << PG_dirty) |
-			 /* preserve THP */
-			 (1L << PG_head)));
-
-	/* ->mapping in first tail page is compound_mapcount */
-	VM_BUG_ON_PAGE(tail > 2 && page_tail->mapping != TAIL_MAPPING,
-			page_tail);
-	page_tail->mapping = head->mapping;
-	page_tail->index = head->index + tail;
-
-	/* Page flags also must be visible before we make the page PMD-compound. */
-	smp_wmb();
-
-	clear_compound_head(page_tail);
-	prep_compound_page(page_tail, HPAGE_PMD_ORDER);
-	prep_transhuge_page(page_tail);
-
-	/* Finally unfreeze refcount. Additional reference from page cache. */
-	page_ref_unfreeze(page_tail, 1 + (!PageAnon(head) ||
-					  PageSwapCache(head)));
-
-	if (page_is_young(head))
-		set_page_young(page_tail);
-	if (page_is_idle(head))
-		set_page_idle(page_tail);
-
-	page_cpupid_xchg_last(page_tail, page_cpupid_last(head));
-	lru_add_pud_page_tail(head, page_tail, lruvec, list);
-}
-
-static void __split_huge_pud_page(struct page *page, struct list_head *list,
-		unsigned long flags)
-{
-	struct page *head = compound_head(page);
-	pg_data_t *pgdat = page_pgdat(head);
-	struct lruvec *lruvec;
-	int i;
-
-	lruvec = mem_cgroup_page_lruvec(head, pgdat);
-
-	/* complete memcg works before add pages to LRU */
-	mem_cgroup_split_huge_pud_fixup(head);
-
-	/* no file-back page support yet */
-	VM_BUG_ON(!PageAnon(page));
-
-	/*
-	 * clear cma bitmap when we split pud page so the subpages can be freed
-	 * as normal pages
-	 */
-	if (IS_ENABLED(CONFIG_CMA)) {
-		struct cma *cma = hugepage_cma[page_to_nid(head)];
-
-		VM_BUG_ON(!cma_clear_bitmap_if_in_range(cma, head,
-				thp_nr_pages(head)));
-	}
-
-	for (i = HPAGE_PUD_NR - HPAGE_PMD_NR; i >= 1; i -= HPAGE_PMD_NR)
-		__split_huge_pud_page_tail(head, i, lruvec, list);
-
-	/* reset head page order  */
-	prep_compound_page(head, HPAGE_PMD_ORDER);
-	prep_transhuge_page(head);
-
-	page_ref_inc(head);
-
-	spin_unlock_irqrestore(&pgdat->lru_lock, flags);
-
-	remap_pud_page(head);
-
-	for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR) {
-		struct page *subpage = head + i;
-
-		if (subpage == page)
-			continue;
-		unlock_page(subpage);
-
-		/*
-		 * Subpages may be freed if there wasn't any mapping
-		 * like if add_to_swap() is running on a lru page that
-		 * had its mapping zapped. And freeing these pages
-		 * requires taking the lru_lock so we do the put_page
-		 * of the tail pages after the split is complete.
-		 */
-		put_page(subpage);
-	}
-}
-/* Racy check whether the huge page can be split */
-bool can_split_huge_pud_page(struct page *page, int *pextra_pins)
-{
-	int extra_pins;
-
-	VM_BUG_ON(!PageAnon(page));
-
-	extra_pins = PageSwapCache(page) ? HPAGE_PUD_NR : 0;
-
-	if (pextra_pins)
-		*pextra_pins = extra_pins;
-	return total_mapcount(page) == page_count(page) - extra_pins - 1;
-}
-
 /*
  * This function splits huge page into normal pages. @page can point to any
  * subpage of huge page to split. Split doesn't change the position of @page.
@@ -2608,94 +2454,7 @@ bool can_split_huge_pud_page(struct page *page, int *pextra_pins)
  */
 int split_huge_pud_page_to_list(struct page *page, struct list_head *list)
 {
-	struct page *head = compound_head(page);
-	struct pglist_data *pgdata = NODE_DATA(page_to_nid(head));
-	struct deferred_split *ds_queue = get_deferred_split_queue(head);
-	struct anon_vma *anon_vma = NULL;
-	struct address_space *mapping = NULL;
-	int count, mapcount, extra_pins, ret;
-	bool mlocked;
-	unsigned long flags;
-
-	VM_BUG_ON_PAGE(is_huge_zero_page(page), page);
-	VM_BUG_ON_PAGE(!PageLocked(page), page);
-	VM_BUG_ON_PAGE(!PageCompound(page), page);
-	VM_BUG_ON_PAGE(!PageAnon(page), page);
-
-	if (PageWriteback(page))
-		return -EBUSY;
-
-	/*
-	 * The caller does not necessarily hold an mmap_sem that would
-	 * prevent the anon_vma disappearing so we first we take a
-	 * reference to it and then lock the anon_vma for write. This
-	 * is similar to page_lock_anon_vma_read except the write lock
-	 * is taken to serialise against parallel split or collapse
-	 * operations.
-	 */
-	anon_vma = page_get_anon_vma(head);
-	if (!anon_vma) {
-		ret = -EBUSY;
-		goto out;
-	}
-	mapping = NULL;
-	anon_vma_lock_write(anon_vma);
-	/*
-	 * Racy check if we can split the page, before unmap_pud_page() will
-	 * split PUDs
-	 */
-	if (!can_split_huge_pud_page(head, &extra_pins)) {
-		ret = -EBUSY;
-		goto out_unlock;
-	}
-
-	mlocked = PageMlocked(page);
-	unmap_pud_page(head);
-	VM_BUG_ON_PAGE(compound_mapcount(head), head);
-
-	/* Make sure the page is not on per-CPU pagevec as it takes pin */
-	if (mlocked)
-		lru_add_drain();
-
-	/* prevent PageLRU to go away from under us, and freeze lru stats */
-	spin_lock_irqsave(&pgdata->lru_lock, flags);
-
-	/* Prevent deferred_split_scan() touching ->_refcount */
-	spin_lock(&ds_queue->split_queue_lock);
-	count = page_count(head);
-	mapcount = total_mapcount(head);
-	if (!mapcount && page_ref_freeze(head, 1 + extra_pins)) {
-		if (!list_empty(page_deferred_list(head))) {
-			ds_queue->split_queue_len--;
-			list_del(page_deferred_list(head));
-		}
-		if (mapping)
-			__dec_node_page_state(page, NR_SHMEM_THPS);
-		spin_unlock(&ds_queue->split_queue_lock);
-		__split_huge_pud_page(page, list, flags);
-		ret = 0;
-	} else {
-		if (IS_ENABLED(CONFIG_DEBUG_VM) && mapcount) {
-			pr_alert("total_mapcount: %u, page_count(): %u\n",
-					mapcount, count);
-			if (PageTail(page))
-				dump_page(head, NULL);
-			dump_page(page, "total_mapcount(head) > 0");
-		}
-		spin_unlock(&ds_queue->split_queue_lock);
-		spin_unlock_irqrestore(&pgdata->lru_lock, flags);
-		remap_pud_page(head);
-		ret = -EBUSY;
-	}
-
-out_unlock:
-	if (anon_vma) {
-		anon_vma_unlock_write(anon_vma);
-		put_anon_vma(anon_vma);
-	}
-out:
-	count_vm_event(!ret ? THP_SPLIT_PUD_PAGE : THP_SPLIT_PUD_PAGE_FAILED);
-	return ret;
+	return split_huge_page_to_order_to_list(page, list, HPAGE_PMD_ORDER);
 }
 #endif /* CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD */
 
@@ -3075,8 +2834,12 @@ static void unmap_page(struct page *page)
 
 	VM_BUG_ON_PAGE(!PageHead(page), page);
 
-	if (thp_order(page) >= HPAGE_PMD_ORDER)
+	if (thp_order(page) >= HPAGE_PMD_ORDER &&
+	    thp_order(page) < HPAGE_PUD_ORDER)
 		ttu_flags |= TTU_SPLIT_HUGE_PMD;
+
+	if (thp_order(page) >= HPAGE_PUD_ORDER)
+		ttu_flags |= TTU_SPLIT_HUGE_PUD;
 
 	if (PageAnon(page))
 		ttu_flags |= TTU_SPLIT_FREEZE;
