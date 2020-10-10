@@ -171,7 +171,7 @@ static inline void filemap_nr_thps_inc(struct address_space *mapping)
 	if (mapping_max_folio_order(mapping) == 0)
 		atomic_inc(&mapping->nr_thps);
 #else
-	WARN_ON_ONCE(1);
+	WARN_ON_ONCE(mapping_max_folio_order(mapping) == 0);
 #endif
 }
 
@@ -181,7 +181,7 @@ static inline void filemap_nr_thps_dec(struct address_space *mapping)
 	if (mapping_max_folio_order(mapping) == 0)
 		atomic_dec(&mapping->nr_thps);
 #else
-	WARN_ON_ONCE(1);
+	WARN_ON_ONCE(mapping_max_folio_order(mapping) == 0);
 #endif
 }
 
