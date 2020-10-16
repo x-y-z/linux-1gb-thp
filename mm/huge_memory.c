@@ -3589,6 +3589,10 @@ struct page *alloc_thp_pud_page(int nid)
 {
 	struct page *page = NULL;
 #ifdef CONFIG_CMA
+	/* flush cma clear bitmap wq
+	 * make a constant size clear bitmap work list and queue split work
+	 * on it during PUD split. And flush the work when > queue size pages
+	 * are allocated. */
 	page = cma_alloc(hugepage_cma[nid], HPAGE_PUD_NR, HPAGE_PUD_ORDER, true);
 #endif
 	return page;
