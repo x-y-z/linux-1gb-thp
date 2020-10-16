@@ -41,6 +41,7 @@ struct cma_clear_bitmap_work {
 	struct cma *cma;
 	unsigned long pfn;
 	unsigned int count;
+	bool no_free_page;
 };
 
 struct cma cma_areas[MAX_CMA_AREAS];
@@ -560,7 +561,8 @@ static void cma_clear_bitmap_fn(struct work_struct *work)
 
 	cma_clear_bitmap(w->cma, w->pfn, w->count);
 
-	__free_page(pfn_to_page(w->pfn));
+	if (!w->no_free_page)
+		__free_page(pfn_to_page(w->pfn));
 }
 
 /**
@@ -616,6 +618,7 @@ bool cma_release_nowait(struct cma *cma, const struct page *pages,
 	work->cma = cma;
 	work->pfn = pfn;
 	work->count = count;
+	work->no_free_page = false;
 	queue_work(cma_release_wq, &work->work);
 
 	trace_cma_release(pfn, pages, count);
@@ -646,11 +649,20 @@ bool cma_clear_bitmap_if_in_range(struct cma *cma, const struct page *pages,
 	if (pfn + count > cma->base_pfn + cma->count)
 		return false;
 
-	work = (struct cma_clear_bitmap_work *)kmalloc(sizeof(struct cma_clear_bitmap_work), GFP_ATOMIC);
+	/*
+	 * Set CMA_DELAYED_RELEASE flag: subsequent cma_alloc()'s
+	 * will wait for the async part of cma_release_nowait() to
+	 * finish.
+	 */
+	if (unlikely(!test_bit(CMA_DELAYED_RELEASE, &cma->flags)))
+		set_bit(CMA_DELAYED_RELEASE, &cma->flags);
+
+	work = (struct cma_clear_bitmap_work *)kmalloc(sizeof(struct cma_clear_bitmap_work), GFP_ATOMIC | __GFP_NOFAIL);
 	INIT_WORK(&work->work, cma_clear_bitmap_fn);
 	work->cma = cma;
 	work->pfn = pfn;
 	work->count = count;
+	work->no_free_page = true;
 	queue_work(cma_release_wq, &work->work);
 
 	return true;
