@@ -13,6 +13,7 @@ struct cma_kobject {
 struct cma {
 	unsigned long   base_pfn;
 	unsigned long   count;
+	unsigned long   flags;
 	unsigned long   *bitmap;
 	unsigned int order_per_bit; /* Order of pages represented by one bit */
 	spinlock_t	lock;
@@ -30,6 +31,10 @@ struct cma {
 	/* kobject requires dynamic object */
 	struct cma_kobject *cma_kobj;
 #endif
+};
+
+enum cma_flags {
+	CMA_DELAYED_RELEASE, /* cma bitmap is cleared asynchronously */
 };
 
 extern struct cma cma_areas[MAX_CMA_AREAS];
