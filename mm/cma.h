@@ -7,6 +7,7 @@
 struct cma {
 	unsigned long   base_pfn;
 	unsigned long   count;
+	unsigned long   flags;
 	unsigned long   *bitmap;
 	unsigned int order_per_bit; /* Order of pages represented by one bit */
 	struct mutex    lock;
@@ -16,6 +17,10 @@ struct cma {
 	struct debugfs_u32_array dfs_bitmap;
 #endif
 	char name[CMA_MAX_NAME];
+};
+
+enum cma_flags {
+	CMA_DELAYED_RELEASE, /* cma bitmap is cleared asynchronously */
 };
 
 extern struct cma cma_areas[MAX_CMA_AREAS];
