@@ -258,13 +258,14 @@ static void xa_node_free(struct xa_node *node)
 	call_rcu(&node->rcu_head, radix_tree_node_rcu_free);
 }
 
-/*
+/**
  * xas_destroy() - Free any resources allocated during the XArray operation.
  * @xas: XArray operation state.
  *
- * This function is now internal-only.
+ * Usually xas_destroy() is called by xas_nomem(), but some users want to
+ * unconditionally release any memory that was allocated.
  */
-static void xas_destroy(struct xa_state *xas)
+void xas_destroy(struct xa_state *xas)
 {
 	struct xa_node *next, *node = xas->xa_alloc;
 
