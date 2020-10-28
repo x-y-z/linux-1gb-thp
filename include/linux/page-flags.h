@@ -840,6 +840,8 @@ TESTPAGEFLAG_FALSE(TransHuge, transhuge)
 TESTPAGEFLAG_FALSE(TransCompound, transcompound)
 TESTPAGEFLAG_FALSE(TransCompoundMap, transcompoundmap)
 TESTPAGEFLAG_FALSE(TransTail, transtail)
+/* The implementation of PMDPageInPUD is in mm.h */
+TESTPAGEFLAG_FALSE(PMDPageInPUD, pmdpageinpud)
 PAGEFLAG_FALSE(DoubleMap, double_map)
 	TESTSCFLAG_FALSE(DoubleMap, double_map)
 PAGEFLAG_FALSE(PUDDoubleMap, puddouble_map)
