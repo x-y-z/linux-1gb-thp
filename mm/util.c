@@ -680,6 +680,14 @@ bool folio_mapped(struct folio *folio)
 		return atomic_read(&folio->_mapcount) >= 0;
 	if (atomic_read(folio_mapcount_ptr(folio)) >= 0)
 		return true;
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+	if (folio_order(folio) == HPAGE_PUD_ORDER) {
+		for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR) {
+			if (pmd_compound_mapcount(folio_page(folio, i)) > 0)
+				return true;
+		}
+	}
+#endif
 	if (folio_test_hugetlb(folio))
 		return false;
 
@@ -737,17 +745,25 @@ EXPORT_SYMBOL(folio_mapping);
 int __page_mapcount(struct page *page)
 {
 	int ret;
+	struct page *head = compound_head(page);
 
+	/* base page mapping */
 	ret = atomic_read(&page->_mapcount) + 1;
+
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+	/* PMDInPUD mapping */
+	if (compound_order(head) == HPAGE_PUD_ORDER)
+		ret += pmd_compound_mapcount(page);
+#endif
 	/*
 	 * For file THP page->_mapcount contains total number of mapping
 	 * of the page: no need to look into compound_mapcount.
 	 */
 	if (!PageAnon(page) && !PageHuge(page))
 		return ret;
-	page = compound_head(page);
-	ret += atomic_read(compound_mapcount_ptr(page)) + 1;
-	if (PageDoubleMap(page))
+	/* highest compound mapping */
+	ret += atomic_read(compound_mapcount_ptr(head)) + 1;
+	if (PageDoubleMap(head))
 		ret--;
 	return ret;
 }
