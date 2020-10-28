@@ -170,7 +170,7 @@ static bool oom_unkillable_task(struct task_struct *p)
 	return false;
 }
 
-/**
+/*
  * Check whether unreclaimable slabs amount is greater than
  * all user memory(LRU pages).
  */
