@@ -2333,7 +2333,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		unsigned long haddr, bool freeze)
 {
 	struct mm_struct *mm = vma->vm_mm;
-	struct page *page;
+	struct page *page, *head;
 	pgtable_t pgtable;
 	pmd_t old_pmd, _pmd;
 	bool young, write, soft_dirty, pmd_migration = false, uffd_wp = false;
@@ -2422,7 +2422,8 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		uffd_wp = pmd_uffd_wp(old_pmd);
 	}
 	VM_BUG_ON_PAGE(!page_count(page), page);
-	page_ref_add(page, HPAGE_PMD_NR - 1);
+	head = compound_head(page);
+	page_ref_add(head, HPAGE_PMD_NR - 1);
 
 	/*
 	 * Withdraw the table only after we mark the pmd entry invalid.
@@ -2470,15 +2471,25 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		/*
 		 * Set PG_double_map before dropping compound_mapcount to avoid
 		 * false-negative page_mapped().
+		 * Don't set it if the PUD page is mapped at PUD level, since
+		 * page_mapped() is true in that case.
 		 */
-		if (compound_mapcount(page) > 1 &&
-		    !TestSetPageDoubleMap(page)) {
+		if (((PMDPageInPUD(page) &&
+			pmd_compound_mapcount(page) >
+				(1 + PagePUDDoubleMap(compound_head(page)))) ||
+		    (!PMDPageInPUD(page) &&
+			compound_mapcount(page) > 1))
+			&& !TestSetPageDoubleMap(page)) {
 			for (i = 0; i < HPAGE_PMD_NR; i++)
 				atomic_inc(&page[i]._mapcount);
 		}
 
 		lock_page_memcg(page);
-		if (atomic_add_negative(-1, compound_mapcount_ptr(page))) {
+
+		if ((PMDPageInPUD(page) &&
+			atomic_add_negative(-1, pmd_compound_mapcount_ptr(page))) ||
+		    (!PMDPageInPUD(page) &&
+			atomic_add_negative(-1, compound_mapcount_ptr(page)))) {
 			/* Last compound_mapcount is gone. */
 			__dec_lruvec_page_state(page, NR_ANON_THPS);
 			if (TestClearPageDoubleMap(page)) {
