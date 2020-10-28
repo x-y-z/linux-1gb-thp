@@ -653,6 +653,12 @@ bool page_mapped(struct page *page)
 	page = compound_head(page);
 	if (atomic_read(compound_mapcount_ptr(page)) >= 0)
 		return true;
+	if (compound_order(page) == HPAGE_PUD_ORDER) {
+		for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR) {
+			if (pmd_compound_mapcount(page + i) > 0)
+				return true;
+		}
+	}
 	if (PageHuge(page))
 		return false;
 	for (i = 0; i < compound_nr(page); i++) {
@@ -713,17 +719,23 @@ struct address_space *page_mapping_file(struct page *page)
 int __page_mapcount(struct page *page)
 {
 	int ret;
+	struct page *head = compound_head(page);
 
+	/* base page mapping */
 	ret = atomic_read(&page->_mapcount) + 1;
+
+	/* PMDInPUD mapping */
+	if (compound_order(head) == HPAGE_PUD_ORDER)
+		ret += pmd_compound_mapcount(page);
 	/*
 	 * For file THP page->_mapcount contains total number of mapping
 	 * of the page: no need to look into compound_mapcount.
 	 */
 	if (!PageAnon(page) && !PageHuge(page))
 		return ret;
-	page = compound_head(page);
-	ret += atomic_read(compound_mapcount_ptr(page)) + 1;
-	if (PageDoubleMap(page))
+	/* highest compound mapping */
+	ret += atomic_read(compound_mapcount_ptr(head)) + 1;
+	if (PageDoubleMap(head))
 		ret--;
 	return ret;
 }

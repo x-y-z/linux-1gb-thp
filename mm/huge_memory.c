@@ -2855,12 +2855,23 @@ int total_mapcount(struct page *page)
 	if (PageHuge(page))
 		return compound;
 	ret = compound;
-	for (i = 0; i < nr; i++)
-		ret += atomic_read(&page[i]._mapcount) + 1;
+	/* if PMD, read all base page, if PUD, read the pmd_compound_mapcount()*/
+	if (compound_order(page) == HPAGE_PMD_ORDER) {
+		for (i = 0; i < nr; i++)
+			ret += atomic_read(&page[i]._mapcount) + 1;
+	} else if (compound_order(page) == HPAGE_PUD_ORDER) {
+		for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR)
+			ret += pmd_compound_mapcount(&page[i]);
+		for (i = 0; i < nr; i++)
+			ret += atomic_read(&page[i]._mapcount) + 1;
+		/* both PUD and PMD has HPAGE_PMD_NR sub pages */
+		nr = HPAGE_PMD_NR;
+	} else
+		VM_BUG_ON_PAGE(1, page);
 	/* File pages has compound_mapcount included in _mapcount */
 	if (!PageAnon(page))
 		return ret - compound * nr;
-	if (PageDoubleMap(page))
+	if (PagePUDDoubleMap(page) || PageDoubleMap(page))
 		ret -= nr;
 	return ret;
 }
@@ -2891,7 +2902,7 @@ int total_mapcount(struct page *page)
  */
 int page_trans_huge_mapcount(struct page *page, int *total_mapcount)
 {
-	int i, ret, _total_mapcount, mapcount;
+	int i, ret, _total_mapcount, mapcount, nr;
 
 	/* hugetlbfs shouldn't call it */
 	VM_BUG_ON_PAGE(PageHuge(page), page);
@@ -2906,14 +2917,41 @@ int page_trans_huge_mapcount(struct page *page, int *total_mapcount)
 	page = compound_head(page);
 
 	_total_mapcount = ret = 0;
-	for (i = 0; i < thp_nr_pages(page); i++) {
-		mapcount = atomic_read(&page[i]._mapcount) + 1;
-		ret = max(ret, mapcount);
-		_total_mapcount += mapcount;
-	}
-	if (PageDoubleMap(page)) {
+	nr = thp_nr_pages(page);
+	/* if PMD, read all base page, if PUD, read the pmd_compound_mapcount()*/
+	if (compound_order(page) == HPAGE_PMD_ORDER) {
+		for (i = 0; i < nr; i++) {
+			mapcount = atomic_read(&page[i]._mapcount) + 1;
+			ret = max(ret, mapcount);
+			_total_mapcount += mapcount;
+		}
+	} else if (compound_order(page) == HPAGE_PUD_ORDER) {
+		for (i = 0; i < nr; i += HPAGE_PMD_NR) {
+			int j;
+
+			mapcount = pmd_compound_mapcount(&page[i]);
+			ret = max(ret, mapcount);
+			_total_mapcount += mapcount;
+
+			/* Triple mapped at base page size */
+			for (j = 0; j < HPAGE_PMD_NR; j++) {
+				mapcount = atomic_read(&page[i + j]._mapcount) + 1;
+				ret = max(ret, mapcount);
+				_total_mapcount += mapcount;
+			}
+
+			if (PageDoubleMap(&page[i])) {
+				ret -= 1;
+				_total_mapcount -= HPAGE_PMD_NR;
+			}
+		}
+		/* both PUD and PMD has HPAGE_PMD_NR sub pages */
+		nr = HPAGE_PMD_NR;
+	} else
+		VM_BUG_ON_PAGE(1, page);
+	if (PageDoubleMap(page) || PagePUDDoubleMap(page)) {
 		ret -= 1;
-		_total_mapcount -= thp_nr_pages(page);
+		_total_mapcount -= nr;
 	}
 	mapcount = compound_mapcount(page);
 	ret += mapcount;
