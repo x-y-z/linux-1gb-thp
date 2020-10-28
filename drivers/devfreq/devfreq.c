@@ -367,6 +367,14 @@ static int devfreq_set_target(struct devfreq *devfreq, unsigned long new_freq,
 		return err;
 	}
 
+	/*
+	 * Print devfreq_frequency trace information between DEVFREQ_PRECHANGE
+	 * and DEVFREQ_POSTCHANGE because for showing the correct frequency
+	 * change order of between devfreq device and passive devfreq device.
+	 */
+	if (trace_devfreq_frequency_enabled() && new_freq != cur_freq)
+		trace_devfreq_frequency(devfreq, new_freq, cur_freq);
+
 	freqs.new = new_freq;
 	devfreq_notify_transition(devfreq, &freqs, DEVFREQ_POSTCHANGE);
 
@@ -382,18 +390,19 @@ static int devfreq_set_target(struct devfreq *devfreq, unsigned long new_freq,
 	return err;
 }
 
-/* Load monitoring helper functions for governors use */
-
 /**
- * update_devfreq() - Reevaluate the device and configure frequency.
+ * devfreq_update_target() - Reevaluate the device and configure frequency
+ *			   on the final stage.
  * @devfreq:	the devfreq instance.
+ * @freq:	the new frequency of parent device. This argument
+ *		is only used for devfreq device using passive governor.
  *
- * Note: Lock devfreq->lock before calling update_devfreq
- *	 This function is exported for governors.
+ * Note: Lock devfreq->lock before calling devfreq_update_target. This function
+ *	 should be only used by both update_devfreq() and devfreq governors.
  */
-int update_devfreq(struct devfreq *devfreq)
+int devfreq_update_target(struct devfreq *devfreq, unsigned long freq)
 {
-	unsigned long freq, min_freq, max_freq;
+	unsigned long min_freq, max_freq;
 	int err = 0;
 	u32 flags = 0;
 
@@ -418,7 +427,21 @@ int update_devfreq(struct devfreq *devfreq)
 	}
 
 	return devfreq_set_target(devfreq, freq, flags);
+}
+EXPORT_SYMBOL(devfreq_update_target);
 
+/* Load monitoring helper functions for governors use */
+
+/**
+ * update_devfreq() - Reevaluate the device and configure frequency.
+ * @devfreq:	the devfreq instance.
+ *
+ * Note: Lock devfreq->lock before calling update_devfreq
+ *	 This function is exported for governors.
+ */
+int update_devfreq(struct devfreq *devfreq)
+{
+	return devfreq_update_target(devfreq, 0L);
 }
 EXPORT_SYMBOL(update_devfreq);
 

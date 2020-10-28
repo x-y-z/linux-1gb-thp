@@ -7,7 +7,7 @@ $schema: http://devicetree.org/meta-schemas/core.yaml#
 title: Toshiba TC358775 DSI to LVDS bridge bindings
 
 maintainers:
- - Vinay Simha BN <simhavcs@gmail.com>
+  - Vinay Simha BN <simhavcs@gmail.com>
 
 description: |
  This binding supports DSI to LVDS bridge TC358775
@@ -29,7 +29,7 @@ properties:
 
   vdd-supply:
     maxItems: 1
-    description:  1.2V LVDS Power Supply
+    description: 1.2V LVDS Power Supply
 
   vddio-supply:
     maxItems: 1
@@ -77,13 +77,13 @@ properties:
       - port@1
 
 required:
- - compatible
- - reg
- - vdd-supply
- - vddio-supply
- - stby-gpios
- - reset-gpios
- - ports
+  - compatible
+  - reg
+  - vdd-supply
+  - vddio-supply
+  - stby-gpios
+  - reset-gpios
+  - ports
 
 examples:
  - |

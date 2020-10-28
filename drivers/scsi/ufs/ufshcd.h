@@ -541,7 +541,6 @@ enum ufshcd_quirks {
 	 * This quirk needs to disable manual flush for write booster
 	 */
 	UFSHCI_QUIRK_SKIP_MANUAL_WB_FLUSH_CTRL		= 1 << 12,
-
 };
 
 enum ufshcd_caps {
