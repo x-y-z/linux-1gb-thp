@@ -630,6 +630,12 @@ static inline pmd_t pmd_mkinvalid(pmd_t pmd)
 		      __pgprot(pmd_flags(pmd) & ~(_PAGE_PRESENT|_PAGE_PROTNONE)));
 }
 
+static inline pud_t pud_mknotpresent(pud_t pud)
+{
+	return pfn_pud(pud_pfn(pud),
+	      __pgprot(pud_flags(pud) & ~(_PAGE_PRESENT|_PAGE_PROTNONE)));
+}
+
 static inline u64 flip_protnone_guard(u64 oldval, u64 val, u64 mask);
 
 static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
@@ -1245,6 +1251,21 @@ static inline p4d_t *user_to_kernel_p4dp(p4d_t *p4dp)
 	return ptr_clear_bit(p4dp, PTI_PGTABLE_SWITCH_BIT);
 }
 #endif /* CONFIG_PAGE_TABLE_ISOLATION */
+
+#ifndef pudp_establish
+#define pudp_establish pudp_establish
+static inline pud_t pudp_establish(struct vm_area_struct *vma,
+		unsigned long address, pud_t *pudp, pud_t pud)
+{
+	if (IS_ENABLED(CONFIG_SMP)) {
+		return xchg(pudp, pud);
+	} else {
+		pud_t old = *pudp;
+		*pudp = pud;
+		return old;
+	}
+}
+#endif
 
 /*
  * clone_pgd_range(pgd_t *dst, pgd_t *src, int count);
