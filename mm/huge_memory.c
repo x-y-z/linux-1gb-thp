@@ -1328,7 +1328,7 @@ int copy_huge_pud(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		pmd_free_page_with_ptes(dst_mm, pmd_pgtable);
 		spin_unlock(src_ptl);
 		spin_unlock(dst_ptl);
-		__split_huge_pud(vma, src_pud, addr);
+		__split_huge_pud(vma, src_pud, addr, false, NULL);
 		return -EAGAIN;
 	}
 
@@ -2111,8 +2111,16 @@ int zap_huge_pud(struct mmu_gather *tlb, struct vm_area_struct *vma,
 }
 
 static void __split_huge_pud_locked(struct vm_area_struct *vma, pud_t *pud,
-		unsigned long haddr)
+		unsigned long haddr, bool freeze)
 {
+	struct mm_struct *mm = vma->vm_mm;
+	struct page *page;
+	pgtable_t pgtable;
+	pud_t _pud, old_pud;
+	bool young, write, dirty, soft_dirty;
+	unsigned long addr;
+	int i;
+
 	VM_BUG_ON(haddr & ~HPAGE_PUD_MASK);
 	VM_BUG_ON_VMA(vma->vm_start > haddr, vma);
 	VM_BUG_ON_VMA(vma->vm_end < haddr + HPAGE_PUD_SIZE, vma);
@@ -2120,23 +2128,141 @@ static void __split_huge_pud_locked(struct vm_area_struct *vma, pud_t *pud,
 
 	count_vm_event(THP_SPLIT_PUD);
 
-	pudp_huge_clear_flush_notify(vma, haddr, pud);
+	if (!vma_is_anonymous(vma)) {
+		_pud = pudp_huge_clear_flush_notify(vma, haddr, pud);
+		/*
+		 * We are going to unmap this huge page. So
+		 * just go ahead and zap it
+		 */
+		if (arch_needs_pgtable_deposit())
+			zap_pud_deposited_table(mm, pud);
+		if (vma_is_dax(vma))
+			return;
+		page = pud_page(_pud);
+		if (!PageReferenced(page) && pud_young(_pud))
+			SetPageReferenced(page);
+		page_remove_rmap(page, HPAGE_PUD_ORDER);
+		put_page(page);
+		add_mm_counter(mm, MM_FILEPAGES, -HPAGE_PUD_NR);
+		return;
+	}
+
+	/* See the comment above pmdp_invalidate() in __split_huge_pmd_locked() */
+	old_pud = pudp_invalidate(vma, haddr, pud);
+
+	page = pud_page(old_pud);
+	VM_BUG_ON_PAGE(!page_count(page), page);
+	page_ref_add(page, (1<<(HPAGE_PUD_ORDER-HPAGE_PMD_ORDER)) - 1);
+	if (pud_dirty(old_pud))
+		SetPageDirty(page);
+	write = pud_write(old_pud);
+	young = pud_young(old_pud);
+	dirty = pud_dirty(old_pud);
+	soft_dirty = pud_soft_dirty(old_pud);
+
+	pgtable = pgtable_trans_huge_pud_withdraw(mm, pud);
+	pud_populate_with_pgtable(mm, &_pud, pgtable);
+
+	for (i = 0, addr = haddr; i < HPAGE_PUD_NR;
+		 i += HPAGE_PMD_NR, addr += PMD_SIZE) {
+		pmd_t entry, *pmd;
+		/*
+		 * Note that NUMA hinting access restrictions are not
+		 * transferred to avoid any possibility of altering
+		 * permissions across VMAs.
+		 */
+		if (freeze) {
+			swp_entry_t swp_entry;
+
+			swp_entry = make_migration_entry(page + i, write);
+			entry = swp_entry_to_pmd(swp_entry);
+			if (soft_dirty)
+				entry = pmd_swp_mksoft_dirty(entry);
+		} else {
+			entry = mk_huge_pmd(page + i, READ_ONCE(vma->vm_page_prot));
+			entry = maybe_pmd_mkwrite(entry, vma);
+			if (!write)
+				entry = pmd_wrprotect(entry);
+			if (!young)
+				entry = pmd_mkold(entry);
+			if (soft_dirty)
+				entry = pmd_mksoft_dirty(entry);
+		}
+		pmd = pmd_offset(&_pud, addr);
+		VM_BUG_ON(!pmd_none(*pmd));
+		set_pmd_at(mm, addr, pmd, entry);
+		/* distinguish between pud compound_mapcount and pmd compound_mapcount */
+		if (atomic_inc_and_test(pmd_compound_mapcount_ptr(&page[i]))) {
+			/* first pmd-mapped pud page */
+			lock_page_memcg(page);
+			__inc_lruvec_page_state(page, NR_ANON_THPS);
+			unlock_page_memcg(page);
+		}
+	}
+
+	/*
+	 * Set PG_double_map before dropping compound_mapcount to avoid
+	 * false-negative page_mapped().
+	 */
+	if (compound_mapcount(page) > 1 && !TestSetPagePUDDoubleMap(page)) {
+		for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR)
+		/* distinguish between pud compound_mapcount and pmd compound_mapcount */
+			atomic_inc(pmd_compound_mapcount_ptr(&page[i]));
+	}
+
+	lock_page_memcg(page);
+	if (atomic_add_negative(-1, compound_mapcount_ptr(page))) {
+		/* Last compound_mapcount is gone. */
+		__dec_lruvec_page_state(page, NR_ANON_THPS_PUD);
+		if (TestClearPagePUDDoubleMap(page)) {
+			/* No need in mapcount reference anymore */
+			for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR)
+		/* distinguish between pud compound_mapcount and pmd compound_mapcount */
+				atomic_dec(pmd_compound_mapcount_ptr(&page[i]));
+		}
+	}
+	unlock_page_memcg(page);
+
+	smp_wmb(); /* make pte visible before pmd */
+	pud_populate_with_pgtable(mm, pud, pgtable);
+
+	if (freeze) {
+		for (i = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR) {
+			page_remove_rmap(page + i, HPAGE_PMD_ORDER);
+			put_page(page + i);
+		}
+	}
 }
 
 void __split_huge_pud(struct vm_area_struct *vma, pud_t *pud,
-		unsigned long address)
+		unsigned long address, bool freeze, struct page *page)
 {
 	spinlock_t *ptl;
+	struct mm_struct *mm = vma->vm_mm;
+	unsigned long haddr = address & HPAGE_PUD_MASK;
 	struct mmu_notifier_range range;
 
 	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma, vma->vm_mm,
 				address & HPAGE_PUD_MASK,
 				(address & HPAGE_PUD_MASK) + HPAGE_PUD_SIZE);
 	mmu_notifier_invalidate_range_start(&range);
-	ptl = pud_lock(vma->vm_mm, pud);
-	if (unlikely(!pud_trans_huge(*pud) && !pud_devmap(*pud)))
+	ptl = pud_lock(mm, pud);
+
+	/*
+	 * If caller asks to setup a migration entries, we need a page to check
+	 * pmd against. Otherwise we can end up replacing wrong page.
+	 */
+	VM_BUG_ON(freeze && !page);
+	if (page && page != pud_page(*pud))
 		goto out;
-	__split_huge_pud_locked(vma, pud, range.start);
+
+	if (pud_trans_huge(*pud)) {
+		page = pud_page(*pud);
+		if (PageMlocked(page))
+			clear_page_mlock(page);
+	} else if (unlikely(!pud_devmap(*pud)))
+		goto out;
+	__split_huge_pud_locked(vma, pud, haddr, freeze);
 
 out:
 	spin_unlock(ptl);
@@ -2146,6 +2272,27 @@ out:
 	 */
 	mmu_notifier_invalidate_range_only_end(&range);
 }
+
+void split_huge_pud_address(struct vm_area_struct *vma, unsigned long address,
+		bool freeze, struct page *page)
+{
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+
+	pgd = pgd_offset(vma->vm_mm, address);
+	if (!pgd_present(*pgd))
+		return;
+
+	p4d = p4d_offset(pgd, address);
+	if (!p4d_present(*p4d))
+		return;
+
+	pud = pud_offset(p4d, address);
+
+	__split_huge_pud(vma, pud, address, freeze, page);
+}
+
 #endif /* CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD */
 
 static void __split_huge_zero_page_pmd(struct vm_area_struct *vma,
