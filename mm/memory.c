@@ -4295,7 +4295,7 @@ static vm_fault_t create_huge_pud(struct vm_fault *vmf)
 	}
 split:
 	/* COW or write-notify not handled on PUD level: split pud.*/
-	__split_huge_pud(vmf->vma, vmf->pud, vmf->address);
+	__split_huge_pud(vmf->vma, vmf->pud, vmf->address, false, NULL);
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 	return VM_FAULT_FALLBACK;
 }
