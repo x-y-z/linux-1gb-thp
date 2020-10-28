@@ -173,6 +173,9 @@ enum pageflags {
 	/* Compound pages. Stored in first tail page's flags */
 	PG_double_map = PG_workingset,
 
+	/* Compound PUD pages. Stored in second tail page's flags */
+	PG_puddouble_map = PG_workingset,
+
 	/* non-lru isolated movable page */
 	PG_isolated = PG_reclaim,
 
@@ -279,6 +282,9 @@ static unsigned long *folio_flags(struct folio *folio, unsigned n)
  *
  * PF_SECOND:
  *     the page flag is stored in the first tail page.
+ *
+ * PF_THIRD:
+ *     the page flag is stored in the second tail page.
  */
 #define PF_POISONED_CHECK(page) ({					\
 		VM_BUG_ON_PGFLAGS(PagePoisoned(page), page);		\
@@ -297,6 +303,9 @@ static unsigned long *folio_flags(struct folio *folio, unsigned n)
 #define PF_SECOND(page, enforce) ({					\
 		VM_BUG_ON_PGFLAGS(!PageHead(page), page);		\
 		PF_POISONED_CHECK(&page[1]); })
+#define PF_THIRD(page, enforce) ({					\
+		VM_BUG_ON_PGFLAGS(!PageHead(page), page);		\
+		PF_POISONED_CHECK(&page[2]); })
 
 /* Which page is the flag stored in */
 #define FOLIO_PF_ANY		0
@@ -305,6 +314,7 @@ static unsigned long *folio_flags(struct folio *folio, unsigned n)
 #define FOLIO_PF_NO_TAIL	0
 #define FOLIO_PF_NO_COMPOUND	0
 #define FOLIO_PF_SECOND		1
+#define FOLIO_PF_THIRD		2
 
 /*
  * Macros to create function definitions for page flags
@@ -810,6 +820,21 @@ static inline int PageTransTail(struct page *page)
  */
 PAGEFLAG(DoubleMap, double_map, PF_SECOND)
 	TESTSCFLAG(DoubleMap, double_map, PF_SECOND)
+/*
+ * PagePUDDoubleMap indicates that the compound page is mapped with PMDs as well
+ * as PUDs.
+ *
+ * This is required for optimization of rmap operations for THP: we can postpone
+ * per small page mapcount accounting (and its overhead from atomic operations)
+ * until the first PUD split.
+ *
+ * For the page PagePUDDoubleMap means ->_mapcount in all sub-PMD pages is
+ * offset up by one. This reference will go away with last sub_compound_mapcount.
+ *
+ * See also __split_huge_pud_locked() and page_remove_anon_compound_rmap().
+ */
+PAGEFLAG(PUDDoubleMap, puddouble_map, PF_THIRD)
+	TESTSCFLAG(PUDDoubleMap, puddouble_map, PF_THIRD)
 #else
 TESTPAGEFLAG_FALSE(TransHuge, transhuge)
 TESTPAGEFLAG_FALSE(TransCompound, transcompound)
@@ -817,6 +842,8 @@ TESTPAGEFLAG_FALSE(TransCompoundMap, transcompoundmap)
 TESTPAGEFLAG_FALSE(TransTail, transtail)
 PAGEFLAG_FALSE(DoubleMap, double_map)
 	TESTSCFLAG_FALSE(DoubleMap, double_map)
+PAGEFLAG_FALSE(PUDDoubleMap, puddouble_map)
+	TESTSETFLAG_FALSE(PUDDoubleMap, puddouble_map)
 #endif
 
 /*
