@@ -45,6 +45,7 @@ struct pt_regs;
 extern int sysctl_page_lock_unfairness;
 
 void init_mm_internals(void);
+static inline unsigned int compound_order(struct page *page);
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES	/* Don't use mapnrs, do it properly */
 extern unsigned long max_mapnr;
@@ -810,6 +811,32 @@ static inline int compound_mapcount(struct page *page)
 	return head_compound_mapcount(page);
 }
 
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+static inline int PMDPageInPUD(struct page *page);
+/*
+ * PMD mapcount of PUD pages, does not include other levels of page table entry
+ * mappings.
+ *
+ * Must be called only for compound pages larger than PMD size or any their
+ * tail sub-pages.
+ */
+static inline atomic_t *pmd_compound_mapcount_ptr(struct page *page)
+{
+	struct page *head = compound_head(page), *pmd_page;
+
+    /* get to the page whose index is a multiplier of HPAGE_PMD_NR */
+    pmd_page = page - ((page - head) & (HPAGE_PMD_NR - 1));
+    VM_BUG_ON_PAGE(!PMDPageInPUD(pmd_page), page);
+
+	return &pmd_page[3].compound_mapcount;
+}
+
+static inline int pmd_compound_mapcount(struct page *page)
+{
+	return atomic_read(pmd_compound_mapcount_ptr(page)) + 1;
+}
+#endif /* CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD */
+
 /*
  * The atomic page->_mapcount, starts from -1: so that transitions
  * both from it and to it can be tracked, using atomic_inc_and_test
@@ -840,6 +867,15 @@ static inline int page_mapcount(struct page *page)
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 int total_mapcount(struct page *page);
 int page_trans_huge_mapcount(struct page *page, int *total_mapcount);
+
+static inline int PMDPageInPUD(struct page *page)
+{
+	struct page *head = compound_head(page);
+
+	return (PageCompound(page) && compound_order(head) == HPAGE_PUD_ORDER &&
+		((page - head) % HPAGE_PMD_NR == 0));
+}
+
 #else
 static inline int total_mapcount(struct page *page)
 {
