@@ -505,6 +505,11 @@ extern pmd_t pmdp_invalidate(struct vm_area_struct *vma, unsigned long address,
 			    pmd_t *pmdp);
 #endif
 
+#ifndef __HAVE_ARCH_PUDP_INVALIDATE
+extern pud_t pudp_invalidate(struct vm_area_struct *vma, unsigned long address,
+			    pud_t *pudp);
+#endif
+
 #ifndef __HAVE_ARCH_PTE_SAME
 static inline int pte_same(pte_t pte_a, pte_t pte_b)
 {
@@ -1183,6 +1188,18 @@ static inline pmd_t pmd_read_atomic(pmd_t *pmdp)
 	 * an unsigned long.
 	 */
 	return *pmdp;
+}
+#endif
+
+#ifndef pud_read_atomic
+static inline pud_t pud_read_atomic(pud_t *pudp)
+{
+	/*
+	 * Depend on compiler for an atomic pmd read. NOTE: this is
+	 * only going to work, if the pmdval_t isn't larger than
+	 * an unsigned long.
+	 */
+	return *pudp;
 }
 #endif
 
