@@ -2293,6 +2293,29 @@ void split_huge_pud_address(struct vm_area_struct *vma, unsigned long address,
 	__split_huge_pud(vma, pud, address, freeze, page);
 }
 
+/*
+ * This function splits huge page into normal pages. @page can point to any
+ * subpage of huge page to split. Split doesn't change the position of @page.
+ *
+ * Only caller must hold pin on the @page, otherwise split fails with -EBUSY.
+ * The huge page must be locked.
+ *
+ * If @list is null, tail pages will be added to LRU list, otherwise, to @list.
+ *
+ * Both head page and tail pages will inherit mapping, flags, and so on from
+ * the hugepage.
+ *
+ * GUP pin and PG_locked transferred to @page. Rest subpages can be freed if
+ * they are not mapped.
+ *
+ * Returns 0 if the hugepage is split successfully.
+ * Returns -EBUSY if the page is pinned or if anon_vma disappeared from under
+ * us.
+ */
+int split_huge_pud_page_to_list(struct page *page, struct list_head *list)
+{
+	return split_huge_page_to_order_to_list(page, list, HPAGE_PMD_ORDER);
+}
 #endif /* CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD */
 
 static void __split_huge_zero_page_pmd(struct vm_area_struct *vma,
@@ -2671,8 +2694,12 @@ static void unmap_page(struct page *page)
 
 	VM_BUG_ON_PAGE(!PageHead(page), page);
 
-	if (thp_order(page) >= HPAGE_PMD_ORDER)
+	if (thp_order(page) >= HPAGE_PMD_ORDER &&
+	    thp_order(page) < HPAGE_PUD_ORDER)
 		ttu_flags |= TTU_SPLIT_HUGE_PMD;
+
+	if (thp_order(page) >= HPAGE_PUD_ORDER)
+		ttu_flags |= TTU_SPLIT_HUGE_PUD;
 
 	if (PageAnon(page))
 		ttu_flags |= TTU_SPLIT_FREEZE;
@@ -3221,6 +3248,9 @@ static unsigned long deferred_split_count(struct shrinker *shrink,
 	return READ_ONCE(ds_queue->split_queue_len);
 }
 
+#define deferred_list_entry(x) (compound_head(list_entry((void *)x, \
+					struct page, mapping)))
+
 static unsigned long deferred_split_scan(struct shrinker *shrink,
 		struct shrink_control *sc)
 {
@@ -3254,12 +3284,18 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
 	spin_unlock_irqrestore(&ds_queue->split_queue_lock, flags);
 
 	list_for_each_safe(pos, next, &list) {
-		page = list_entry((void *)pos, struct page, mapping);
+		page = deferred_list_entry(pos);
 		if (!trylock_page(page))
 			goto next;
 		/* split_huge_page() removes page from list on success */
-		if (!split_huge_page(page))
-			split++;
+		if (compound_order(page) == HPAGE_PUD_ORDER) {
+			if (!split_huge_pud_page(page))
+				split++;
+		} else if (compound_order(page) == HPAGE_PMD_ORDER) {
+			if (!split_huge_page(page))
+				split++;
+		} else
+			VM_BUG_ON_PAGE(1, page);
 		unlock_page(page);
 next:
 		put_page(page);
