@@ -1137,6 +1137,7 @@ void do_page_add_anon_rmap(struct page *page,
 {
 	bool compound = flags & RMAP_COMPOUND;
 	bool first;
+	struct page *head = compound_head(page);
 
 	if (unlikely(PageKsm(page)))
 		lock_page_memcg(page);
@@ -1144,17 +1145,28 @@ void do_page_add_anon_rmap(struct page *page,
 		VM_BUG_ON_PAGE(!PageLocked(page), page);
 
 	if (compound) {
-		atomic_t *mapcount;
+		atomic_t *mapcount = NULL;
 		VM_BUG_ON_PAGE(!PageLocked(page), page);
-		VM_BUG_ON_PAGE(!PageTransHuge(page), page);
-		mapcount = compound_mapcount_ptr(page);
+		VM_BUG_ON_PAGE(!PMDPageInPUD(page) && !PageTransHuge(page), page);
+		if (compound_order(head) == HPAGE_PUD_ORDER) {
+			if (map_order == HPAGE_PUD_ORDER) {
+				mapcount = compound_mapcount_ptr(head);
+			} else if (map_order == HPAGE_PMD_ORDER) {
+				VM_BUG_ON(!PMDPageInPUD(page));
+				mapcount = pmd_compound_mapcount_ptr(page);
+			} else
+				VM_BUG_ON(1);
+		} else if (compound_order(head) == HPAGE_PMD_ORDER) {
+			mapcount = compound_mapcount_ptr(head);
+		} else
+			VM_BUG_ON(1);
 		first = atomic_inc_and_test(mapcount);
 	} else {
 		first = atomic_inc_and_test(&page->_mapcount);
 	}
 
 	if (first) {
-		int nr = compound ? thp_nr_pages(page) : 1;
+		int nr = 1 << map_order;
 		/*
 		 * We use the irq-unsafe __{inc|mod}_zone_page_stat because
 		 * these counters are not modified in interrupt context, and
@@ -1162,7 +1174,7 @@ void do_page_add_anon_rmap(struct page *page,
 		 * disabled.
 		 */
 		if (compound) {
-			if (nr == HPAGE_PMD_NR)
+			if (map_order == HPAGE_PMD_ORDER)
 				__mod_lruvec_page_state(page, NR_ANON_THPS, nr);
 			else
 				__mod_lruvec_page_state(page, NR_ANON_THPS_PUD, nr);
@@ -1209,10 +1221,15 @@ void page_add_new_anon_rmap(struct page *page,
 		if (hpage_pincount_available(page))
 			atomic_set(compound_pincount_ptr(page), 0);
 
-		if (nr == HPAGE_PMD_NR)
-			__mod_lruvec_page_state(page, NR_ANON_THPS, nr);
-		else
+		if (map_order == HPAGE_PUD_ORDER) {
+			VM_BUG_ON(compound_order(page) != HPAGE_PUD_ORDER);
 			__mod_lruvec_page_state(page, NR_ANON_THPS_PUD, nr);
+		} else if (map_order == HPAGE_PMD_ORDER) {
+			VM_BUG_ON(compound_order(page) != HPAGE_PMD_ORDER);
+			/* Anon THP always mapped first with PMD */
+			__mod_lruvec_page_state(page, NR_ANON_THPS, nr);
+		} else
+			VM_BUG_ON(1);
 	} else {
 		/* Anon THP always mapped first with PMD */
 		VM_BUG_ON_PAGE(PageTransCompound(page), page);
@@ -1314,10 +1331,38 @@ static void page_remove_file_rmap(struct page *page, bool compound)
 
 static void page_remove_anon_compound_rmap(struct page *page, int map_order)
 {
-	int i, nr;
+	int i, nr = 0;
+	struct page *head = compound_head(page);
 
-	if (!atomic_add_negative(-1, compound_mapcount_ptr(page)))
-		return;
+	if (compound_order(head) == HPAGE_PUD_ORDER) {
+		if (map_order == HPAGE_PMD_ORDER) {
+			VM_BUG_ON(!PMDPageInPUD(page));
+			if (atomic_add_negative(-1, pmd_compound_mapcount_ptr(page))) {
+				if (TestClearPageDoubleMap(page)) {
+					/*
+					 * Subpages can be mapped with PTEs too. Check how many of
+					 * themi are still mapped.
+					 */
+					for (i = 0; i < thp_nr_pages(head); i++) {
+						if (atomic_add_negative(-1, &head[i]._mapcount))
+							nr++;
+					}
+				}
+				__dec_node_page_state(page, NR_ANON_THPS);
+			}
+			nr += HPAGE_PMD_NR;
+			__mod_node_page_state(page_pgdat(head), NR_ANON_MAPPED, -nr);
+			return;
+		}
+
+		VM_BUG_ON(map_order != HPAGE_PUD_ORDER);
+		if (!atomic_add_negative(-1, compound_mapcount_ptr(page)))
+			return;
+	} else if (compound_order(head) == HPAGE_PMD_ORDER) {
+		if (!atomic_add_negative(-1, compound_mapcount_ptr(page)))
+			return;
+	} else
+		VM_BUG_ON_PAGE(1, page);
 
 	/* Hugepages are not counted in NR_ANON_PAGES for now. */
 	if (unlikely(PageHuge(page)))
@@ -1329,10 +1374,31 @@ static void page_remove_anon_compound_rmap(struct page *page, int map_order)
 	nr = thp_nr_pages(page);
 	if (map_order == HPAGE_PMD_ORDER)
 		__mod_lruvec_page_state(page, NR_ANON_THPS, -nr);
-	else
+	else if (map_order == HPAGE_PUD_ORDER)
 		__mod_lruvec_page_state(page, NR_ANON_THPS_PUD, -nr);
+	else
+		VM_BUG_ON(1);
 
-	if (TestClearPageDoubleMap(page)) {
+	/* PMD-mapped PUD THP is handled above */
+	if (TestClearPagePUDDoubleMap(head)) {
+		VM_BUG_ON(!(compound_order(head) == HPAGE_PUD_ORDER || head == page));
+		/*
+		 * Subpages can be mapped with PMDs too. Check how many of
+		 * them are still mapped.
+		 */
+		for (i = 0, nr = 0; i < HPAGE_PUD_NR; i += HPAGE_PMD_NR) {
+			if (atomic_add_negative(-1, pmd_compound_mapcount_ptr(&head[i])))
+				nr += HPAGE_PMD_NR;
+		}
+		/*
+		 * Queue the page for deferred split if at least one pmd page
+		 * of the pud compound page is unmapped, but at least one
+		 * pmd page is still mapped.
+		 */
+		if (nr && nr < thp_nr_pages(head))
+			deferred_split_huge_page(head);
+	} else if (TestClearPageDoubleMap(head)) {
+		VM_BUG_ON(compound_order(head) != HPAGE_PMD_ORDER);
 		/*
 		 * Subpages can be mapped with PTEs too. Check how many of
 		 * them are still mapped.
@@ -1356,8 +1422,10 @@ static void page_remove_anon_compound_rmap(struct page *page, int map_order)
 	if (unlikely(PageMlocked(page)))
 		clear_page_mlock(page);
 
-	if (nr)
-		__mod_lruvec_page_state(page, NR_ANON_MAPPED, -nr);
+	if (nr) {
+		__mod_lruvec_page_state(head, NR_ANON_MAPPED, -nr);
+		deferred_split_huge_page(head);
+	}
 }
 
 /**
