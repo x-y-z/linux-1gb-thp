@@ -449,6 +449,20 @@ static inline struct page *grab_cache_page_nowait(struct address_space *mapping,
 			mapping_gfp_mask(mapping));
 }
 
+extern pgoff_t __page_file_index(struct page *page);
+
+/*
+ * Return the pagecache index of the passed page.  Regular pagecache pages
+ * use ->index whereas swapcache pages use swp_offset(->private)
+ */
+static inline pgoff_t page_index(struct page *page)
+{
+	struct page *head = thp_head(page);
+	if (unlikely(PageSwapCache(page)))
+		return __page_file_index(page);
+	return head->index + (page - head);
+}
+
 /* Does this page contain this index? */
 static inline bool thp_contains(struct page *head, pgoff_t index)
 {

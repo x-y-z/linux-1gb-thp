@@ -1555,19 +1555,6 @@ struct address_space *page_file_mapping(struct page *page)
 	return page->mapping;
 }
 
-extern pgoff_t __page_file_index(struct page *page);
-
-/*
- * Return the pagecache index of the passed page.  Regular pagecache pages
- * use ->index whereas swapcache pages use swp_offset(->private)
- */
-static inline pgoff_t page_index(struct page *page)
-{
-	if (unlikely(PageSwapCache(page)))
-		return __page_file_index(page);
-	return page->index;
-}
-
 bool page_mapped(struct page *page);
 struct address_space *page_mapping(struct page *page);
 struct address_space *page_mapping_file(struct page *page);
