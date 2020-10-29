@@ -1552,7 +1552,23 @@ retry:
 					goto keep_locked;
 				if (page_maybe_dma_pinned(page))
 					goto keep_locked;
-				if (PageTransHuge(page)) {
+				if (!PageTransHuge(page))
+					goto try_to_swap;
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+				if (compound_order(page) == HPAGE_PUD_ORDER) {
+					/* cannot split THP, skip it */
+					if (!can_split_huge_page(page, NULL))
+						goto activate_locked;
+					/* Split PUD THPs before swapping */
+					if (split_huge_pud_page_to_list(page, page_list))
+						goto activate_locked;
+					else {
+						sc->nr_scanned -= (nr_pages - HPAGE_PMD_NR);
+						nr_pages = HPAGE_PMD_NR;
+					}
+				}
+#endif
+				if (compound_order(page) == HPAGE_PMD_ORDER) {
 					/* cannot split THP, skip it */
 					if (!can_split_huge_page(page, NULL))
 						goto activate_locked;
@@ -1566,6 +1582,7 @@ retry:
 								    page_list))
 						goto activate_locked;
 				}
+try_to_swap:
 				if (!add_to_swap(page)) {
 					if (!PageTransHuge(page))
 						goto activate_locked_split;
