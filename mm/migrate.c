@@ -1174,6 +1174,10 @@ static int unmap_and_move(new_page_t get_new_page,
 	int rc = MIGRATEPAGE_SUCCESS;
 	struct page *newpage = NULL;
 
+	/* no PUD THP migration */
+	if (compound_order(page) == HPAGE_PUD_ORDER)
+		return -ENOMEM;
+
 	if (!thp_migration_supported() && PageTransHuge(page))
 		return -ENOMEM;
 
