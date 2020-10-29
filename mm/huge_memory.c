@@ -2603,13 +2603,31 @@ static inline void split_huge_pmd_if_needed(struct vm_area_struct *vma, unsigned
 		split_huge_pmd_address(vma, address, false, NULL);
 }
 
+static inline void split_huge_pud_if_needed(struct vm_area_struct *vma, unsigned long address)
+{
+	/*
+	 * If the new address isn't hpage aligned and it could previously
+	 * contain an hugepage: check if we need to split an huge pmd.
+	 */
+	if (!IS_ALIGNED(address, HPAGE_PUD_SIZE) &&
+	    range_in_vma(vma, ALIGN_DOWN(address, HPAGE_PUD_SIZE),
+			 ALIGN(address, HPAGE_PUD_SIZE)))
+		split_huge_pud_address(vma, address, false, NULL);
+}
+
 void vma_adjust_trans_huge(struct vm_area_struct *vma,
 			     unsigned long start,
 			     unsigned long end,
 			     long adjust_next)
 {
 	/* Check if we need to split start first. */
+	split_huge_pud_if_needed(vma, start);
+
+	/* Check if we need to split start first. */
 	split_huge_pmd_if_needed(vma, start);
+
+	/* Check if we need to split end next. */
+	split_huge_pud_if_needed(vma, end);
 
 	/* Check if we need to split end next. */
 	split_huge_pmd_if_needed(vma, end);
@@ -2622,6 +2640,8 @@ void vma_adjust_trans_huge(struct vm_area_struct *vma,
 		struct vm_area_struct *next = vma->vm_next;
 		unsigned long nstart = next->vm_start;
 		nstart += adjust_next;
+
+		split_huge_pud_if_needed(next, nstart);
 		split_huge_pmd_if_needed(next, nstart);
 	}
 }
