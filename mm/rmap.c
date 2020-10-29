@@ -2018,10 +2018,11 @@ bool try_to_migrate(struct page *page, enum ttu_flags flags)
 	};
 
 	/*
-	 * Migration always ignores mlock and only supports TTU_RMAP_LOCKED and
-	 * TTU_SPLIT_HUGE_PMD flags.
+	 * Migration always ignores mlock and only supports TTU_RMAP_LOCKED,
+	 * TTU_SPLIT_HUGE_PMD, and TTU_SPLIT_HUGE_PUD flags.
 	 */
-	if (WARN_ON_ONCE(flags & ~(TTU_RMAP_LOCKED | TTU_SPLIT_HUGE_PMD)))
+	if (WARN_ON_ONCE(flags & ~(TTU_RMAP_LOCKED | TTU_SPLIT_HUGE_PMD |
+				   TTU_SPLIT_HUGE_PUD)))
 		return false;
 
 	/*
