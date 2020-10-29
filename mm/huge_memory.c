@@ -2956,6 +2956,17 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 		xa_lock(&swap_cache->i_pages);
 	}
 
+	/*
+	 * clear cma bitmap when we split pud page so the subpages can be freed
+	 * as normal pages
+	 */
+	if (thp_order(head) == HPAGE_PUD_ORDER && IS_ENABLED(CONFIG_CMA)) {
+		struct cma *cma = hugepage_cma[page_to_nid(head)];
+
+		VM_BUG_ON(!cma_clear_bitmap_if_in_range(cma, head,
+				thp_nr_pages(head)));
+	}
+
 	for (i = nr - new_nr; i >= new_nr; i -= new_nr) {
 		__split_huge_page_tail(head, i, lruvec, list, new_order);
 		/* Some pages can be beyond i_size: drop them from page cache */
