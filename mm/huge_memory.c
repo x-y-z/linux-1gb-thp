@@ -2617,6 +2617,11 @@ void vma_adjust_trans_huge(struct vm_area_struct *vma,
 	 * previously contain an hugepage: check if we need to split
 	 * an huge pmd.
 	 */
+	if (start & ~HPAGE_PUD_MASK &&
+	    (start & HPAGE_PUD_MASK) >= vma->vm_start &&
+	    (start & HPAGE_PUD_MASK) + HPAGE_PUD_SIZE <= vma->vm_end)
+		split_huge_pud_address(vma, start, false, NULL);
+
 	if (start & ~HPAGE_PMD_MASK &&
 	    (start & HPAGE_PMD_MASK) >= vma->vm_start &&
 	    (start & HPAGE_PMD_MASK) + HPAGE_PMD_SIZE <= vma->vm_end)
@@ -2627,6 +2632,11 @@ void vma_adjust_trans_huge(struct vm_area_struct *vma,
 	 * previously contain an hugepage: check if we need to split
 	 * an huge pmd.
 	 */
+	if (end & ~HPAGE_PUD_MASK &&
+	    (end & HPAGE_PUD_MASK) >= vma->vm_start &&
+	    (end & HPAGE_PUD_MASK) + HPAGE_PUD_SIZE <= vma->vm_end)
+		split_huge_pud_address(vma, end, false, NULL);
+
 	if (end & ~HPAGE_PMD_MASK &&
 	    (end & HPAGE_PMD_MASK) >= vma->vm_start &&
 	    (end & HPAGE_PMD_MASK) + HPAGE_PMD_SIZE <= vma->vm_end)
@@ -2641,6 +2651,11 @@ void vma_adjust_trans_huge(struct vm_area_struct *vma,
 		struct vm_area_struct *next = vma->vm_next;
 		unsigned long nstart = next->vm_start;
 		nstart += adjust_next;
+		if (nstart & ~HPAGE_PUD_MASK &&
+		    (nstart & HPAGE_PUD_MASK) >= next->vm_start &&
+		    (nstart & HPAGE_PUD_MASK) + HPAGE_PUD_SIZE <= next->vm_end)
+			split_huge_pud_address(next, nstart, false, NULL);
+
 		if (nstart & ~HPAGE_PMD_MASK &&
 		    (nstart & HPAGE_PMD_MASK) >= next->vm_start &&
 		    (nstart & HPAGE_PMD_MASK) + HPAGE_PMD_SIZE <= next->vm_end)
