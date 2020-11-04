@@ -68,6 +68,7 @@ struct io_worker {
 	struct files_struct *restore_files;
 	struct nsproxy *restore_nsproxy;
 	struct fs_struct *restore_fs;
+	struct pid *restore_pid;
 };
 
 #if BITS_PER_LONG == 64
@@ -165,6 +166,7 @@ static bool __io_worker_unuse(struct io_wqe *wqe, struct io_worker *worker)
 		task_lock(current);
 		current->files = worker->restore_files;
 		current->nsproxy = worker->restore_nsproxy;
+		current->thread_pid = worker->restore_pid;
 		task_unlock(current);
 	}
 
@@ -335,6 +337,7 @@ static void io_worker_start(struct io_wqe *wqe, struct io_worker *worker)
 	worker->restore_files = current->files;
 	worker->restore_nsproxy = current->nsproxy;
 	worker->restore_fs = current->fs;
+	worker->restore_pid = current->thread_pid;
 	io_wqe_inc_running(wqe, worker);
 }
 
@@ -481,7 +484,12 @@ static void io_impersonate_work(struct io_worker *worker,
 		task_lock(current);
 		current->files = work->identity->files;
 		current->nsproxy = work->identity->nsproxy;
+		current->thread_pid = work->identity->pid;
 		task_unlock(current);
+		if (!work->identity->files) {
+			/* failed grabbing files, ensure work gets cancelled */
+			work->flags |= IO_WQ_WORK_CANCEL;
+		}
 	}
 	if ((work->flags & IO_WQ_WORK_FS) && current->fs != work->identity->fs)
 		current->fs = work->identity->fs;

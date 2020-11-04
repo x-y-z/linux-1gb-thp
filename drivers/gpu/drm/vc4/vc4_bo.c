@@ -21,6 +21,8 @@
 #include "vc4_drv.h"
 #include "uapi/drm/vc4_drm.h"
 
+static vm_fault_t vc4_fault(struct vm_fault *vmf);
+
 static const char * const bo_type_names[] = {
 	"kernel",
 	"V3D",
@@ -374,6 +376,21 @@ out:
 	return bo;
 }
 
+static const struct vm_operations_struct vc4_vm_ops = {
+	.fault = vc4_fault,
+	.open = drm_gem_vm_open,
+	.close = drm_gem_vm_close,
+};
+
+static const struct drm_gem_object_funcs vc4_gem_object_funcs = {
+	.free = vc4_free_object,
+	.export = vc4_prime_export,
+	.get_sg_table = drm_gem_cma_prime_get_sg_table,
+	.vmap = vc4_prime_vmap,
+	.vunmap = drm_gem_cma_prime_vunmap,
+	.vm_ops = &vc4_vm_ops,
+};
+
 /**
  * vc4_gem_create_object - Implementation of driver->gem_create_object.
  * @dev: DRM device
@@ -399,6 +416,8 @@ struct drm_gem_object *vc4_create_object(struct drm_device *dev, size_t size)
 	vc4->bo_labels[VC4_BO_TYPE_KERNEL].num_allocated++;
 	vc4->bo_labels[VC4_BO_TYPE_KERNEL].size_allocated += size;
 	mutex_unlock(&vc4->bo_lock);
+
+	bo->base.base.funcs = &vc4_gem_object_funcs;
 
 	return &bo->base.base;
 }
@@ -449,7 +468,7 @@ struct vc4_bo *vc4_bo_create(struct drm_device *dev, size_t unaligned_size,
 	}
 
 	if (IS_ERR(cma_obj)) {
-		struct drm_printer p = drm_info_printer(vc4->dev->dev);
+		struct drm_printer p = drm_info_printer(vc4->base.dev);
 		DRM_ERROR("Failed to allocate from CMA:\n");
 		vc4_bo_stats_print(&p, vc4);
 		return ERR_PTR(-ENOMEM);
@@ -590,7 +609,7 @@ static void vc4_bo_cache_time_work(struct work_struct *work)
 {
 	struct vc4_dev *vc4 =
 		container_of(work, struct vc4_dev, bo_cache.time_work);
-	struct drm_device *dev = vc4->dev;
+	struct drm_device *dev = &vc4->base;
 
 	mutex_lock(&vc4->bo_lock);
 	vc4_bo_cache_free_old(dev);
@@ -684,7 +703,7 @@ struct dma_buf * vc4_prime_export(struct drm_gem_object *obj, int flags)
 	return dmabuf;
 }
 
-vm_fault_t vc4_fault(struct vm_fault *vmf)
+static vm_fault_t vc4_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct drm_gem_object *obj = vma->vm_private_data;
@@ -1005,6 +1024,7 @@ int vc4_get_tiling_ioctl(struct drm_device *dev, void *data,
 	return 0;
 }
 
+static void vc4_bo_cache_destroy(struct drm_device *dev, void *unused);
 int vc4_bo_cache_init(struct drm_device *dev)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
@@ -1033,10 +1053,10 @@ int vc4_bo_cache_init(struct drm_device *dev)
 	INIT_WORK(&vc4->bo_cache.time_work, vc4_bo_cache_time_work);
 	timer_setup(&vc4->bo_cache.time_timer, vc4_bo_cache_time_timer, 0);
 
-	return 0;
+	return drmm_add_action_or_reset(dev, vc4_bo_cache_destroy, NULL);
 }
 
-void vc4_bo_cache_destroy(struct drm_device *dev)
+static void vc4_bo_cache_destroy(struct drm_device *dev, void *unused)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	int i;

@@ -13,6 +13,7 @@ struct io_identity {
 #endif
 	const struct cred		*creds;
 	struct nsproxy			*nsproxy;
+	struct pid			*pid;
 	struct fs_struct		*fs;
 	unsigned long			fsize;
 #ifdef CONFIG_AUDIT
@@ -30,7 +31,8 @@ struct io_uring_task {
 	struct percpu_counter	inflight;
 	struct io_identity	__identity;
 	struct io_identity	*identity;
-	bool			in_idle;
+	atomic_t		in_idle;
+	bool			sqpoll;
 };
 
 #if defined(CONFIG_IO_URING)

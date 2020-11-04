@@ -25,6 +25,8 @@ patternProperties:
   # Keep list in alphabetical order.
   "^70mai,.*":
     description: 70mai Co., Ltd.
+  "^abb,.*":
+    description: ABB
   "^abilis,.*":
     description: Abilis Systems
   "^abracon,.*":
@@ -315,6 +317,8 @@ patternProperties:
     description: Einfochips
   "^elan,.*":
     description: Elan Microelectronic Corp.
+  "^element14,.*":
+    description: Element14 (A Premier Farnell Company)
   "^elgin,.*":
     description: Elgin S/A.
   "^elida,.*":
@@ -553,6 +557,8 @@ patternProperties:
     description: Kionix, Inc.
   "^kobo,.*":
     description: Rakuten Kobo Inc.
+  "^kobol,.*":
+    description: Kobol Innovations Pte. Ltd.
   "^koe,.*":
     description: Kaohsiung Opto-Electronics Inc.
   "^kontron,.*":
@@ -669,6 +675,8 @@ patternProperties:
     description: Micron Technology Inc.
   "^microsoft,.*":
     description: Microsoft Corporation
+  "^microsys,.*":
+    description: MicroSys Electronics GmbH
   "^mikroe,.*":
     description: MikroElektronika d.o.o.
   "^mikrotik,.*":
@@ -894,6 +902,8 @@ patternProperties:
     description: iMX6 Rex Project
   "^rervision,.*":
     description: Shenzhen Rervision Technology Co., Ltd.
+  "^revotics,.*":
+    description: Revolution Robotics, Inc. (Revotics)
   "^richtek,.*":
     description: Richtek Technology Corporation
   "^ricoh,.*":
@@ -1053,6 +1063,8 @@ patternProperties:
     description: Trusted Computing Group
   "^tcl,.*":
     description: Toby Churchill Ltd.
+  "^tdo,.*":
+    description: Shangai Top Display Optoelectronics Co., Ltd
   "^technexion,.*":
     description: TechNexion
   "^technologic,.*":
@@ -1140,6 +1152,8 @@ patternProperties:
     description: Vamrs Ltd.
   "^variscite,.*":
     description: Variscite Ltd.
+  "^vdl,.*":
+    description: Van der Laan b.v.
   "^via,.*":
     description: VIA Technologies, Inc.
   "^videostrong,.*":
@@ -1210,6 +1224,8 @@ patternProperties:
     description: Shenzhen Xunlong Software CO.,Limited
   "^xylon,.*":
     description: Xylon
+  "^yes-optoelectronics,.*":
+    description: Yes Optoelectronics Co.,Ltd.
   "^ylm,.*":
     description: Shenzhen Yangliming Electronic Technology Co., Ltd.
   "^yna,.*":

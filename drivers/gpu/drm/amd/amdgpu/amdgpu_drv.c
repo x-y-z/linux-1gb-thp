@@ -140,8 +140,16 @@ int amdgpu_compute_multipipe = -1;
 int amdgpu_gpu_recovery = -1; /* auto */
 int amdgpu_emu_mode = 0;
 uint amdgpu_smu_memory_pool_size = 0;
-/* FBC (bit 0) disabled by default*/
-uint amdgpu_dc_feature_mask = 0;
+/*
+ * FBC (bit 0) disabled by default
+ * MULTI_MON_PP_MCLK_SWITCH (bit 1) enabled by default
+ *   - With this, for multiple monitors in sync(e.g. with the same model),
+ *     mclk switching will be allowed. And the mclk will be not foced to the
+ *     highest. That helps saving some idle power.
+ * DISABLE_FRACTIONAL_PWM (bit 2) disabled by default
+ * PSR (bit 3) disabled by default
+ */
+uint amdgpu_dc_feature_mask = 2;
 uint amdgpu_dc_debug_mask = 0;
 int amdgpu_async_gfx_ring = 1;
 int amdgpu_mcbp = 0;
@@ -1089,6 +1097,9 @@ static const struct pci_device_id pciidlist[] = {
 	{0x1002, 0x73AE, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CHIP_SIENNA_CICHLID},
 	{0x1002, 0x73BF, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CHIP_SIENNA_CICHLID},
 
+	/* Van Gogh */
+	{0x1002, 0x163F, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CHIP_VANGOGH|AMD_IS_APU},
+
 	{0, 0, 0}
 };
 
@@ -1495,7 +1506,7 @@ static const struct file_operations amdgpu_driver_kms_fops = {
 
 int amdgpu_file_to_fpriv(struct file *filp, struct amdgpu_fpriv **fpriv)
 {
-        struct drm_file *file;
+	struct drm_file *file;
 
 	if (!filp)
 		return -EINVAL;
@@ -1520,19 +1531,13 @@ static struct drm_driver kms_driver = {
 	.lastclose = amdgpu_driver_lastclose_kms,
 	.irq_handler = amdgpu_irq_handler,
 	.ioctls = amdgpu_ioctls_kms,
-	.gem_free_object_unlocked = amdgpu_gem_object_free,
-	.gem_open_object = amdgpu_gem_object_open,
-	.gem_close_object = amdgpu_gem_object_close,
 	.dumb_create = amdgpu_mode_dumb_create,
 	.dumb_map_offset = amdgpu_mode_dumb_mmap,
 	.fops = &amdgpu_driver_kms_fops,
 
 	.prime_handle_to_fd = drm_gem_prime_handle_to_fd,
 	.prime_fd_to_handle = drm_gem_prime_fd_to_handle,
-	.gem_prime_export = amdgpu_gem_prime_export,
 	.gem_prime_import = amdgpu_gem_prime_import,
-	.gem_prime_vmap = amdgpu_gem_prime_vmap,
-	.gem_prime_vunmap = amdgpu_gem_prime_vunmap,
 	.gem_prime_mmap = amdgpu_gem_prime_mmap,
 
 	.name = DRIVER_NAME,
