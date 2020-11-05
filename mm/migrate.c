@@ -1887,7 +1887,7 @@ static int do_pages_stat(struct mm_struct *mm, unsigned long nr_pages,
 	return nr_pages ? -EFAULT : 0;
 }
 
-static struct mm_struct *find_mm_struct(pid_t pid, nodemask_t *mem_nodes)
+struct mm_struct *find_mm_struct(pid_t pid, nodemask_t *mem_nodes)
 {
 	struct task_struct *task;
 	struct mm_struct *mm;
