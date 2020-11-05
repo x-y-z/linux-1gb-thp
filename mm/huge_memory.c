@@ -2967,10 +2967,108 @@ next:
 DEFINE_DEBUGFS_ATTRIBUTE(split_huge_pages_fops, NULL, split_huge_pages_set,
 		"%llu\n");
 
+void mmput(struct mm_struct *);
+static ssize_t split_huge_pages_in_range_pid_write(struct file *file,
+		const char __user *buf, size_t count, loff_t *ppops)
+{
+	static DEFINE_MUTEX(mutex);
+	ssize_t ret;
+	char input_buf[80]; /* hold pid, start_vaddr, end_vaddr */
+	int pid;
+	unsigned long vaddr_start, vaddr_end, addr;
+	nodemask_t task_nodes;
+	struct mm_struct *mm;
+
+	ret = mutex_lock_interruptible(&mutex);
+	if (ret)
+		return ret;
+
+	ret = -EFAULT;
+
+	memset(input_buf, 0, 80);
+	if (copy_from_user(input_buf, buf, min_t(size_t, count, 80)))
+		goto out;
+
+	input_buf[80] = '\0';
+	ret = sscanf(input_buf, "%d,%lx,%lx", &pid, &vaddr_start, &vaddr_end);
+	if (ret != 3) {
+		ret = -EINVAL;
+		goto out;
+	}
+	vaddr_start &= PAGE_MASK;
+	vaddr_end &= PAGE_MASK;
+
+	ret = strlen(input_buf);
+	pr_debug("split huge pages in pid: %d, vaddr: [%lx - %lx]\n",
+		 pid, vaddr_start, vaddr_end);
+
+	mm = find_mm_struct(pid, &task_nodes);
+	if (IS_ERR(mm)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	mmap_read_lock(mm);
+	for (addr = vaddr_start; addr < vaddr_end;) {
+		struct vm_area_struct *vma = find_vma(mm, addr);
+		unsigned int follflags;
+		struct page *page;
+
+		if (!vma || addr < vma->vm_start || !vma_migratable(vma))
+			break;
+
+		/* FOLL_DUMP to ignore special (like zero) pages */
+		follflags = FOLL_GET | FOLL_DUMP;
+		page = follow_page(vma, addr, follflags);
+
+		if (IS_ERR(page))
+			break;
+		if (!page)
+			break;
+
+		if (!is_transparent_hugepage(page))
+			goto next;
+
+		if (!can_split_huge_page(page, NULL))
+			goto next;
+
+		if (!trylock_page(page))
+			goto next;
+
+		addr += page_size(page) - PAGE_SIZE;
+
+		/* reset addr if split fails */
+		if (split_huge_page(page))
+			addr -= (page_size(page) - PAGE_SIZE);
+
+		unlock_page(page);
+next:
+		/* next page */
+		addr += page_size(page);
+		put_page(page);
+	}
+	mmap_read_unlock(mm);
+
+
+	mmput(mm);
+out:
+	mutex_unlock(&mutex);
+	return ret;
+
+}
+
+static const struct file_operations split_huge_pages_in_range_pid_fops = {
+	.owner	 = THIS_MODULE,
+	.write	 = split_huge_pages_in_range_pid_write,
+	.llseek  = no_llseek,
+};
+
 static int __init split_huge_pages_debugfs(void)
 {
 	debugfs_create_file("split_huge_pages", 0200, NULL, NULL,
 			    &split_huge_pages_fops);
+	debugfs_create_file("split_huge_pages_in_range_pid", 0200, NULL, NULL,
+			    &split_huge_pages_in_range_pid_fops);
 	return 0;
 }
 late_initcall(split_huge_pages_debugfs);
