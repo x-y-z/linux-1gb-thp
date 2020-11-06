@@ -5275,7 +5275,6 @@ int btrfs_next_old_leaf(struct btrfs_root *root, struct btrfs_path *path,
 	struct btrfs_key key;
 	u32 nritems;
 	int ret;
-	int next_rw_lock = 0;
 
 	nritems = btrfs_header_nritems(path->nodes[0]);
 	if (nritems == 0)
@@ -5285,7 +5284,6 @@ int btrfs_next_old_leaf(struct btrfs_root *root, struct btrfs_path *path,
 again:
 	level = 1;
 	next = NULL;
-	next_rw_lock = 0;
 	btrfs_release_path(path);
 
 	path->keep_locks = 1;
@@ -5349,12 +5347,11 @@ again:
 		}
 
 		if (next) {
-			btrfs_tree_unlock_rw(next, next_rw_lock);
+			btrfs_tree_read_unlock(next);
 			free_extent_buffer(next);
 		}
 
 		next = c;
-		next_rw_lock = path->locks[level];
 		ret = read_block_for_search(root, path, &next, level,
 					    slot, &key);
 		if (ret == -EAGAIN)
@@ -5385,7 +5382,6 @@ again:
 						       BTRFS_NESTING_RIGHT,
 						       path->recurse);
 			}
-			next_rw_lock = BTRFS_READ_LOCK;
 		}
 		break;
 	}
@@ -5394,13 +5390,13 @@ again:
 		level--;
 		c = path->nodes[level];
 		if (path->locks[level])
-			btrfs_tree_unlock_rw(c, path->locks[level]);
+			btrfs_tree_read_unlock(c);
 
 		free_extent_buffer(c);
 		path->nodes[level] = next;
 		path->slots[level] = 0;
 		if (!path->skip_locking)
-			path->locks[level] = next_rw_lock;
+			path->locks[level] = BTRFS_READ_LOCK;
 		if (!level)
 			break;
 
@@ -5414,11 +5410,9 @@ again:
 			goto done;
 		}
 
-		if (!path->skip_locking) {
+		if (!path->skip_locking)
 			__btrfs_tree_read_lock(next, BTRFS_NESTING_RIGHT,
 					       path->recurse);
-			next_rw_lock = BTRFS_READ_LOCK;
-		}
 	}
 	ret = 0;
 done:
