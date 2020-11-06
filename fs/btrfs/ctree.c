@@ -5275,6 +5275,7 @@ int btrfs_next_old_leaf(struct btrfs_root *root, struct btrfs_path *path,
 	struct btrfs_key key;
 	u32 nritems;
 	int ret;
+	int i;
 
 	nritems = btrfs_header_nritems(path->nodes[0]);
 	if (nritems == 0)
@@ -5346,9 +5347,19 @@ again:
 			continue;
 		}
 
-		if (next) {
-			btrfs_tree_read_unlock(next);
-			free_extent_buffer(next);
+
+		/*
+		 * Our current level is where we're going to start from, and to
+		 * make sure lockdep doesn't complain we need to drop our locks
+		 * and nodes from 0 to our current level.
+		 */
+		for (i = 0; i < level; i++) {
+			if (path->locks[level]) {
+				btrfs_tree_read_unlock(path->nodes[i]);
+				path->locks[i] = 0;
+			}
+			free_extent_buffer(path->nodes[i]);
+			path->nodes[i] = NULL;
 		}
 
 		next = c;
@@ -5377,22 +5388,14 @@ again:
 				cond_resched();
 				goto again;
 			}
-			if (!ret) {
-				__btrfs_tree_read_lock(next,
-						       BTRFS_NESTING_RIGHT,
-						       path->recurse);
-			}
+			if (!ret)
+				btrfs_tree_read_lock(next);
 		}
 		break;
 	}
 	path->slots[level] = slot;
 	while (1) {
 		level--;
-		c = path->nodes[level];
-		if (path->locks[level])
-			btrfs_tree_read_unlock(c);
-
-		free_extent_buffer(c);
 		path->nodes[level] = next;
 		path->slots[level] = 0;
 		if (!path->skip_locking)
@@ -5411,8 +5414,7 @@ again:
 		}
 
 		if (!path->skip_locking)
-			__btrfs_tree_read_lock(next, BTRFS_NESTING_RIGHT,
-					       path->recurse);
+			btrfs_tree_read_lock(next);
 	}
 	ret = 0;
 done:
