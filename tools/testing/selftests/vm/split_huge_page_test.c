@@ -16,6 +16,7 @@
 #include <sys/mount.h>
 #include <malloc.h>
 #include <stdbool.h>
+#include <time.h>
 
 uint64_t pagesize;
 unsigned int pageshift;
@@ -24,10 +25,11 @@ uint64_t pmd_pagesize;
 #define PMD_SIZE_PATH "/sys/kernel/mm/transparent_hugepage/hpage_pmd_size"
 #define SPLIT_DEBUGFS "/sys/kernel/debug/split_huge_pages"
 #define SMAP_PATH "/proc/self/smaps"
+#define THP_FS_PATH "/mnt/thp_fs"
 #define INPUT_MAX 80
 
-#define PID_FMT "%d,0x%lx,0x%lx"
-#define PATH_FMT "%s,0x%lx,0x%lx"
+#define PID_FMT "%d,0x%lx,0x%lx,%d"
+#define PATH_FMT "%s,0x%lx,0x%lx,%d"
 
 #define PFN_MASK     ((1UL<<55)-1)
 #define KPF_THP      (1UL<<22)
@@ -124,7 +126,7 @@ static bool check_for_pattern(FILE *fp, const char *pattern, char *buf)
 	return false;
 }
 
-static uint64_t check_huge(void *addr)
+static uint64_t check_huge(void *addr, const char *prefix)
 {
 	uint64_t thp = 0;
 	int ret;
@@ -149,13 +151,13 @@ static uint64_t check_huge(void *addr)
 		goto err_out;
 
 	/*
-	 * Fetch the AnonHugePages: in the same block and check the number of
+	 * Fetch the @prefix in the same block and check the number of
 	 * hugepages.
 	 */
-	if (!check_for_pattern(fp, "AnonHugePages:", buffer))
+	if (!check_for_pattern(fp, prefix, buffer))
 		goto err_out;
 
-	if (sscanf(buffer, "AnonHugePages:%10ld kB", &thp) != 1) {
+	if (sscanf(&buffer[strlen(prefix)], "%10ld kB", &thp) != 1) {
 		printf("Reading smap error\n");
 		exit(EXIT_FAILURE);
 	}
@@ -184,7 +186,7 @@ void split_pmd_thp(void)
 	for (i = 0; i < len; i++)
 		one_page[i] = (char)i;
 
-	thp_size = check_huge(one_page);
+	thp_size = check_huge(one_page, "AnonHugePages:");
 	if (!thp_size) {
 		printf("No THP is allocated\n");
 		exit(EXIT_FAILURE);
@@ -192,7 +194,7 @@ void split_pmd_thp(void)
 
 	/* split all THPs */
 	write_debugfs(PID_FMT, getpid(), (uint64_t)one_page,
-		(uint64_t)one_page + len);
+		(uint64_t)one_page + len, 0);
 
 	for (i = 0; i < len; i++)
 		if (one_page[i] != (char)i) {
@@ -201,7 +203,7 @@ void split_pmd_thp(void)
 		}
 
 
-	thp_size = check_huge(one_page);
+	thp_size = check_huge(one_page, "AnonHugePages:");
 	if (thp_size) {
 		printf("Still %ld kB AnonHugePages not split\n", thp_size);
 		exit(EXIT_FAILURE);
@@ -249,7 +251,7 @@ void split_pte_mapped_thp(void)
 	for (i = 0; i < len; i++)
 		one_page[i] = (char)i;
 
-	thp_size = check_huge(one_page);
+	thp_size = check_huge(one_page, "AnonHugePages:");
 	if (!thp_size) {
 		printf("No THP is allocated\n");
 		exit(EXIT_FAILURE);
@@ -284,7 +286,7 @@ void split_pte_mapped_thp(void)
 
 	/* split all remapped THPs */
 	write_debugfs(PID_FMT, getpid(), (uint64_t)pte_mapped,
-		      (uint64_t)pte_mapped + pagesize * 4);
+		      (uint64_t)pte_mapped + pagesize * 4, 0);
 
 	/* smap does not show THPs after mremap, use kpageflags instead */
 	thp_size = 0;
@@ -350,7 +352,7 @@ void split_file_backed_thp(void)
 	}
 
 	/* split the file-backed THP */
-	write_debugfs(PATH_FMT, testfile, pgoff_start, pgoff_end);
+	write_debugfs(PATH_FMT, testfile, pgoff_start, pgoff_end, 0);
 
 	status = unlink(testfile);
 	if (status)
@@ -371,20 +373,193 @@ cleanup:
 	printf("file-backed THP split test done, please check dmesg for more information\n");
 }
 
+void create_pagecache_thp_and_fd(const char *testfile, size_t fd_size, int *fd, char **addr)
+{
+	size_t i;
+	int dummy;
+
+	srand(time(NULL));
+
+	*fd = open(testfile, O_CREAT | O_RDWR, 0664);
+	if (*fd == -1) {
+		perror("Failed to create a file at "THP_FS_PATH);
+		exit(EXIT_FAILURE);
+	}
+
+	for (i = 0; i < fd_size; i++) {
+		unsigned char byte = (unsigned char)i;
+
+		write(*fd, &byte, sizeof(byte));
+	}
+	close(*fd);
+	sync();
+	*fd = open("/proc/sys/vm/drop_caches", O_WRONLY);
+	if (*fd == -1) {
+		perror("open drop_caches");
+		exit(EXIT_FAILURE);
+	}
+	if (write(*fd, "3", 1) != 1) {
+		perror("write to drop_caches");
+		exit(EXIT_FAILURE);
+	}
+	close(*fd);
+
+	*fd = open(testfile, O_RDWR);
+	if (*fd == -1) {
+		perror("Failed to open a file at "THP_FS_PATH);
+		exit(EXIT_FAILURE);
+	}
+
+	*addr = mmap(NULL, fd_size, PROT_READ|PROT_WRITE, MAP_SHARED, *fd, 0);
+	if (*addr == (char *)-1) {
+		perror("cannot mmap");
+		exit(1);
+	}
+	madvise(*addr, fd_size, MADV_HUGEPAGE);
+
+	for (size_t i = 0; i < fd_size; i++)
+		dummy += *(*addr + i);
+
+	if (!check_huge(*addr, "FilePmdMapped:")) {
+		printf("No pagecache THP generated, please mount a filesystem "
+			"supporting pagecache THP at "THP_FS_PATH"\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+void split_thp_in_pagecache_to_order(size_t fd_size, int order)
+{
+	int fd;
+	char *addr;
+	size_t i;
+	const char testfile[] = THP_FS_PATH "/test";
+
+	create_pagecache_thp_and_fd(testfile, fd_size, &fd, &addr);
+
+	printf("split %ld kB pagecache page to order %d ... ", fd_size >> 10, order);
+	write_debugfs(PID_FMT, getpid(), (uint64_t)addr, (uint64_t)addr + fd_size, order);
+
+	for (i = 0; i < fd_size; i++)
+		if (*(addr + i) != (char)i) {
+			printf("%lu byte corrupted in the file\n", i);
+			exit(EXIT_FAILURE);
+		}
+
+	close(fd);
+	unlink(testfile);
+	printf("done\n");
+}
+
+void truncate_thp_in_pagecache_to_order(size_t fd_size, int order)
+{
+	int fd;
+	char *addr;
+	size_t i;
+	const char testfile[] = THP_FS_PATH "/test";
+
+	create_pagecache_thp_and_fd(testfile, fd_size, &fd, &addr);
+
+	printf("truncate %ld kB pagecache page to size %lu kB ... ", fd_size >> 10, 4UL << order);
+	ftruncate(fd, pagesize << order);
+
+	for (i = 0; i < (pagesize << order); i++)
+		if (*(addr + i) != (char)i) {
+			printf("%lu byte corrupted in the file\n", i);
+			exit(EXIT_FAILURE);
+		}
+
+	close(fd);
+	unlink(testfile);
+	printf("done\n");
+}
+
+void punch_hole_in_pagecache_thp(size_t fd_size, off_t offset[], off_t len[], int n)
+{
+	int fd, j;
+	char *addr;
+	size_t i;
+	const char testfile[] = THP_FS_PATH "/test";
+
+	create_pagecache_thp_and_fd(testfile, fd_size, &fd, &addr);
+
+	for (j = 0; j < n; j++) {
+		printf("addr: %lx, punch a hole at offset %ld with len %ld ... ",
+			(unsigned long)addr, offset[j], len[j]);
+		fallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE, offset[j], len[j]);
+		printf("done\n");
+	}
+
+	for (i = 0; i < fd_size; i++) {
+		int in_hole = 0;
+
+		for (j = 0; j < n; j++)
+			if (i >= offset[j] && i < (offset[j] + len[j])) {
+				in_hole = 1;
+				break;
+			}
+
+		if (in_hole) {
+			if (*(addr + i)) {
+				printf("%lu byte non-zero after punch\n", i);
+				exit(EXIT_FAILURE);
+			}
+			continue;
+		}
+		if (*(addr + i) != (char)i) {
+			printf("%lu byte corrupted in the file\n", i);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	close(fd);
+	unlink(testfile);
+}
+
 int main(int argc, char **argv)
 {
+	int i;
+	size_t fd_size;
+	off_t offset[2], len[2];
+
 	if (geteuid() != 0) {
 		printf("Please run the benchmark as root\n");
 		exit(EXIT_FAILURE);
 	}
 
+	setbuf(stdout, NULL);
+
 	pagesize = getpagesize();
 	pageshift = ffs(pagesize) - 1;
 	pmd_pagesize = read_pmd_pagesize();
+	fd_size = 2 * pmd_pagesize;
 
 	split_pmd_thp();
 	split_pte_mapped_thp();
 	split_file_backed_thp();
+
+	for (i = 8; i >= 0; i--)
+		if (i != 1)
+			split_thp_in_pagecache_to_order(fd_size, i);
+
+	/*
+	 * for i is 1, truncate code in the kernel should create order-0 pages
+	 * instead of order-1 THPs, since order-1 THP is not supported. No error
+	 * is expected.
+	 */
+	for (i = 8; i >= 0; i--)
+		truncate_thp_in_pagecache_to_order(fd_size, i);
+
+	offset[0] = 123;
+	offset[1] = 4 * pagesize;
+	len[0] = 200 * pagesize;
+	len[1] = 16 * pagesize;
+	punch_hole_in_pagecache_thp(fd_size, offset, len, 2);
+
+	offset[0] = 259 * pagesize + pagesize / 2;
+	offset[1] = 33 * pagesize;
+	len[0] = 129 * pagesize;
+	len[1] = 16 * pagesize;
+	punch_hole_in_pagecache_thp(fd_size, offset, len, 2);
 
 	return 0;
 }
