@@ -2974,7 +2974,7 @@ static ssize_t split_huge_pages_in_range_pid_write(struct file *file,
 	static DEFINE_MUTEX(mutex);
 	ssize_t ret;
 	char input_buf[80]; /* hold pid, start_vaddr, end_vaddr */
-	int pid;
+	int pid, to_order = 0;
 	unsigned long vaddr_start, vaddr_end, addr;
 	nodemask_t task_nodes;
 	struct mm_struct *mm;
@@ -2990,8 +2990,9 @@ static ssize_t split_huge_pages_in_range_pid_write(struct file *file,
 		goto out;
 
 	input_buf[80] = '\0';
-	ret = sscanf(input_buf, "%d,%lx,%lx", &pid, &vaddr_start, &vaddr_end);
-	if (ret != 3) {
+	ret = sscanf(input_buf, "%d,%lx,%lx,%d", &pid, &vaddr_start, &vaddr_end, &to_order);
+	/* cannot split to order-1 THP, which is not possible */
+	if ((ret != 3 && ret != 4) || to_order == 1) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -2999,8 +3000,8 @@ static ssize_t split_huge_pages_in_range_pid_write(struct file *file,
 	vaddr_end &= PAGE_MASK;
 
 	ret = strlen(input_buf);
-	pr_debug("split huge pages in pid: %d, vaddr: [%lx - %lx]\n",
-		 pid, vaddr_start, vaddr_end);
+	pr_debug("split huge pages in pid: %d, vaddr: [%lx - %lx], to order: %d\n",
+		 pid, vaddr_start, vaddr_end, to_order);
 
 	mm = find_mm_struct(pid, &task_nodes);
 	if (IS_ERR(mm)) {
@@ -3038,7 +3039,7 @@ static ssize_t split_huge_pages_in_range_pid_write(struct file *file,
 		addr += page_size(page) - PAGE_SIZE;
 
 		/* reset addr if split fails */
-		if (split_huge_page(page))
+		if (split_huge_page_to_list_to_order(page, NULL, to_order))
 			addr -= (page_size(page) - PAGE_SIZE);
 
 		unlock_page(page);

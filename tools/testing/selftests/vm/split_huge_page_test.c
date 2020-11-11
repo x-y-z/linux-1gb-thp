@@ -14,6 +14,7 @@
 #include <sys/wait.h>
 #include <malloc.h>
 #include <stdbool.h>
+#include <time.h>
 
 #define PAGE_4KB (4096UL)
 #define PAGE_2MB (512UL*PAGE_4KB)
@@ -29,6 +30,7 @@
 
 #define SPLIT_DEBUGFS "/sys/kernel/debug/split_huge_pages_in_range_pid"
 #define SMAP_PATH "/proc/self/smaps"
+#define THP_FS_PATH "/mnt/thp_fs"
 #define INPUT_MAX 80
 
 static int write_file(const char *path, const char *buf, size_t buflen)
@@ -48,13 +50,13 @@ static int write_file(const char *path, const char *buf, size_t buflen)
 	return (unsigned int) numwritten;
 }
 
-static void write_debugfs(int pid, uint64_t vaddr_start, uint64_t vaddr_end)
+static void write_debugfs(int pid, uint64_t vaddr_start, uint64_t vaddr_end, int order)
 {
 	char input[INPUT_MAX];
 	int ret;
 
-	ret = snprintf(input, INPUT_MAX, "%d,%lx,%lx", pid, vaddr_start,
-			vaddr_end);
+	ret = snprintf(input, INPUT_MAX, "%d,%lx,%lx,%d", pid, vaddr_start,
+			vaddr_end, order);
 	if (ret >= INPUT_MAX) {
 		printf("%s: Debugfs input is too long\n", __func__);
 		exit(EXIT_FAILURE);
@@ -134,7 +136,7 @@ void split_pmd_thp()
 	}
 
 	/* split all possible huge pages */
-	write_debugfs(getpid(), (uint64_t)one_page, (uint64_t)one_page + len);
+	write_debugfs(getpid(), (uint64_t)one_page, (uint64_t)one_page + len, 0);
 
 	*one_page = 0;
 
@@ -148,9 +150,103 @@ void split_pmd_thp()
 	free(one_page);
 }
 
+void create_pagecache_thp_and_fd(size_t fd_size, int *fd, char **addr)
+{
+	const char testfile[] = THP_FS_PATH "/test";
+	size_t i;
+	int dummy;
+
+	srand(time(NULL));
+
+	*fd = open(testfile, O_CREAT | O_RDWR, 0664);
+
+	for (i = 0; i < fd_size; i++) {
+		unsigned char byte = rand();
+		write(*fd, &byte, sizeof(byte));
+	}
+	close(*fd);
+	sync();
+	*fd = open("/proc/sys/vm/drop_caches", O_WRONLY);
+	if (*fd == -1) {
+		perror("open drop_caches");
+		exit(EXIT_FAILURE);
+	}
+	if (write(*fd, "3", 1) != 1) {
+		perror("write to drop_caches");
+		exit(EXIT_FAILURE);
+	}
+	close(*fd);
+
+	*fd = open(testfile, O_RDWR);
+
+	*addr = mmap(NULL, fd_size, PROT_READ|PROT_WRITE, MAP_SHARED, *fd, 0);
+	if (*addr == (void*)-1) {
+		perror("cannot mmap");
+		exit(1);
+	}
+	madvise(*addr, fd_size, MADV_HUGEPAGE);
+
+	for (size_t i = 0; i < fd_size; i++) {
+		dummy += *(*addr + i);
+	}
+}
+
+void split_thp_in_pagecache_to_order(int order)
+{
+	int fd;
+	char *addr;
+	size_t fd_size = 2 * PAGE_2MB, i;
+
+	create_pagecache_thp_and_fd(fd_size, &fd, &addr);
+
+	printf("split %ld kB pagecache page to order %d ... ", fd_size >> 10, order);
+	write_debugfs(getpid(), (uint64_t)addr, (uint64_t)addr + fd_size, order);
+
+	for (i = 0; i < fd_size; i++) {
+		*(addr + i) = (char)i;
+	}
+
+	close(fd);
+	printf("done\n");
+}
+
+void truncate_thp_in_pagecache_to_order(int order)
+{
+	int fd;
+	char *addr;
+	size_t fd_size = 2 * PAGE_2MB, i;
+
+	create_pagecache_thp_and_fd(fd_size, &fd, &addr);
+
+	printf("truncate %ld kB pagecache page to size %lu kB ... ", fd_size >> 10, 4UL << order);
+	ftruncate(fd, PAGE_4KB << order);
+
+	for (i = 0; i < (PAGE_4KB << order); i++) {
+		*(addr + i) = (char)i;
+	}
+
+	close(fd);
+	printf("done\n");
+}
+
 int main(int argc, char** argv)
 {
+	int i;
+
+	if (geteuid() != 0) {
+		printf("Please run the benchmark as root\n");
+		exit(EXIT_FAILURE);
+	}
+
 	split_pmd_thp();
+
+	for (i = 8; i >= 0; i--)
+		if (i != 1)
+			split_thp_in_pagecache_to_order(i);
+
+	for (i = 8; i >= 0; i--)
+		if (i != 1)
+			truncate_thp_in_pagecache_to_order(i);
 
 	return 0;
 }
