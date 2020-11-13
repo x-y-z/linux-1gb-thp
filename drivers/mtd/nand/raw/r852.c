@@ -871,6 +871,10 @@ static int  r852_probe(struct pci_dev *pci_dev, const struct pci_device_id *id)
 	if (!chip)
 		goto error4;
 
+	nand_controller_init(&dev->controller);
+	dev->controller.ops = &r852_ops;
+	chip->controller = &dev->controller;
+
 	/* commands */
 	chip->legacy.cmd_ctrl = r852_cmdctl;
 	chip->legacy.waitfunc = r852_wait;
