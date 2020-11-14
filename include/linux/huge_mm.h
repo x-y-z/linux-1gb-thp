@@ -474,7 +474,7 @@ static inline bool thp_migration_supported(void)
  *
  * Return: Number of bytes in this page.
  */
-static inline unsigned long thp_size(struct page *page)
+static inline size_t thp_size(struct page *page)
 {
 	return PAGE_SIZE << thp_order(page);
 }
