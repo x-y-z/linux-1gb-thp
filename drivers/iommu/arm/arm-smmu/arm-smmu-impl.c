@@ -91,14 +91,11 @@ static struct arm_smmu_device *cavium_smmu_impl_init(struct arm_smmu_device *smm
 {
 	struct cavium_smmu *cs;
 
-	cs = devm_kzalloc(smmu->dev, sizeof(*cs), GFP_KERNEL);
+	cs = devm_krealloc(smmu->dev, smmu, sizeof(*cs), GFP_KERNEL);
 	if (!cs)
 		return ERR_PTR(-ENOMEM);
 
-	cs->smmu = *smmu;
 	cs->smmu.impl = &cavium_impl;
-
-	devm_kfree(smmu->dev, smmu);
 
 	return &cs->smmu;
 }
@@ -222,6 +219,9 @@ struct arm_smmu_device *arm_smmu_impl_init(struct arm_smmu_device *smmu)
 	    of_device_is_compatible(np, "qcom,sm8150-smmu-500") ||
 	    of_device_is_compatible(np, "qcom,sm8250-smmu-500"))
 		return qcom_smmu_impl_init(smmu);
+
+	if (of_device_is_compatible(smmu->dev->of_node, "qcom,adreno-smmu"))
+		return qcom_adreno_smmu_impl_init(smmu);
 
 	if (of_device_is_compatible(np, "marvell,ap806-smmu-500"))
 		smmu->impl = &mrvl_mmu500_impl;
