@@ -622,5 +622,6 @@ struct migration_target_control {
 	gfp_t gfp_mask;
 };
 
-bool truncate_inode_partial_page(struct page *page, loff_t start, loff_t end);
+pgoff_t truncate_inode_partial_page(struct address_space *mapping,
+		struct page *page, loff_t start, loff_t end);
 #endif	/* __MM_INTERNAL_H */
