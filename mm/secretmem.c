@@ -17,6 +17,7 @@
 #include <linux/syscalls.h>
 #include <linux/memblock.h>
 #include <linux/pseudo_fs.h>
+#include <linux/memcontrol.h>
 #include <linux/set_memory.h>
 #include <linux/sched/signal.h>
 
@@ -49,6 +50,38 @@ struct secretmem_ctx {
 
 static struct cma *secretmem_cma;
 
+static int secretmem_memcg_charge(struct page *page, gfp_t gfp, int order)
+{
+	unsigned long nr_pages = (1 << order);
+	int i, err;
+
+	err = memcg_kmem_charge_page(page, gfp, order);
+	if (err)
+		return err;
+
+	for (i = 1; i < nr_pages; i++) {
+		struct page *p = page + i;
+
+		p->memcg_data = page->memcg_data;
+	}
+
+	return 0;
+}
+
+static void secretmem_memcg_uncharge(struct page *page, int order)
+{
+	unsigned long nr_pages = (1 << order);
+	int i;
+
+	for (i = 1; i < nr_pages; i++) {
+		struct page *p = page + i;
+
+		p->memcg_data = 0;
+	}
+
+	memcg_kmem_uncharge_page(page, PMD_PAGE_ORDER);
+}
+
 static int secretmem_pool_increase(struct secretmem_ctx *ctx, gfp_t gfp)
 {
 	unsigned long nr_pages = (1 << PMD_PAGE_ORDER);
@@ -61,9 +94,13 @@ static int secretmem_pool_increase(struct secretmem_ctx *ctx, gfp_t gfp)
 	if (!page)
 		return -ENOMEM;
 
-	err = set_direct_map_invalid_noflush(page, nr_pages);
+	err = secretmem_memcg_charge(page, gfp, PMD_PAGE_ORDER);
 	if (err)
 		goto err_cma_release;
+
+	err = set_direct_map_invalid_noflush(page, nr_pages);
+	if (err)
+		goto err_memcg_uncharge;
 
 	addr = (unsigned long)page_address(page);
 	err = gen_pool_add(pool, addr, PMD_SIZE, NUMA_NO_NODE);
@@ -81,6 +118,8 @@ err_set_direct_map:
 	 * won't fail
 	 */
 	set_direct_map_default_noflush(page, nr_pages);
+err_memcg_uncharge:
+	secretmem_memcg_uncharge(page, PMD_PAGE_ORDER);
 err_cma_release:
 	cma_release(secretmem_cma, page, nr_pages);
 	return err;
@@ -310,6 +349,7 @@ static void secretmem_cleanup_chunk(struct gen_pool *pool,
 	int i;
 
 	set_direct_map_default_noflush(page, nr_pages);
+	secretmem_memcg_uncharge(page, PMD_PAGE_ORDER);
 
 	for (i = 0; i < nr_pages; i++)
 		clear_highpage(page + i);

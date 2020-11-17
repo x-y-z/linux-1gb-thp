@@ -844,7 +844,7 @@ static noinline int __add_to_page_cache_locked(struct page *page,
 	page->mapping = mapping;
 	page->index = offset;
 
-	if (!huge) {
+	if (!huge && !page->memcg_data) {
 		error = mem_cgroup_charge(page, current->mm, gfp);
 		if (error)
 			goto error;
