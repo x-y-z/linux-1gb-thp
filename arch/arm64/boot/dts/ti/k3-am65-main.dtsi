@@ -612,7 +612,6 @@
 			reg-names = "rt", "fifos", "proxy_gcfg", "proxy_target";
 			ti,num-rings = <818>;
 			ti,sci-rm-range-gp-rings = <0x1>; /* GP ring range */
-			ti,dma-ring-reset-quirk;
 			ti,sci = <&dmsc>;
 			ti,sci-dev-id = <187>;
 			msi-parent = <&inta_main_udmass>;
@@ -834,7 +833,7 @@
 		};
 	};
 
-	dss: dss@04a00000 {
+	dss: dss@4a00000 {
 		compatible = "ti,am65x-dss";
 		reg =	<0x0 0x04a00000 0x0 0x1000>, /* common */
 			<0x0 0x04a02000 0x0 0x1000>, /* vidl1 */
@@ -866,6 +865,8 @@
 		interrupts = <GIC_SPI 166 IRQ_TYPE_EDGE_RISING>;
 
 		status = "disabled";
+
+		dma-coherent;
 
 		dss_ports: ports {
 			#address-cells = <1>;

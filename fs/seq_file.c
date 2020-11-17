@@ -168,7 +168,6 @@ EXPORT_SYMBOL(seq_read);
 ssize_t seq_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
 	struct seq_file *m = iocb->ki_filp->private_data;
-	size_t size = iov_iter_count(iter);
 	size_t copied = 0;
 	size_t n;
 	void *p;
@@ -208,14 +207,11 @@ ssize_t seq_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	}
 	/* if not empty - flush it first */
 	if (m->count) {
-		n = min(m->count, size);
-		if (copy_to_iter(m->buf + m->from, n, iter) != n)
-			goto Efault;
+		n = copy_to_iter(m->buf + m->from, m->count, iter);
 		m->count -= n;
 		m->from += n;
-		size -= n;
 		copied += n;
-		if (!size)
+		if (!iov_iter_count(iter) || m->count)
 			goto Done;
 	}
 	/* we need at least one record in buffer */
@@ -249,6 +245,7 @@ ssize_t seq_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	goto Done;
 Fill:
 	/* they want more? let's try to get some more */
+	/* m->count is positive and there's space left in iter */
 	while (1) {
 		size_t offs = m->count;
 		loff_t pos = m->index;
@@ -263,7 +260,7 @@ Fill:
 			err = PTR_ERR(p);
 			break;
 		}
-		if (m->count >= size)
+		if (m->count >= iov_iter_count(iter))
 			break;
 		err = m->op->show(m, p);
 		if (seq_has_overflowed(m) || err) {
@@ -273,16 +270,14 @@ Fill:
 		}
 	}
 	m->op->stop(m, p);
-	n = min(m->count, size);
-	if (copy_to_iter(m->buf, n, iter) != n)
-		goto Efault;
+	n = copy_to_iter(m->buf, m->count, iter);
 	copied += n;
 	m->count -= n;
 	m->from = n;
 Done:
-	if (!copied)
-		copied = err;
-	else {
+	if (unlikely(!copied)) {
+		copied = m->count ? -EFAULT : err;
+	} else {
 		iocb->ki_pos += copied;
 		m->read_pos += copied;
 	}
@@ -290,9 +285,6 @@ Done:
 	return copied;
 Enomem:
 	err = -ENOMEM;
-	goto Done;
-Efault:
-	err = -EFAULT;
 	goto Done;
 }
 EXPORT_SYMBOL(seq_read_iter);

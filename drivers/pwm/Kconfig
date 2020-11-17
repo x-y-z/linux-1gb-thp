@@ -75,7 +75,8 @@ config PWM_ATMEL_HLCDC_PWM
 
 config PWM_ATMEL_TCB
 	tristate "Atmel TC Block PWM support"
-	depends on ATMEL_TCLIB && OF
+	depends on OF
+	select REGMAP_MMIO
 	help
 	  Generic PWM framework driver for Atmel Timer Counter Block.
 
@@ -160,6 +161,15 @@ config PWM_CROS_EC
 	  PWM driver for exposing a PWM attached to the ChromeOS Embedded
 	  Controller.
 
+config PWM_DWC
+	tristate "DesignWare PWM Controller"
+	depends on PCI
+	help
+	  PWM driver for Synopsys DWC PWM Controller attached to a PCI bus.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-dwc.
+
 config PWM_EP93XX
 	tristate "Cirrus Logic EP93xx PWM support"
 	depends on ARCH_EP93XX || COMPILE_TEST
@@ -232,6 +242,17 @@ config PWM_IMX_TPM
 	  To compile this driver as a module, choose M here: the module
 	  will be called pwm-imx-tpm.
 
+config PWM_INTEL_LGM
+	tristate "Intel LGM PWM support"
+	depends on HAS_IOMEM
+	depends on (OF && X86) || COMPILE_TEST
+	select REGMAP_MMIO
+	help
+	  Generic PWM fan controller driver for LGM SoC.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-intel-lgm.
+
 config PWM_IQS620A
 	tristate "Azoteq IQS620A PWM support"
 	depends on MFD_IQS62X || COMPILE_TEST
@@ -253,6 +274,15 @@ config PWM_JZ4740
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called pwm-jz4740.
+
+config PWM_KEEMBAY
+	tristate "Intel Keem Bay PWM driver"
+	depends on ARCH_KEEMBAY || (ARM64 && COMPILE_TEST)
+	help
+	  The platform driver for Intel Keem Bay PWM controller.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-keembay.
 
 config PWM_LP3943
 	tristate "TI/National Semiconductor LP3943 PWM support"

@@ -307,7 +307,8 @@ static int mmpcam_platform_remove(struct platform_device *pdev)
  * Suspend/resume support.
  */
 
-static int mmpcam_runtime_resume(struct device *dev)
+#ifdef CONFIG_PM
+static int __maybe_unused mmpcam_runtime_resume(struct device *dev)
 {
 	struct mmp_camera *cam = dev_get_drvdata(dev);
 	struct mcam_camera *mcam = &cam->mcam;
@@ -321,7 +322,7 @@ static int mmpcam_runtime_resume(struct device *dev)
 	return 0;
 }
 
-static int mmpcam_runtime_suspend(struct device *dev)
+static int __maybe_unused mmpcam_runtime_suspend(struct device *dev)
 {
 	struct mmp_camera *cam = dev_get_drvdata(dev);
 	struct mcam_camera *mcam = &cam->mcam;
@@ -352,6 +353,7 @@ static int __maybe_unused mmpcam_resume(struct device *dev)
 		return mccic_resume(&cam->mcam);
 	return 0;
 }
+#endif
 
 static const struct dev_pm_ops mmpcam_pm_ops = {
 	SET_RUNTIME_PM_OPS(mmpcam_runtime_suspend, mmpcam_runtime_resume, NULL)
