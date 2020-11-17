@@ -1041,6 +1041,13 @@ config HAVE_ARCH_PFN_VALID
 config ARCH_SUPPORTS_DEBUG_PAGEALLOC
 	bool
 
+config HAVE_SECRETMEM_UNCACHED
+	bool
+	help
+	  An architecture can select this if its semantics of non-cached
+	  mappings can be used to prevent speculative loads and it is
+	  useful for secret protection.
+
 source "kernel/gcov/Kconfig"
 
 source "scripts/gcc-plugins/Kconfig"
