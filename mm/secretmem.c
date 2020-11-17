@@ -64,7 +64,7 @@ static vm_fault_t secretmem_fault(struct vm_fault *vmf)
 	if (((loff_t)vmf->pgoff << PAGE_SHIFT) >= i_size_read(inode))
 		return vmf_error(-EINVAL);
 
-	page = find_get_entry(mapping, offset);
+	page = find_get_page(mapping, offset);
 	if (!page) {
 		page = secretmem_alloc_page(vmf->gfp_mask);
 		if (!page)
