@@ -2071,7 +2071,7 @@ EXPORT_SYMBOL_GPL(iommu_uapi_cache_invalidate);
 
 static int iommu_check_bind_data(struct iommu_gpasid_bind_data *data)
 {
-	u32 mask;
+	u64 mask;
 	int i;
 
 	if (data->version != IOMMU_GPASID_BIND_VERSION_1)
@@ -2995,8 +2995,6 @@ EXPORT_SYMBOL_GPL(iommu_sva_bind_device);
  * Put reference to a bond between device and address space. The device should
  * not be issuing any more transaction for this PASID. All outstanding page
  * requests for this PASID must have been flushed to the IOMMU.
- *
- * Returns 0 on success, or an error value
  */
 void iommu_sva_unbind_device(struct iommu_sva *handle)
 {
