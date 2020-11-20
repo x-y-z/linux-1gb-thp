@@ -898,9 +898,11 @@
 		reg = <0x0 0x700e2000 0x0 0x600>, /* SOC_THERM reg_base */
 		      <0x0 0x60006000 0x0 0x400>; /* CAR reg_base */
 		reg-names = "soctherm-reg", "car-reg";
-		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "thermal", "edp";
 		clocks = <&tegra_car TEGRA124_CLK_TSENSOR>,
-			<&tegra_car TEGRA124_CLK_SOC_THERM>;
+			 <&tegra_car TEGRA124_CLK_SOC_THERM>;
 		clock-names = "tsensor", "soctherm";
 		resets = <&tegra_car 78>;
 		reset-names = "soctherm";
@@ -910,6 +912,7 @@
 			throttle_heavy: heavy {
 				nvidia,priority = <100>;
 				nvidia,cpu-throt-percent = <85>;
+				nvidia,gpu-throt-level = <TEGRA_SOCTHERM_THROT_LEVEL_HIGH>;
 
 				#cooling-cells = <2>;
 			};
@@ -1247,6 +1250,11 @@
 					hysteresis = <0>;
 					type = "critical";
 				};
+				mem-throttle-trip {
+					temperature = <99000>;
+					hysteresis = <1000>;
+					type = "hot";
+				};
 			};
 
 			cooling-maps {
@@ -1297,6 +1305,11 @@
 					temperature = <103000>;
 					hysteresis = <0>;
 					type = "critical";
+				};
+				pllx-throttle-trip {
+					temperature = <99000>;
+					hysteresis = <1000>;
+					type = "hot";
 				};
 			};
 
