@@ -849,6 +849,7 @@ static ssize_t gfs2_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	struct gfs2_inode *ip;
 	struct gfs2_holder gh;
 	size_t written = 0;
+	unsigned int state;
 	ssize_t ret;
 
 	if (iocb->ki_flags & IOCB_DIRECT) {
@@ -871,7 +872,8 @@ static ssize_t gfs2_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 			return ret;
 	}
 	ip = GFS2_I(iocb->ki_filp->f_mapping->host);
-	gfs2_holder_init(ip->i_gl, LM_ST_SHARED, 0, &gh);
+	state = IS_NOATIME(&ip->i_inode) ? LM_ST_SHARED : LM_ST_EXCLUSIVE;
+	gfs2_holder_init(ip->i_gl, state, 0, &gh);
 	ret = gfs2_glock_nq(&gh);
 	if (ret)
 		goto out_uninit;
