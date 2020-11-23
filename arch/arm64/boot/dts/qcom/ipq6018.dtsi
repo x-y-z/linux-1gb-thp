@@ -156,8 +156,8 @@
 			no-map;
 		};
 
-		tz: tz@48500000 {
-			reg = <0x0 0x48500000 0x0 0x00200000>;
+		tz: memory@4a600000 {
+			reg = <0x0 0x4a600000 0x0 0x00400000>;
 			no-map;
 		};
 
@@ -167,7 +167,7 @@
 		};
 
 		q6_region: memory@4ab00000 {
-			reg = <0x0 0x4ab00000 0x0 0x02800000>;
+			reg = <0x0 0x4ab00000 0x0 0x05500000>;
 			no-map;
 		};
 	};
@@ -192,7 +192,7 @@
 			clock-names = "core";
 		};
 
-		cryptobam: dma@704000 {
+		cryptobam: dma-controller@704000 {
 			compatible = "qcom,bam-v1.7.0";
 			reg = <0x0 0x00704000 0x0 0x20000>;
 			interrupts = <GIC_SPI 207 IRQ_TYPE_LEVEL_HIGH>;
@@ -252,7 +252,7 @@
 			reg = <0x0 0x01945000 0x0 0xe000>;
 		};
 
-		blsp_dma: dma@7884000 {
+		blsp_dma: dma-controller@7884000 {
 			compatible = "qcom,bam-v1.7.0";
 			reg = <0x0 0x07884000 0x0 0x2b000>;
 			interrupts = <GIC_SPI 238 IRQ_TYPE_LEVEL_HIGH>;
