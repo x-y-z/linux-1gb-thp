@@ -155,6 +155,15 @@ config REGULATOR_ARIZONA_MICSUPP
 	  and Wolfson Microelectronic Arizona codecs
 	  devices.
 
+config REGULATOR_ARM_SCMI
+	tristate "SCMI based regulator driver"
+	depends on ARM_SCMI_PROTOCOL && OF
+	help
+	  This adds the regulator driver support for ARM platforms using SCMI
+	  protocol for device voltage management.
+	  This driver uses SCMI Message Protocol driver to interact with the
+	  firmware providing the device Voltage functionality.
+
 config REGULATOR_AS3711
 	tristate "AS3711 PMIC"
 	depends on MFD_AS3711
@@ -302,6 +311,18 @@ config REGULATOR_DA9063
 
 	  This driver can also be built as a module. If so, the module
 	  will be called da9063-regulator.
+
+config REGULATOR_DA9121
+	tristate "Dialog Semiconductor DA9121 regulator"
+	depends on I2C && OF
+	select REGMAP_I2C
+	help
+	  Say y here to support for the Dialog Semiconductor DA9121.  The
+	  DA9210 is a dual-phase buck converter controlled through an I2C
+	  interface.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called da9121-regulator.
 
 config REGULATOR_DA9210
 	tristate "Dialog Semiconductor DA9210 regulator"
