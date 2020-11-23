@@ -18,7 +18,11 @@ static unsigned int shrinker_run_no;
 
 static unsigned long __count_nat_entries(struct f2fs_sb_info *sbi)
 {
-	long count = NM_I(sbi)->nat_cnt - NM_I(sbi)->dirty_nat_cnt;
+	long count;
+
+	down_read(&NM_I(sbi)->nat_tree_lock);
+	count = NM_I(sbi)->nat_cnt - NM_I(sbi)->dirty_nat_cnt;
+	up_read(&NM_I(sbi)->nat_tree_lock);
 
 	return count > 0 ? count : 0;
 }
