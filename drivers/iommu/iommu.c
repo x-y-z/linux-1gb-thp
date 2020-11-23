@@ -264,15 +264,17 @@ int iommu_probe_device(struct device *dev)
 	 */
 	iommu_alloc_default_domain(group, dev);
 
-	if (group->default_domain)
+	if (group->default_domain) {
 		ret = __iommu_attach_device(group->default_domain, dev);
+		if (ret) {
+			iommu_group_put(group);
+			goto err_release;
+		}
+	}
 
 	iommu_create_device_direct_mappings(group, dev);
 
 	iommu_group_put(group);
-
-	if (ret)
-		goto err_release;
 
 	if (ops->probe_finalize)
 		ops->probe_finalize(dev);
@@ -2995,8 +2997,6 @@ EXPORT_SYMBOL_GPL(iommu_sva_bind_device);
  * Put reference to a bond between device and address space. The device should
  * not be issuing any more transaction for this PASID. All outstanding page
  * requests for this PASID must have been flushed to the IOMMU.
- *
- * Returns 0 on success, or an error value
  */
 void iommu_sva_unbind_device(struct iommu_sva *handle)
 {
