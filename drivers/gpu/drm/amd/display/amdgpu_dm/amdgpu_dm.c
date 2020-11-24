@@ -943,6 +943,41 @@ static void mmhub_read_system_context(struct amdgpu_device *adev, struct dc_phy_
 }
 #endif
 
+#ifdef CONFIG_DEBUG_FS
+static int create_crtc_crc_properties(struct amdgpu_display_manager *dm)
+{
+	dm->crc_win_x_start_property =
+		drm_property_create_range(adev_to_drm(dm->adev),
+					  DRM_MODE_PROP_ATOMIC,
+					  "AMD_CRC_WIN_X_START", 0, U16_MAX);
+	if (!dm->crc_win_x_start_property)
+		return -ENOMEM;
+
+	dm->crc_win_y_start_property =
+		drm_property_create_range(adev_to_drm(dm->adev),
+					  DRM_MODE_PROP_ATOMIC,
+					  "AMD_CRC_WIN_Y_START", 0, U16_MAX);
+	if (!dm->crc_win_y_start_property)
+		return -ENOMEM;
+
+	dm->crc_win_x_end_property =
+		drm_property_create_range(adev_to_drm(dm->adev),
+					  DRM_MODE_PROP_ATOMIC,
+					  "AMD_CRC_WIN_X_END", 0, U16_MAX);
+	if (!dm->crc_win_x_end_property)
+		return -ENOMEM;
+
+	dm->crc_win_y_end_property =
+		drm_property_create_range(adev_to_drm(dm->adev),
+					  DRM_MODE_PROP_ATOMIC,
+					  "AMD_CRC_WIN_Y_END", 0, U16_MAX);
+	if (!dm->crc_win_y_end_property)
+		return -ENOMEM;
+
+	return 0;
+}
+#endif
+
 static int amdgpu_dm_init(struct amdgpu_device *adev)
 {
 	struct dc_init_data init_data;
@@ -1084,6 +1119,10 @@ static int amdgpu_dm_init(struct amdgpu_device *adev)
 
 		dc_init_callbacks(adev->dm.dc, &init_params);
 	}
+#endif
+#ifdef CONFIG_DEBUG_FS
+	if (create_crtc_crc_properties(&adev->dm))
+		DRM_ERROR("amdgpu: failed to create crc property.\n");
 #endif
 	if (amdgpu_dm_initialize_drm_device(adev)) {
 		DRM_ERROR(
@@ -2362,6 +2401,7 @@ static void handle_hpd_irq(void *param)
 	enum dc_connection_type new_connection_type = dc_connection_none;
 #ifdef CONFIG_DRM_AMD_DC_HDCP
 	struct amdgpu_device *adev = drm_to_adev(dev);
+	struct dm_connector_state *dm_con_state = to_dm_connector_state(connector->state);
 #endif
 
 	/*
@@ -2371,8 +2411,10 @@ static void handle_hpd_irq(void *param)
 	mutex_lock(&aconnector->hpd_lock);
 
 #ifdef CONFIG_DRM_AMD_DC_HDCP
-	if (adev->dm.hdcp_workqueue)
+	if (adev->dm.hdcp_workqueue) {
 		hdcp_reset_display(adev->dm.hdcp_workqueue, aconnector->dc_link->link_index);
+		dm_con_state->update_hdcp = true;
+	}
 #endif
 	if (aconnector->fake_enable)
 		aconnector->fake_enable = false;
@@ -3847,96 +3889,10 @@ modifier_gfx9_swizzle_mode(uint64_t modifier)
 	return AMD_FMT_MOD_GET(TILE, modifier);
 }
 
-static const struct drm_format_info dcc_formats[] = {
-	{ .format = DRM_FORMAT_XRGB8888, .depth = 24, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-	 { .format = DRM_FORMAT_XBGR8888, .depth = 24, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-	{ .format = DRM_FORMAT_ARGB8888, .depth = 32, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	   .has_alpha = true, },
-	{ .format = DRM_FORMAT_ABGR8888, .depth = 32, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	  .has_alpha = true, },
-	{ .format = DRM_FORMAT_BGRA8888, .depth = 32, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	  .has_alpha = true, },
-	{ .format = DRM_FORMAT_XRGB2101010, .depth = 30, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-	{ .format = DRM_FORMAT_XBGR2101010, .depth = 30, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-	{ .format = DRM_FORMAT_ARGB2101010, .depth = 30, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	  .has_alpha = true, },
-	{ .format = DRM_FORMAT_ABGR2101010, .depth = 30, .num_planes = 2,
-	  .cpp = { 4, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	  .has_alpha = true, },
-	{ .format = DRM_FORMAT_RGB565, .depth = 16, .num_planes = 2,
-	  .cpp = { 2, 0, }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-};
-
-static const struct drm_format_info dcc_retile_formats[] = {
-	{ .format = DRM_FORMAT_XRGB8888, .depth = 24, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-	 { .format = DRM_FORMAT_XBGR8888, .depth = 24, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-	{ .format = DRM_FORMAT_ARGB8888, .depth = 32, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	   .has_alpha = true, },
-	{ .format = DRM_FORMAT_ABGR8888, .depth = 32, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	  .has_alpha = true, },
-	{ .format = DRM_FORMAT_BGRA8888, .depth = 32, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	  .has_alpha = true, },
-	{ .format = DRM_FORMAT_XRGB2101010, .depth = 30, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-	{ .format = DRM_FORMAT_XBGR2101010, .depth = 30, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-	{ .format = DRM_FORMAT_ARGB2101010, .depth = 30, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	  .has_alpha = true, },
-	{ .format = DRM_FORMAT_ABGR2101010, .depth = 30, .num_planes = 3,
-	  .cpp = { 4, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1,
-	  .has_alpha = true, },
-	{ .format = DRM_FORMAT_RGB565, .depth = 16, .num_planes = 3,
-	  .cpp = { 2, 0, 0 }, .block_w = {1, 1, 1}, .block_h = {1, 1, 1}, .hsub = 1, .vsub = 1, },
-};
-
-
-static const struct drm_format_info *
-lookup_format_info(const struct drm_format_info formats[],
-		  int num_formats, u32 format)
-{
-	int i;
-
-	for (i = 0; i < num_formats; i++) {
-		if (formats[i].format == format)
-			return &formats[i];
-	}
-
-	return NULL;
-}
-
 static const struct drm_format_info *
 amd_get_format_info(const struct drm_mode_fb_cmd2 *cmd)
 {
-	uint64_t modifier = cmd->modifier[0];
-
-	if (!IS_AMD_FMT_MOD(modifier))
-		return NULL;
-
-	if (AMD_FMT_MOD_GET(DCC_RETILE, modifier))
-		return lookup_format_info(dcc_retile_formats,
-					  ARRAY_SIZE(dcc_retile_formats),
-					  cmd->pixel_format);
-
-	if (AMD_FMT_MOD_GET(DCC, modifier))
-		return lookup_format_info(dcc_formats, ARRAY_SIZE(dcc_formats),
-					  cmd->pixel_format);
-
-	/* returning NULL will cause the default format structs to be used. */
-	return NULL;
+	return amdgpu_lookup_format_info(cmd->pixel_format, cmd->modifier[0]);
 }
 
 static void
@@ -5336,11 +5292,63 @@ dm_crtc_duplicate_state(struct drm_crtc *crtc)
 	state->crc_src = cur->crc_src;
 	state->cm_has_degamma = cur->cm_has_degamma;
 	state->cm_is_degamma_srgb = cur->cm_is_degamma_srgb;
-
+#ifdef CONFIG_DEBUG_FS
+	state->crc_window = cur->crc_window;
+#endif
 	/* TODO Duplicate dc_stream after objects are stream object is flattened */
 
 	return &state->base;
 }
+
+#ifdef CONFIG_DEBUG_FS
+int amdgpu_dm_crtc_atomic_set_property(struct drm_crtc *crtc,
+					    struct drm_crtc_state *crtc_state,
+					    struct drm_property *property,
+					    uint64_t val)
+{
+	struct drm_device *dev = crtc->dev;
+	struct amdgpu_device *adev = drm_to_adev(dev);
+	struct dm_crtc_state *dm_new_state =
+		to_dm_crtc_state(crtc_state);
+
+	if (property == adev->dm.crc_win_x_start_property)
+		dm_new_state->crc_window.x_start = val;
+	else if (property == adev->dm.crc_win_y_start_property)
+		dm_new_state->crc_window.y_start = val;
+	else if (property == adev->dm.crc_win_x_end_property)
+		dm_new_state->crc_window.x_end = val;
+	else if (property == adev->dm.crc_win_y_end_property)
+		dm_new_state->crc_window.y_end = val;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+int amdgpu_dm_crtc_atomic_get_property(struct drm_crtc *crtc,
+					    const struct drm_crtc_state *state,
+					    struct drm_property *property,
+					    uint64_t *val)
+{
+	struct drm_device *dev = crtc->dev;
+	struct amdgpu_device *adev = drm_to_adev(dev);
+	struct dm_crtc_state *dm_state =
+		to_dm_crtc_state(state);
+
+	if (property == adev->dm.crc_win_x_start_property)
+		*val = dm_state->crc_window.x_start;
+	else if (property == adev->dm.crc_win_y_start_property)
+		*val = dm_state->crc_window.y_start;
+	else if (property == adev->dm.crc_win_x_end_property)
+		*val = dm_state->crc_window.x_end;
+	else if (property == adev->dm.crc_win_y_end_property)
+		*val = dm_state->crc_window.y_end;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+#endif
 
 static inline int dm_set_vupdate_irq(struct drm_crtc *crtc, bool enable)
 {
@@ -5408,6 +5416,10 @@ static const struct drm_crtc_funcs amdgpu_dm_crtc_funcs = {
 	.enable_vblank = dm_enable_vblank,
 	.disable_vblank = dm_disable_vblank,
 	.get_vblank_timestamp = drm_crtc_vblank_helper_get_vblank_timestamp,
+#ifdef CONFIG_DEBUG_FS
+	.atomic_set_property = amdgpu_dm_crtc_atomic_set_property,
+	.atomic_get_property = amdgpu_dm_crtc_atomic_get_property,
+#endif
 };
 
 static enum drm_connector_status
@@ -6605,6 +6617,25 @@ static int amdgpu_dm_plane_init(struct amdgpu_display_manager *dm,
 	return 0;
 }
 
+#ifdef CONFIG_DEBUG_FS
+static void attach_crtc_crc_properties(struct amdgpu_display_manager *dm,
+				struct amdgpu_crtc *acrtc)
+{
+	drm_object_attach_property(&acrtc->base.base,
+				   dm->crc_win_x_start_property,
+				   0);
+	drm_object_attach_property(&acrtc->base.base,
+				   dm->crc_win_y_start_property,
+				   0);
+	drm_object_attach_property(&acrtc->base.base,
+				   dm->crc_win_x_end_property,
+				   0);
+	drm_object_attach_property(&acrtc->base.base,
+				   dm->crc_win_y_end_property,
+				   0);
+}
+#endif
+
 static int amdgpu_dm_crtc_init(struct amdgpu_display_manager *dm,
 			       struct drm_plane *plane,
 			       uint32_t crtc_index)
@@ -6652,7 +6683,9 @@ static int amdgpu_dm_crtc_init(struct amdgpu_display_manager *dm,
 	drm_crtc_enable_color_mgmt(&acrtc->base, MAX_COLOR_LUT_ENTRIES,
 				   true, MAX_COLOR_LUT_ENTRIES);
 	drm_mode_crtc_set_gamma_size(&acrtc->base, MAX_COLOR_LEGACY_LUT_ENTRIES);
-
+#ifdef CONFIG_DEBUG_FS
+	attach_crtc_crc_properties(dm, acrtc);
+#endif
 	return 0;
 
 fail:
@@ -6846,7 +6879,7 @@ static int amdgpu_dm_connector_get_modes(struct drm_connector *connector)
 
 	encoder = amdgpu_dm_connector_to_encoder(connector);
 
-	if (!edid || !drm_edid_is_valid(edid)) {
+	if (!drm_edid_is_valid(edid)) {
 		amdgpu_dm_connector->num_modes =
 				drm_add_modes_noedid(connector, 640, 480);
 	} else {
@@ -7203,38 +7236,63 @@ static bool is_content_protection_different(struct drm_connector_state *state,
 					    const struct drm_connector *connector, struct hdcp_workqueue *hdcp_w)
 {
 	struct amdgpu_dm_connector *aconnector = to_amdgpu_dm_connector(connector);
+	struct dm_connector_state *dm_con_state = to_dm_connector_state(connector->state);
 
+	/* Handle: Type0/1 change */
 	if (old_state->hdcp_content_type != state->hdcp_content_type &&
 	    state->content_protection != DRM_MODE_CONTENT_PROTECTION_UNDESIRED) {
 		state->content_protection = DRM_MODE_CONTENT_PROTECTION_DESIRED;
 		return true;
 	}
 
-	/* CP is being re enabled, ignore this */
+	/* CP is being re enabled, ignore this
+	 *
+	 * Handles:	ENABLED -> DESIRED
+	 */
 	if (old_state->content_protection == DRM_MODE_CONTENT_PROTECTION_ENABLED &&
 	    state->content_protection == DRM_MODE_CONTENT_PROTECTION_DESIRED) {
 		state->content_protection = DRM_MODE_CONTENT_PROTECTION_ENABLED;
 		return false;
 	}
 
-	/* S3 resume case, since old state will always be 0 (UNDESIRED) and the restored state will be ENABLED */
+	/* S3 resume case, since old state will always be 0 (UNDESIRED) and the restored state will be ENABLED
+	 *
+	 * Handles:	UNDESIRED -> ENABLED
+	 */
 	if (old_state->content_protection == DRM_MODE_CONTENT_PROTECTION_UNDESIRED &&
 	    state->content_protection == DRM_MODE_CONTENT_PROTECTION_ENABLED)
 		state->content_protection = DRM_MODE_CONTENT_PROTECTION_DESIRED;
 
 	/* Check if something is connected/enabled, otherwise we start hdcp but nothing is connected/enabled
 	 * hot-plug, headless s3, dpms
+	 *
+	 * Handles:	DESIRED -> DESIRED (Special case)
 	 */
-	if (state->content_protection == DRM_MODE_CONTENT_PROTECTION_DESIRED && connector->dpms == DRM_MODE_DPMS_ON &&
-	    aconnector->dc_sink != NULL)
+	if (dm_con_state->update_hdcp && state->content_protection == DRM_MODE_CONTENT_PROTECTION_DESIRED &&
+	    connector->dpms == DRM_MODE_DPMS_ON && aconnector->dc_sink != NULL) {
+		dm_con_state->update_hdcp = false;
 		return true;
+	}
 
+	/*
+	 * Handles:	UNDESIRED -> UNDESIRED
+	 *		DESIRED -> DESIRED
+	 *		ENABLED -> ENABLED
+	 */
 	if (old_state->content_protection == state->content_protection)
 		return false;
 
-	if (state->content_protection == DRM_MODE_CONTENT_PROTECTION_UNDESIRED)
+	/*
+	 * Handles:	UNDESIRED -> DESIRED
+	 *		DESIRED -> UNDESIRED
+	 *		ENABLED -> UNDESIRED
+	 */
+	if (state->content_protection != DRM_MODE_CONTENT_PROTECTION_ENABLED)
 		return true;
 
+	/*
+	 * Handles:	DESIRED -> ENABLED
+	 */
 	return false;
 }
 
@@ -8050,6 +8108,16 @@ static void amdgpu_dm_atomic_commit_tail(struct drm_atomic_state *state)
 			new_crtc_state->active_changed,
 			new_crtc_state->connectors_changed);
 
+		/* Disable cursor if disabling crtc */
+		if (old_crtc_state->active && !new_crtc_state->active) {
+			struct dc_cursor_position position;
+
+			memset(&position, 0, sizeof(position));
+			mutex_lock(&dm->dc_lock);
+			dc_stream_set_cursor_position(dm_old_crtc_state->stream, &position);
+			mutex_unlock(&dm->dc_lock);
+		}
+
 		/* Copy all transient state flags into dc state */
 		if (dm_new_crtc_state->stream) {
 			amdgpu_dm_crtc_copy_transient_flags(&dm_new_crtc_state->base,
@@ -8149,6 +8217,7 @@ static void amdgpu_dm_atomic_commit_tail(struct drm_atomic_state *state)
 		    connector->state->content_protection == DRM_MODE_CONTENT_PROTECTION_ENABLED) {
 			hdcp_reset_display(adev->dm.hdcp_workqueue, aconnector->dc_link->link_index);
 			new_con_state->content_protection = DRM_MODE_CONTENT_PROTECTION_DESIRED;
+			dm_new_con_state->update_hdcp = true;
 			continue;
 		}
 
@@ -8267,6 +8336,7 @@ static void amdgpu_dm_atomic_commit_tail(struct drm_atomic_state *state)
 	 */
 	for_each_oldnew_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state, i) {
 		struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
+		bool configure_crc = false;
 
 		dm_new_crtc_state = to_dm_crtc_state(new_crtc_state);
 
@@ -8276,21 +8346,30 @@ static void amdgpu_dm_atomic_commit_tail(struct drm_atomic_state *state)
 			dc_stream_retain(dm_new_crtc_state->stream);
 			acrtc->dm_irq_params.stream = dm_new_crtc_state->stream;
 			manage_dm_interrupts(adev, acrtc, true);
-
+		}
 #ifdef CONFIG_DEBUG_FS
+		if (new_crtc_state->active &&
+			amdgpu_dm_is_valid_crc_source(dm_new_crtc_state->crc_src)) {
 			/**
 			 * Frontend may have changed so reapply the CRC capture
 			 * settings for the stream.
 			 */
 			dm_new_crtc_state = to_dm_crtc_state(new_crtc_state);
+			dm_old_crtc_state = to_dm_crtc_state(old_crtc_state);
 
-			if (amdgpu_dm_is_valid_crc_source(dm_new_crtc_state->crc_src)) {
-				amdgpu_dm_crtc_configure_crc_source(
-					crtc, dm_new_crtc_state,
-					dm_new_crtc_state->crc_src);
+			if (amdgpu_dm_crc_window_is_default(dm_new_crtc_state)) {
+				if (!old_crtc_state->active || drm_atomic_crtc_needs_modeset(new_crtc_state))
+					configure_crc = true;
+			} else {
+				if (amdgpu_dm_crc_window_changed(dm_new_crtc_state, dm_old_crtc_state))
+					configure_crc = true;
 			}
-#endif
+
+			if (configure_crc)
+				amdgpu_dm_crtc_configure_crc_source(
+					crtc, dm_new_crtc_state, dm_new_crtc_state->crc_src);
 		}
+#endif
 	}
 
 	for_each_new_crtc_in_state(state, crtc, new_crtc_state, j)
@@ -9612,7 +9691,7 @@ bool amdgpu_dm_psr_enable(struct dc_stream_state *stream)
 					   &stream, 1,
 					   &params);
 
-	return dc_link_set_psr_allow_active(link, true, false);
+	return dc_link_set_psr_allow_active(link, true, false, false);
 }
 
 /*
@@ -9626,7 +9705,7 @@ static bool amdgpu_dm_psr_disable(struct dc_stream_state *stream)
 
 	DRM_DEBUG_DRIVER("Disabling psr...\n");
 
-	return dc_link_set_psr_allow_active(stream->link, false, true);
+	return dc_link_set_psr_allow_active(stream->link, false, true, false);
 }
 
 /*
