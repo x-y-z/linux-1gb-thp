@@ -610,8 +610,8 @@ static void rkisp1_rsz_set_sink_fmt(struct rkisp1_resizer *rsz,
 				  RKISP1_ISP_MIN_WIDTH,
 				  RKISP1_ISP_MAX_WIDTH);
 	sink_fmt->height = clamp_t(u32, format->height,
-				  RKISP1_ISP_MIN_HEIGHT,
-				  RKISP1_ISP_MAX_HEIGHT);
+				   RKISP1_ISP_MIN_HEIGHT,
+				   RKISP1_ISP_MAX_HEIGHT);
 
 	*format = *sink_fmt;
 
@@ -763,8 +763,10 @@ static void rkisp1_rsz_unregister(struct rkisp1_resizer *rsz)
 
 static int rkisp1_rsz_register(struct rkisp1_resizer *rsz)
 {
-	const char * const dev_names[] = {RKISP1_RSZ_MP_DEV_NAME,
-					  RKISP1_RSZ_SP_DEV_NAME};
+	static const char * const dev_names[] = {
+		RKISP1_RSZ_MP_DEV_NAME,
+		RKISP1_RSZ_SP_DEV_NAME
+	};
 	struct media_pad *pads = rsz->pads;
 	struct v4l2_subdev *sd = &rsz->sd;
 	int ret;

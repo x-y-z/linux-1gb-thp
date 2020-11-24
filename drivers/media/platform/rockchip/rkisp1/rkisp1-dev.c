@@ -255,7 +255,8 @@ static int rkisp1_subdev_notifier(struct rkisp1_device *rkisp1)
 		struct fwnode_handle *ep;
 
 		ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(rkisp1->dev),
-			0, next_id, FWNODE_GRAPH_ENDPOINT_NEXT);
+						     0, next_id,
+						     FWNODE_GRAPH_ENDPOINT_NEXT);
 		if (!ep)
 			break;
 
@@ -405,11 +406,9 @@ static irqreturn_t rkisp1_isr(int irq, void *ctx)
 }
 
 static const char * const rk3399_isp_clks[] = {
-	"clk_isp",
-	"aclk_isp",
-	"hclk_isp",
-	"aclk_isp_wrap",
-	"hclk_isp_wrap",
+	"isp",
+	"aclk",
+	"hclk",
 };
 
 static const struct rkisp1_match_data rk3399_isp_clk_data = {
