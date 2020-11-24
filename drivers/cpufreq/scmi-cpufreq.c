@@ -189,7 +189,8 @@ static int scmi_cpufreq_init(struct cpufreq_policy *policy)
 	policy->fast_switch_possible =
 		handle->perf_ops->fast_switch_possible(handle, cpu_dev);
 
-	em_dev_register_perf_domain(cpu_dev, nr_opp, &em_cb, policy->cpus);
+	em_dev_register_perf_domain(cpu_dev, nr_opp, &em_cb, policy->cpus,
+				    false);
 
 	return 0;
 
@@ -236,13 +237,15 @@ static int scmi_cpufreq_probe(struct scmi_device *sdev)
 	if (!handle || !handle->perf_ops)
 		return -ENODEV;
 
+#ifdef CONFIG_COMMON_CLK
 	/* dummy clock provider as needed by OPP if clocks property is used */
 	if (of_find_property(dev->of_node, "#clock-cells", NULL))
 		devm_of_clk_add_hw_provider(dev, of_clk_hw_simple_get, NULL);
+#endif
 
 	ret = cpufreq_register_driver(&scmi_cpufreq_driver);
 	if (ret) {
-		dev_err(&sdev->dev, "%s: registering cpufreq failed, err: %d\n",
+		dev_err(dev, "%s: registering cpufreq failed, err: %d\n",
 			__func__, ret);
 	}
 
