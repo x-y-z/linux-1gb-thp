@@ -42,19 +42,19 @@ static inline void syscall_enter_audit(struct pt_regs *regs, long syscall)
 }
 
 static long syscall_trace_enter(struct pt_regs *regs, long syscall,
-				unsigned long ti_work)
+				unsigned long work)
 {
 	long ret = 0;
 
 	/* Handle ptrace */
-	if (ti_work & (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_EMU)) {
+	if (work & (SYSCALL_WORK_SYSCALL_TRACE | SYSCALL_WORK_SYSCALL_EMU)) {
 		ret = arch_syscall_enter_tracehook(regs);
-		if (ret || (ti_work & _TIF_SYSCALL_EMU))
+		if (ret || (work & SYSCALL_WORK_SYSCALL_EMU))
 			return -1L;
 	}
 
 	/* Do seccomp after ptrace, to catch any tracer changes. */
-	if (ti_work & _TIF_SECCOMP) {
+	if (work & SYSCALL_WORK_SECCOMP) {
 		ret = __secure_computing(NULL);
 		if (ret == -1L)
 			return ret;
@@ -63,7 +63,7 @@ static long syscall_trace_enter(struct pt_regs *regs, long syscall,
 	/* Either of the above might have changed the syscall number */
 	syscall = syscall_get_nr(current, regs);
 
-	if (unlikely(ti_work & _TIF_SYSCALL_TRACEPOINT))
+	if (unlikely(work & SYSCALL_WORK_SYSCALL_TRACEPOINT))
 		trace_sys_enter(regs, syscall);
 
 	syscall_enter_audit(regs, syscall);
@@ -74,11 +74,10 @@ static long syscall_trace_enter(struct pt_regs *regs, long syscall,
 static __always_inline long
 __syscall_enter_from_user_work(struct pt_regs *regs, long syscall)
 {
-	unsigned long ti_work;
+	unsigned long work = READ_ONCE(current_thread_info()->syscall_work);
 
-	ti_work = READ_ONCE(current_thread_info()->flags);
-	if (ti_work & SYSCALL_ENTER_WORK)
-		syscall = syscall_trace_enter(regs, syscall, ti_work);
+	if (work & SYSCALL_WORK_ENTER)
+		syscall = syscall_trace_enter(regs, syscall, work);
 
 	return syscall;
 }
@@ -207,35 +206,37 @@ static void exit_to_user_mode_prepare(struct pt_regs *regs)
 }
 
 #ifndef _TIF_SINGLESTEP
-static inline bool report_single_step(unsigned long ti_work)
+static inline bool report_single_step(unsigned long work)
 {
 	return false;
 }
 #else
 /*
- * If TIF_SYSCALL_EMU is set, then the only reason to report is when
+ * If SYSCALL_EMU is set, then the only reason to report is when
  * TIF_SINGLESTEP is set (i.e. PTRACE_SYSEMU_SINGLESTEP).  This syscall
  * instruction has been already reported in syscall_enter_from_user_mode().
  */
-#define SYSEMU_STEP	(_TIF_SINGLESTEP | _TIF_SYSCALL_EMU)
-
-static inline bool report_single_step(unsigned long ti_work)
+static inline bool report_single_step(unsigned long work)
 {
-	return (ti_work & SYSEMU_STEP) == _TIF_SINGLESTEP;
+	if (!(work & SYSCALL_WORK_SYSCALL_EMU))
+		return false;
+
+	return !!(current_thread_info()->flags & _TIF_SINGLESTEP);
 }
 #endif
 
-static void syscall_exit_work(struct pt_regs *regs, unsigned long ti_work)
+
+static void syscall_exit_work(struct pt_regs *regs, unsigned long work)
 {
 	bool step;
 
 	audit_syscall_exit(regs);
 
-	if (ti_work & _TIF_SYSCALL_TRACEPOINT)
+	if (work & SYSCALL_WORK_SYSCALL_TRACEPOINT)
 		trace_sys_exit(regs, syscall_get_return_value(current, regs));
 
-	step = report_single_step(ti_work);
-	if (step || ti_work & _TIF_SYSCALL_TRACE)
+	step = report_single_step(work);
+	if (step || work & SYSCALL_WORK_SYSCALL_TRACE)
 		arch_syscall_exit_tracehook(regs, step);
 }
 
@@ -245,7 +246,7 @@ static void syscall_exit_work(struct pt_regs *regs, unsigned long ti_work)
  */
 static void syscall_exit_to_user_mode_prepare(struct pt_regs *regs)
 {
-	u32 cached_flags = READ_ONCE(current_thread_info()->flags);
+	unsigned long work = READ_ONCE(current_thread_info()->syscall_work);
 	unsigned long nr = syscall_get_nr(current, regs);
 
 	CT_WARN_ON(ct_state() != CONTEXT_KERNEL);
@@ -262,8 +263,8 @@ static void syscall_exit_to_user_mode_prepare(struct pt_regs *regs)
 	 * enabled, we want to run them exactly once per syscall exit with
 	 * interrupts enabled.
 	 */
-	if (unlikely(cached_flags & SYSCALL_EXIT_WORK))
-		syscall_exit_work(regs, cached_flags);
+	if (unlikely(work & SYSCALL_WORK_EXIT))
+		syscall_exit_work(regs, work);
 }
 
 __visible noinstr void syscall_exit_to_user_mode(struct pt_regs *regs)
@@ -304,7 +305,7 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 	 * If this entry hit the idle task invoke rcu_irq_enter() whether
 	 * RCU is watching or not.
 	 *
-	 * Interupts can nest when the first interrupt invokes softirq
+	 * Interrupts can nest when the first interrupt invokes softirq
 	 * processing on return which enables interrupts.
 	 *
 	 * Scheduler ticks in the idle task can mark quiescent state and
@@ -315,7 +316,7 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 	 * interrupt to invoke rcu_irq_enter(). If that nested interrupt is
 	 * the tick then rcu_flavor_sched_clock_irq() would wrongfully
 	 * assume that it is the first interupt and eventually claim
-	 * quiescient state and end grace periods prematurely.
+	 * quiescent state and end grace periods prematurely.
 	 *
 	 * Unconditionally invoke rcu_irq_enter() so RCU state stays
 	 * consistent.
@@ -327,7 +328,7 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 		/*
 		 * If RCU is not watching then the same careful
 		 * sequence vs. lockdep and tracing is required
-		 * as in irq_enter_from_user_mode().
+		 * as in irqentry_enter_from_user_mode().
 		 */
 		lockdep_hardirqs_off(CALLER_ADDR0);
 		rcu_irq_enter();
@@ -404,4 +405,40 @@ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
 		if (state.exit_rcu)
 			rcu_irq_exit();
 	}
+}
+
+irqentry_state_t noinstr irqentry_nmi_enter(struct pt_regs *regs)
+{
+	irqentry_state_t irq_state;
+
+	irq_state.lockdep = lockdep_hardirqs_enabled();
+
+	__nmi_enter();
+	lockdep_hardirqs_off(CALLER_ADDR0);
+	lockdep_hardirq_enter();
+	rcu_nmi_enter();
+
+	instrumentation_begin();
+	trace_hardirqs_off_finish();
+	ftrace_nmi_enter();
+	instrumentation_end();
+
+	return irq_state;
+}
+
+void noinstr irqentry_nmi_exit(struct pt_regs *regs, irqentry_state_t irq_state)
+{
+	instrumentation_begin();
+	ftrace_nmi_exit();
+	if (irq_state.lockdep) {
+		trace_hardirqs_on_prepare();
+		lockdep_hardirqs_on_prepare(CALLER_ADDR0);
+	}
+	instrumentation_end();
+
+	rcu_nmi_exit();
+	lockdep_hardirq_exit();
+	if (irq_state.lockdep)
+		lockdep_hardirqs_on(CALLER_ADDR0);
+	__nmi_exit();
 }
