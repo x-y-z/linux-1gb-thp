@@ -981,7 +981,8 @@ static int tcp_v4_send_synack(const struct sock *sk, struct dst_entry *dst,
 	skb = tcp_make_synack(sk, dst, req, foc, synack_type, syn_skb);
 
 	tos = sock_net(sk)->ipv4.sysctl_tcp_reflect_tos ?
-			tcp_rsk(req)->syn_tos : inet_sk(sk)->tos;
+			tcp_rsk(req)->syn_tos & ~INET_ECN_MASK :
+			inet_sk(sk)->tos;
 
 	if (skb) {
 		__tcp_v4_send_check(skb, ireq->ir_loc_addr, ireq->ir_rmt_addr);
@@ -990,7 +991,7 @@ static int tcp_v4_send_synack(const struct sock *sk, struct dst_entry *dst,
 		err = ip_build_and_send_pkt(skb, sk, ireq->ir_loc_addr,
 					    ireq->ir_rmt_addr,
 					    rcu_dereference(ireq->ireq_opt),
-					    tos & ~INET_ECN_MASK);
+					    tos);
 		rcu_read_unlock();
 		err = net_xmit_eval(err);
 	}
@@ -2739,6 +2740,20 @@ void tcp4_proc_exit(void)
 	unregister_pernet_subsys(&tcp4_net_ops);
 }
 #endif /* CONFIG_PROC_FS */
+
+/* @wake is one when sk_stream_write_space() calls us.
+ * This sends EPOLLOUT only if notsent_bytes is half the limit.
+ * This mimics the strategy used in sock_def_write_space().
+ */
+bool tcp_stream_memory_free(const struct sock *sk, int wake)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+	u32 notsent_bytes = READ_ONCE(tp->write_seq) -
+			    READ_ONCE(tp->snd_nxt);
+
+	return (notsent_bytes << wake) < tcp_notsent_lowat(tp);
+}
+EXPORT_SYMBOL(tcp_stream_memory_free);
 
 struct proto tcp_prot = {
 	.name			= "TCP",

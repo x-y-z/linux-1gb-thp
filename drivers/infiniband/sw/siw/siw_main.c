@@ -306,7 +306,6 @@ static struct siw_device *siw_device_create(struct net_device *netdev)
 	struct siw_device *sdev = NULL;
 	struct ib_device *base_dev;
 	struct device *parent = netdev->dev.parent;
-	u64 dma_mask;
 	int rv;
 
 	if (!parent) {
@@ -347,30 +346,8 @@ static struct siw_device *siw_device_create(struct net_device *netdev)
 		addrconf_addr_eui48((unsigned char *)&base_dev->node_guid,
 				    addr);
 	}
-	base_dev->uverbs_cmd_mask =
-		(1ull << IB_USER_VERBS_CMD_QUERY_DEVICE) |
-		(1ull << IB_USER_VERBS_CMD_QUERY_PORT) |
-		(1ull << IB_USER_VERBS_CMD_GET_CONTEXT) |
-		(1ull << IB_USER_VERBS_CMD_ALLOC_PD) |
-		(1ull << IB_USER_VERBS_CMD_DEALLOC_PD) |
-		(1ull << IB_USER_VERBS_CMD_REG_MR) |
-		(1ull << IB_USER_VERBS_CMD_DEREG_MR) |
-		(1ull << IB_USER_VERBS_CMD_CREATE_COMP_CHANNEL) |
-		(1ull << IB_USER_VERBS_CMD_CREATE_CQ) |
-		(1ull << IB_USER_VERBS_CMD_POLL_CQ) |
-		(1ull << IB_USER_VERBS_CMD_REQ_NOTIFY_CQ) |
-		(1ull << IB_USER_VERBS_CMD_DESTROY_CQ) |
-		(1ull << IB_USER_VERBS_CMD_CREATE_QP) |
-		(1ull << IB_USER_VERBS_CMD_QUERY_QP) |
-		(1ull << IB_USER_VERBS_CMD_MODIFY_QP) |
-		(1ull << IB_USER_VERBS_CMD_DESTROY_QP) |
-		(1ull << IB_USER_VERBS_CMD_POST_SEND) |
-		(1ull << IB_USER_VERBS_CMD_POST_RECV) |
-		(1ull << IB_USER_VERBS_CMD_CREATE_SRQ) |
-		(1ull << IB_USER_VERBS_CMD_POST_SRQ_RECV) |
-		(1ull << IB_USER_VERBS_CMD_MODIFY_SRQ) |
-		(1ull << IB_USER_VERBS_CMD_QUERY_SRQ) |
-		(1ull << IB_USER_VERBS_CMD_DESTROY_SRQ);
+
+	base_dev->uverbs_cmd_mask |= BIT_ULL(IB_USER_VERBS_CMD_POST_SEND);
 
 	base_dev->node_type = RDMA_NODE_RNIC;
 	memcpy(base_dev->node_desc, SIW_NODE_DESC_COMMON,
@@ -383,12 +360,6 @@ static struct siw_device *siw_device_create(struct net_device *netdev)
 	 */
 	base_dev->phys_port_cnt = 1;
 	base_dev->dev.parent = parent;
-	base_dev->dev.dma_parms = &sdev->dma_parms;
-	dma_set_max_seg_size(&base_dev->dev, UINT_MAX);
-	dma_mask = IS_ENABLED(CONFIG_64BIT) ? DMA_BIT_MASK(64) : DMA_BIT_MASK(32);
-	if (dma_coerce_mask_and_coherent(&base_dev->dev, dma_mask))
-		goto error;
-
 	base_dev->num_comp_vectors = num_possible_cpus();
 
 	xa_init_flags(&sdev->qp_xa, XA_FLAGS_ALLOC1);

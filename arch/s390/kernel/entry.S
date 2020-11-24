@@ -52,7 +52,8 @@ STACK_SIZE  = 1 << STACK_SHIFT
 STACK_INIT = STACK_SIZE - STACK_FRAME_OVERHEAD - __PT_SIZE
 
 _TIF_WORK	= (_TIF_SIGPENDING | _TIF_NOTIFY_RESUME | _TIF_NEED_RESCHED | \
-		   _TIF_UPROBE | _TIF_GUARDED_STORAGE | _TIF_PATCH_PENDING)
+		   _TIF_UPROBE | _TIF_GUARDED_STORAGE | _TIF_PATCH_PENDING | \
+		   _TIF_NOTIFY_SIGNAL)
 _TIF_TRACE	= (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | _TIF_SECCOMP | \
 		   _TIF_SYSCALL_TRACEPOINT)
 _CIF_WORK	= (_CIF_ASCE_PRIMARY | _CIF_ASCE_SECONDARY | _CIF_FPU)
@@ -430,8 +431,6 @@ ENTRY(system_call)
 	TSTMSK	__LC_CPU_FLAGS,(_CIF_WORK-_CIF_FPU)
 	jnz	.Lsysc_work
 	BPEXIT	__TI_flags(%r12),_TIF_ISOLATE_BP
-.Lsysc_restore:
-	DISABLE_INTS
 	TSTMSK	__LC_CPU_FLAGS, _CIF_FPU
 	jz	.Lsysc_skip_fpu
 	brasl	%r14,load_fpu_regs
@@ -465,8 +464,8 @@ ENTRY(system_call)
 #endif
 	TSTMSK	__PT_FLAGS(%r11),_PIF_SYSCALL_RESTART
 	jo	.Lsysc_syscall_restart
-	TSTMSK	__TI_flags(%r12),_TIF_SIGPENDING
-	jo	.Lsysc_sigpending
+	TSTMSK	__TI_flags(%r12),(_TIF_SIGPENDING|_TIF_NOTIFY_SIGNAL)
+	jnz	.Lsysc_sigpending
 	TSTMSK	__TI_flags(%r12),_TIF_NOTIFY_RESUME
 	jo	.Lsysc_notify_resume
 	TSTMSK	__LC_CPU_FLAGS,(_CIF_ASCE_PRIMARY|_CIF_ASCE_SECONDARY)
@@ -709,10 +708,20 @@ ENTRY(pgm_check_handler)
 .Lpgm_return:
 	LOCKDEP_SYS_EXIT
 	tm	__PT_PSW+1(%r11),0x01	# returning to user ?
-	jno	.Lsysc_restore
+	jno	.Lpgm_restore
 	TSTMSK	__PT_FLAGS(%r11),_PIF_SYSCALL
 	jo	.Lsysc_do_syscall
 	j	.Lsysc_tif
+.Lpgm_restore:
+	DISABLE_INTS
+	TSTMSK	__LC_CPU_FLAGS, _CIF_FPU
+	jz	.Lpgm_skip_fpu
+	brasl	%r14,load_fpu_regs
+.Lpgm_skip_fpu:
+	mvc	__LC_RETURN_PSW(16),__PT_PSW(%r11)
+	stpt	__LC_EXIT_TIMER
+	lmg	%r0,%r15,__PT_R0(%r11)
+	b	__LC_RETURN_LPSWE
 
 #
 # PER event in supervisor state, must be kprobes
@@ -857,8 +866,8 @@ ENTRY(io_int_handler)
 	TSTMSK	__TI_flags(%r12),_TIF_PATCH_PENDING
 	jo	.Lio_patch_pending
 #endif
-	TSTMSK	__TI_flags(%r12),_TIF_SIGPENDING
-	jo	.Lio_sigpending
+	TSTMSK	__TI_flags(%r12),(_TIF_SIGPENDING|_TIF_NOTIFY_SIGNAL)
+	jnz	.Lio_sigpending
 	TSTMSK	__TI_flags(%r12),_TIF_NOTIFY_RESUME
 	jo	.Lio_notify_resume
 	TSTMSK	__TI_flags(%r12),_TIF_GUARDED_STORAGE

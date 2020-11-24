@@ -428,6 +428,12 @@ struct line {
 	 */
 	struct linereq *req;
 	unsigned int irq;
+	/*
+	 * eflags is set by edge_detector_setup(), edge_detector_stop() and
+	 * edge_detector_update(), which are themselves mutually exclusive,
+	 * and is accessed by edge_irq_thread() and debounce_work_func(),
+	 * which can both live with a slightly stale value.
+	 */
 	u64 eflags;
 	/*
 	 * timestamp_ns and req_seqno are accessed only by
@@ -504,6 +510,8 @@ struct linereq {
 	(GPIO_V2_LINE_FLAG_EDGE_RISING | \
 	 GPIO_V2_LINE_FLAG_EDGE_FALLING)
 
+#define GPIO_V2_LINE_FLAG_EDGE_BOTH GPIO_V2_LINE_EDGE_FLAGS
+
 #define GPIO_V2_LINE_VALID_FLAGS \
 	(GPIO_V2_LINE_FLAG_ACTIVE_LOW | \
 	 GPIO_V2_LINE_DIRECTION_FLAGS | \
@@ -534,6 +542,7 @@ static irqreturn_t edge_irq_thread(int irq, void *p)
 	struct line *line = p;
 	struct linereq *lr = line->req;
 	struct gpio_v2_line_event le;
+	u64 eflags;
 
 	/* Do not leak kernel stack to userspace */
 	memset(&le, 0, sizeof(le));
@@ -552,8 +561,8 @@ static irqreturn_t edge_irq_thread(int irq, void *p)
 	}
 	line->timestamp_ns = 0;
 
-	if (line->eflags == (GPIO_V2_LINE_FLAG_EDGE_RISING |
-			     GPIO_V2_LINE_FLAG_EDGE_FALLING)) {
+	eflags = READ_ONCE(line->eflags);
+	if (eflags == GPIO_V2_LINE_FLAG_EDGE_BOTH) {
 		int level = gpiod_get_value_cansleep(line->desc);
 
 		if (level)
@@ -562,10 +571,10 @@ static irqreturn_t edge_irq_thread(int irq, void *p)
 		else
 			/* Emit high-to-low event */
 			le.id = GPIO_V2_LINE_EVENT_FALLING_EDGE;
-	} else if (line->eflags == GPIO_V2_LINE_FLAG_EDGE_RISING) {
+	} else if (eflags == GPIO_V2_LINE_FLAG_EDGE_RISING) {
 		/* Emit low-to-high event */
 		le.id = GPIO_V2_LINE_EVENT_RISING_EDGE;
-	} else if (line->eflags == GPIO_V2_LINE_FLAG_EDGE_FALLING) {
+	} else if (eflags == GPIO_V2_LINE_FLAG_EDGE_FALLING) {
 		/* Emit high-to-low event */
 		le.id = GPIO_V2_LINE_EVENT_FALLING_EDGE;
 	} else {
@@ -634,6 +643,7 @@ static void debounce_work_func(struct work_struct *work)
 	struct line *line = container_of(work, struct line, work.work);
 	struct linereq *lr;
 	int level;
+	u64 eflags;
 
 	level = gpiod_get_raw_value_cansleep(line->desc);
 	if (level < 0) {
@@ -647,7 +657,8 @@ static void debounce_work_func(struct work_struct *work)
 	WRITE_ONCE(line->level, level);
 
 	/* -- edge detection -- */
-	if (!line->eflags)
+	eflags = READ_ONCE(line->eflags);
+	if (!eflags)
 		return;
 
 	/* switch from physical level to logical - if they differ */
@@ -655,8 +666,8 @@ static void debounce_work_func(struct work_struct *work)
 		level = !level;
 
 	/* ignore edges that are not being monitored */
-	if (((line->eflags == GPIO_V2_LINE_FLAG_EDGE_RISING) && !level) ||
-	    ((line->eflags == GPIO_V2_LINE_FLAG_EDGE_FALLING) && level))
+	if (((eflags == GPIO_V2_LINE_FLAG_EDGE_RISING) && !level) ||
+	    ((eflags == GPIO_V2_LINE_FLAG_EDGE_FALLING) && level))
 		return;
 
 	/* Do not leak kernel stack to userspace */
@@ -755,7 +766,7 @@ static void edge_detector_stop(struct line *line)
 
 	cancel_delayed_work_sync(&line->work);
 	WRITE_ONCE(line->sw_debounced, 0);
-	line->eflags = 0;
+	WRITE_ONCE(line->eflags, 0);
 	/* do not change line->level - see comment in debounced_value() */
 }
 
@@ -774,7 +785,7 @@ static int edge_detector_setup(struct line *line,
 		if (ret)
 			return ret;
 	}
-	line->eflags = eflags;
+	WRITE_ONCE(line->eflags, eflags);
 	if (gpio_v2_line_config_debounced(lc, line_idx)) {
 		debounce_period_us = gpio_v2_line_config_debounce_period(lc, line_idx);
 		ret = debounce_setup(line, debounce_period_us);
@@ -817,13 +828,13 @@ static int edge_detector_update(struct line *line,
 	unsigned int debounce_period_us =
 		gpio_v2_line_config_debounce_period(lc, line_idx);
 
-	if ((line->eflags == eflags) && !polarity_change &&
+	if ((READ_ONCE(line->eflags) == eflags) && !polarity_change &&
 	    (READ_ONCE(line->desc->debounce_period_us) == debounce_period_us))
 		return 0;
 
 	/* sw debounced and still will be...*/
 	if (debounce_period_us && READ_ONCE(line->sw_debounced)) {
-		line->eflags = eflags;
+		WRITE_ONCE(line->eflags, eflags);
 		WRITE_ONCE(line->desc->debounce_period_us, debounce_period_us);
 		return 0;
 	}
@@ -1479,21 +1490,10 @@ static __poll_t lineevent_poll(struct file *file,
 	return events;
 }
 
-static ssize_t lineevent_get_size(void)
-{
-#if defined(CONFIG_X86_64) && !defined(CONFIG_UML)
-	/* i386 has no padding after 'id' */
-	if (in_ia32_syscall()) {
-		struct compat_gpioeevent_data {
-			compat_u64	timestamp;
-			u32		id;
-		};
-
-		return sizeof(struct compat_gpioeevent_data);
-	}
-#endif
-	return sizeof(struct gpioevent_data);
-}
+struct compat_gpioeevent_data {
+	compat_u64	timestamp;
+	u32		id;
+};
 
 static ssize_t lineevent_read(struct file *file,
 			      char __user *buf,
@@ -1515,7 +1515,10 @@ static ssize_t lineevent_read(struct file *file,
 	 * actual sizeof() and pass this as an argument to copy_to_user() to
 	 * drop unneeded bytes from the output.
 	 */
-	ge_size = lineevent_get_size();
+	if (compat_need_64bit_alignment_fixup())
+		ge_size = sizeof(struct compat_gpioeevent_data);
+	else
+		ge_size = sizeof(struct gpioevent_data);
 	if (count < ge_size)
 		return -EINVAL;
 
