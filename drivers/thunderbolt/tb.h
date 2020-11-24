@@ -864,6 +864,10 @@ struct tb_port *tb_next_port_on_path(struct tb_port *start, struct tb_port *end,
 	     (p) = tb_next_port_on_path((src), (dst), (p)))
 
 int tb_port_get_link_speed(struct tb_port *port);
+int tb_port_get_link_width(struct tb_port *port);
+int tb_port_state(struct tb_port *port);
+int tb_port_lane_bonding_enable(struct tb_port *port);
+void tb_port_lane_bonding_disable(struct tb_port *port);
 
 int tb_switch_find_vse_cap(struct tb_switch *sw, enum tb_switch_vse_cap vsec);
 int tb_switch_find_cap(struct tb_switch *sw, enum tb_switch_cap cap);
@@ -1025,11 +1029,15 @@ void tb_debugfs_init(void);
 void tb_debugfs_exit(void);
 void tb_switch_debugfs_init(struct tb_switch *sw);
 void tb_switch_debugfs_remove(struct tb_switch *sw);
+void tb_service_debugfs_init(struct tb_service *svc);
+void tb_service_debugfs_remove(struct tb_service *svc);
 #else
 static inline void tb_debugfs_init(void) { }
 static inline void tb_debugfs_exit(void) { }
 static inline void tb_switch_debugfs_init(struct tb_switch *sw) { }
 static inline void tb_switch_debugfs_remove(struct tb_switch *sw) { }
+static inline void tb_service_debugfs_init(struct tb_service *svc) { }
+static inline void tb_service_debugfs_remove(struct tb_service *svc) { }
 #endif
 
 #ifdef CONFIG_USB4_KUNIT_TEST
