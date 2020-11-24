@@ -2956,7 +2956,8 @@ static int _regulator_list_voltage(struct regulator_dev *rdev,
 		return rdev->desc->fixed_uV;
 
 	if (ops->list_voltage) {
-		if (selector >= rdev->desc->n_voltages)
+		if (selector >= rdev->desc->n_voltages ||
+		    selector < rdev->desc->linear_min_sel)
 			return -EINVAL;
 		if (lock)
 			regulator_lock(rdev);
@@ -3107,7 +3108,8 @@ int regulator_list_hardware_vsel(struct regulator *regulator,
 	struct regulator_dev *rdev = regulator->rdev;
 	const struct regulator_ops *ops = rdev->desc->ops;
 
-	if (selector >= rdev->desc->n_voltages)
+	if (selector >= rdev->desc->n_voltages ||
+	    selector < rdev->desc->linear_min_sel)
 		return -EINVAL;
 	if (ops->set_voltage_sel != regulator_set_voltage_sel_regmap)
 		return -EOPNOTSUPP;
@@ -4030,6 +4032,12 @@ int regulator_set_voltage_time(struct regulator *regulator,
 
 	for (i = 0; i < rdev->desc->n_voltages; i++) {
 		/* We only look for exact voltage matches here */
+		if (i < rdev->desc->linear_min_sel)
+			continue;
+
+		if (old_sel >= 0 && new_sel >= 0)
+			break;
+
 		voltage = regulator_list_voltage(regulator, i);
 		if (voltage < 0)
 			return -EINVAL;
@@ -5305,6 +5313,8 @@ regulator_register(const struct regulator_desc *regulator_desc,
 		/* FIXME: this currently triggers a chicken-and-egg problem
 		 * when creating -SUPPLY symlink in sysfs to a regulator
 		 * that is just being created */
+		rdev_dbg(rdev, "will resolve supply early: %s\n",
+			 rdev->supply_name);
 		ret = regulator_resolve_supply(rdev);
 		if (!ret)
 			ret = set_machine_constraints(rdev);
@@ -5537,7 +5547,7 @@ void regulator_set_drvdata(struct regulator *regulator, void *data)
 EXPORT_SYMBOL_GPL(regulator_set_drvdata);
 
 /**
- * regulator_get_id - get regulator ID
+ * rdev_get_id - get regulator ID
  * @rdev: regulator
  */
 int rdev_get_id(struct regulator_dev *rdev)
