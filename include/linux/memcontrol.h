@@ -618,6 +618,7 @@ static inline struct lruvec *mem_cgroup_lruvec(struct mem_cgroup *memcg,
 		goto out;
 	}
 
+	VM_WARN_ON_ONCE(!memcg);
 	if (!memcg)
 		memcg = root_mem_cgroup;
 
