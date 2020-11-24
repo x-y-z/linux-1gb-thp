@@ -200,10 +200,7 @@ struct page {
 	atomic_t _refcount;
 
 #ifdef CONFIG_MEMCG
-	union {
-		struct mem_cgroup *mem_cgroup;
-		struct obj_cgroup **obj_cgroups;
-	};
+	unsigned long memcg_data;
 #endif
 
 	/*
@@ -563,6 +560,16 @@ struct mm_struct {
 
 #ifdef CONFIG_IOMMU_SUPPORT
 		u32 pasid;
+#endif
+
+#if defined(CONFIG_LOCKDEP) || defined(CONFIG_DEBUG_VM)
+		/*
+		 * Notes whether this mm has been installed on a process yet.
+		 * If not, only the task going through execve() can access this
+		 * mm, and no locking is needed around get_user_pages_remote().
+		 * This flag is only used for debug checks.
+		 */
+		bool mmap_lock_required;
 #endif
 	} __randomize_layout;
 
