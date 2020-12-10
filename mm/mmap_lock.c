@@ -3,13 +3,13 @@
 #include <trace/events/mmap_lock.h>
 
 #include <linux/mm.h>
-#include <linux/atomic.h>
 #include <linux/cgroup.h>
 #include <linux/memcontrol.h>
 #include <linux/mmap_lock.h>
+#include <linux/mutex.h>
 #include <linux/percpu.h>
+#include <linux/rcupdate.h>
 #include <linux/smp.h>
-#include <linux/spinlock.h>
 #include <linux/trace_events.h>
 
 EXPORT_TRACEPOINT_SYMBOL(mmap_lock_start_locking);
@@ -19,28 +19,13 @@ EXPORT_TRACEPOINT_SYMBOL(mmap_lock_released);
 #ifdef CONFIG_MEMCG
 
 /*
- * This is unfortunately complicated... _reg() and _unreg() may be called
- * in parallel, separately for each of our three event types. To save memory,
- * all of the event types share the same buffers. Furthermore, trace events
- * might happen in parallel with _unreg(); we need to ensure we don't free the
- * buffers before all inflights have finished. Because these events happen
- * "frequently", we also want to prevent new inflights from starting once the
- * _unreg() process begins. And, for performance reasons, we want to avoid any
- * locking in the trace event path.
- *
- * So:
- *
- * - Use a spinlock to serialize _reg() and _unreg() calls.
- * - Keep track of nested _reg() calls with a lock-protected counter.
- * - Define a flag indicating whether or not unregistration has begun (and
- *   therefore that there should be no new buffer uses going forward).
- * - Keep track of inflight buffer users with a reference count.
+ * Our various events all share the same buffer (because we don't want or need
+ * to allocate a set of buffers *per event type*), so we need to protect against
+ * concurrent _reg() and _unreg() calls, and count how many _reg() calls have
+ * been made.
  */
-static DEFINE_SPINLOCK(reg_lock);
-static int reg_types_rc; /* Protected by reg_lock. */
-static bool unreg_started; /* Doesn't need synchronization. */
-/* atomic_t instead of refcount_t, as we want ordered inc without locks. */
-static atomic_t inflight_rc = ATOMIC_INIT(0);
+static DEFINE_MUTEX(reg_lock);
+static int reg_refcount; /* Protected by reg_lock. */
 
 /*
  * Size of the buffer for memcg path names. Ignoring stack trace support,
@@ -54,119 +39,107 @@ static atomic_t inflight_rc = ATOMIC_INIT(0);
  */
 #define CONTEXT_COUNT 4
 
-DEFINE_PER_CPU(char *, memcg_path_buf);
-DEFINE_PER_CPU(int, memcg_path_buf_idx);
+static DEFINE_PER_CPU(char __rcu *, memcg_path_buf);
+static char **tmp_bufs;
+static DEFINE_PER_CPU(int, memcg_path_buf_idx);
+
+/* Called with reg_lock held. */
+static void free_memcg_path_bufs(void)
+{
+	int cpu;
+	char **old = tmp_bufs;
+
+	for_each_possible_cpu(cpu) {
+		*(old++) = rcu_dereference_protected(
+			per_cpu(memcg_path_buf, cpu),
+			lockdep_is_held(&reg_lock));
+		rcu_assign_pointer(per_cpu(memcg_path_buf, cpu), NULL);
+	}
+
+	/* Wait for inflight memcg_path_buf users to finish. */
+	synchronize_rcu();
+
+	old = tmp_bufs;
+	for_each_possible_cpu(cpu) {
+		kfree(*(old++));
+	}
+
+	kfree(tmp_bufs);
+	tmp_bufs = NULL;
+}
 
 int trace_mmap_lock_reg(void)
 {
-	unsigned long flags;
 	int cpu;
+	char *new;
 
-	/*
-	 * Serialize _reg() and _unreg(). Without this, e.g. _unreg() might
-	 * start cleaning up while _reg() is only partially completed.
-	 */
-	spin_lock_irqsave(&reg_lock, flags);
+	mutex_lock(&reg_lock);
 
 	/* If the refcount is going 0->1, proceed with allocating buffers. */
-	if (reg_types_rc++)
+	if (reg_refcount++)
 		goto out;
 
-	for_each_possible_cpu(cpu) {
-		per_cpu(memcg_path_buf, cpu) = NULL;
-	}
-	for_each_possible_cpu(cpu) {
-		per_cpu(memcg_path_buf, cpu) = kmalloc(
-			MEMCG_PATH_BUF_SIZE * CONTEXT_COUNT, GFP_NOWAIT);
-		if (per_cpu(memcg_path_buf, cpu) == NULL)
-			goto out_fail;
-		per_cpu(memcg_path_buf_idx, cpu) = 0;
-	}
+	tmp_bufs = kmalloc_array(num_possible_cpus(), sizeof(*tmp_bufs),
+				 GFP_KERNEL);
+	if (tmp_bufs == NULL)
+		goto out_fail;
 
-	/* Reset unreg_started flag, allowing new trace events. */
-	WRITE_ONCE(unreg_started, false);
-	/* Add the registration +1 to the inflight refcount. */
-	atomic_inc(&inflight_rc);
+	for_each_possible_cpu(cpu) {
+		new = kmalloc(MEMCG_PATH_BUF_SIZE * CONTEXT_COUNT, GFP_KERNEL);
+		if (new == NULL)
+			goto out_fail_free;
+		rcu_assign_pointer(per_cpu(memcg_path_buf, cpu), new);
+		/* Don't need to wait for inflights, they'd have gotten NULL. */
+	}
 
 out:
-	spin_unlock_irqrestore(&reg_lock, flags);
+	mutex_unlock(&reg_lock);
 	return 0;
 
+out_fail_free:
+	free_memcg_path_bufs();
 out_fail:
-	for_each_possible_cpu(cpu) {
-		if (per_cpu(memcg_path_buf, cpu) != NULL)
-			kfree(per_cpu(memcg_path_buf, cpu));
-		else
-			break;
-	}
+	/* Since we failed, undo the earlier ref increment. */
+	--reg_refcount;
 
-	/* Since we failed, undo the earlier increment. */
-	--reg_types_rc;
-
-	spin_unlock_irqrestore(&reg_lock, flags);
+	mutex_unlock(&reg_lock);
 	return -ENOMEM;
 }
 
 void trace_mmap_lock_unreg(void)
 {
-	unsigned long flags;
-	int cpu;
-
-	spin_lock_irqsave(&reg_lock, flags);
+	mutex_lock(&reg_lock);
 
 	/* If the refcount is going 1->0, proceed with freeing buffers. */
-	if (--reg_types_rc)
+	if (--reg_refcount)
 		goto out;
 
-	/* This was the last registration; start preventing new events... */
-	WRITE_ONCE(unreg_started, true);
-	/* Remove the registration +1 from the inflight refcount. */
-	atomic_dec(&inflight_rc);
-	/*
-	 * Wait for inflight refcount to be zero (all inflights stopped). Since
-	 * we have a spinlock we can't sleep, so just spin. Because trace events
-	 * are "fast", and because we stop new inflights from starting at this
-	 * point with unreg_started, this should be a short spin.
-	 */
-	while (atomic_read(&inflight_rc))
-		barrier();
-
-	for_each_possible_cpu(cpu) {
-		kfree(per_cpu(memcg_path_buf, cpu));
-	}
+	free_memcg_path_bufs();
 
 out:
-	spin_unlock_irqrestore(&reg_lock, flags);
+	mutex_unlock(&reg_lock);
 }
 
 static inline char *get_memcg_path_buf(void)
 {
+	char *buf;
 	int idx;
 
-	/*
-	 * If unregistration is happening, stop. Yes, this check is racy;
-	 * that's fine. It just means _unreg() might spin waiting for an extra
-	 * event or two. Use-after-free is actually prevented by the refcount.
-	 */
-	if (READ_ONCE(unreg_started))
+	rcu_read_lock();
+	buf = rcu_dereference(*this_cpu_ptr(&memcg_path_buf));
+	if (buf == NULL) {
+		rcu_read_unlock();
 		return NULL;
-	/*
-	 * Take a reference, unless the registration +1 has been released
-	 * and there aren't already existing inflights (refcount is zero).
-	 */
-	if (!atomic_inc_not_zero(&inflight_rc))
-		return NULL;
-
+	}
 	idx = this_cpu_add_return(memcg_path_buf_idx, MEMCG_PATH_BUF_SIZE) -
 	      MEMCG_PATH_BUF_SIZE;
-	return &this_cpu_read(memcg_path_buf)[idx];
+	return &buf[idx];
 }
 
 static inline void put_memcg_path_buf(void)
 {
 	this_cpu_sub(memcg_path_buf_idx, MEMCG_PATH_BUF_SIZE);
-	/* We're done with this buffer; drop the reference. */
-	atomic_dec(&inflight_rc);
+	rcu_read_unlock();
 }
 
 /*
