@@ -193,9 +193,6 @@ xdr_inline_pages(struct xdr_buf *xdr, unsigned int offset,
 
 	tail->iov_base = buf + offset;
 	tail->iov_len = buflen - offset;
-	if ((xdr->page_len & 3) == 0)
-		tail->iov_len -= sizeof(__be32);
-
 	xdr->buflen += len;
 }
 EXPORT_SYMBOL_GPL(xdr_inline_pages);
@@ -669,7 +666,7 @@ void xdr_init_encode(struct xdr_stream *xdr, struct xdr_buf *buf, __be32 *p,
 	struct kvec *iov = buf->head;
 	int scratch_len = buf->buflen - buf->page_len - buf->tail[0].iov_len;
 
-	xdr_set_scratch_buffer(xdr, NULL, 0);
+	xdr_reset_scratch_buffer(xdr);
 	BUG_ON(scratch_len < 0);
 	xdr->buf = buf;
 	xdr->iov = iov;
@@ -713,7 +710,7 @@ inline void xdr_commit_encode(struct xdr_stream *xdr)
 	page = page_address(*xdr->page_ptr);
 	memcpy(xdr->scratch.iov_base, page, shift);
 	memmove(page, page + shift, (void *)xdr->p - page);
-	xdr->scratch.iov_len = 0;
+	xdr_reset_scratch_buffer(xdr);
 }
 EXPORT_SYMBOL_GPL(xdr_commit_encode);
 
@@ -743,8 +740,7 @@ static __be32 *xdr_get_next_encode_buffer(struct xdr_stream *xdr,
 	 * the "scratch" iov to track any temporarily unused fragment of
 	 * space at the end of the previous buffer:
 	 */
-	xdr->scratch.iov_base = xdr->p;
-	xdr->scratch.iov_len = frag1bytes;
+	xdr_set_scratch_buffer(xdr, xdr->p, frag1bytes);
 	p = page_address(*xdr->page_ptr);
 	/*
 	 * Note this is where the next encode will start after we've
@@ -970,19 +966,22 @@ void xdr_write_pages(struct xdr_stream *xdr, struct page **pages, unsigned int b
 }
 EXPORT_SYMBOL_GPL(xdr_write_pages);
 
-static void xdr_set_iov(struct xdr_stream *xdr, struct kvec *iov,
-		unsigned int len)
+static unsigned int xdr_set_iov(struct xdr_stream *xdr, struct kvec *iov,
+				unsigned int base, unsigned int len)
 {
 	if (len > iov->iov_len)
 		len = iov->iov_len;
-	xdr->p = (__be32*)iov->iov_base;
+	if (unlikely(base > len))
+		base = len;
+	xdr->p = (__be32*)(iov->iov_base + base);
 	xdr->end = (__be32*)(iov->iov_base + len);
 	xdr->iov = iov;
 	xdr->page_ptr = NULL;
+	return len - base;
 }
 
-static int xdr_set_page_base(struct xdr_stream *xdr,
-		unsigned int base, unsigned int len)
+static unsigned int xdr_set_page_base(struct xdr_stream *xdr,
+				      unsigned int base, unsigned int len)
 {
 	unsigned int pgnr;
 	unsigned int maxlen;
@@ -991,9 +990,11 @@ static int xdr_set_page_base(struct xdr_stream *xdr,
 	void *kaddr;
 
 	maxlen = xdr->buf->page_len;
-	if (base >= maxlen)
-		return -EINVAL;
-	maxlen -= base;
+	if (base >= maxlen) {
+		base = maxlen;
+		maxlen = 0;
+	} else
+		maxlen -= base;
 	if (len > maxlen)
 		len = maxlen;
 
@@ -1011,14 +1012,16 @@ static int xdr_set_page_base(struct xdr_stream *xdr,
 		pgend = PAGE_SIZE;
 	xdr->end = (__be32*)(kaddr + pgend);
 	xdr->iov = NULL;
-	return 0;
+	return len;
 }
 
 static void xdr_set_page(struct xdr_stream *xdr, unsigned int base,
 			 unsigned int len)
 {
-	if (xdr_set_page_base(xdr, base, len) < 0)
-		xdr_set_iov(xdr, xdr->buf->tail, xdr->nwords << 2);
+	if (xdr_set_page_base(xdr, base, len) == 0) {
+		base -= xdr->buf->page_len;
+		xdr_set_iov(xdr, xdr->buf->tail, base, len);
+	}
 }
 
 static void xdr_set_next_page(struct xdr_stream *xdr)
@@ -1027,17 +1030,18 @@ static void xdr_set_next_page(struct xdr_stream *xdr)
 
 	newbase = (1 + xdr->page_ptr - xdr->buf->pages) << PAGE_SHIFT;
 	newbase -= xdr->buf->page_base;
-
-	xdr_set_page(xdr, newbase, PAGE_SIZE);
+	if (newbase < xdr->buf->page_len)
+		xdr_set_page_base(xdr, newbase, xdr_stream_remaining(xdr));
+	else
+		xdr_set_iov(xdr, xdr->buf->tail, 0, xdr_stream_remaining(xdr));
 }
 
 static bool xdr_set_next_buffer(struct xdr_stream *xdr)
 {
 	if (xdr->page_ptr != NULL)
 		xdr_set_next_page(xdr);
-	else if (xdr->iov == xdr->buf->head) {
-		xdr_set_page(xdr, 0, PAGE_SIZE);
-	}
+	else if (xdr->iov == xdr->buf->head)
+		xdr_set_page(xdr, 0, xdr_stream_remaining(xdr));
 	return xdr->p != xdr->end;
 }
 
@@ -1052,15 +1056,11 @@ void xdr_init_decode(struct xdr_stream *xdr, struct xdr_buf *buf, __be32 *p,
 		     struct rpc_rqst *rqst)
 {
 	xdr->buf = buf;
-	xdr->scratch.iov_base = NULL;
-	xdr->scratch.iov_len = 0;
+	xdr_reset_scratch_buffer(xdr);
 	xdr->nwords = XDR_QUADLEN(buf->len);
-	if (buf->head[0].iov_len != 0)
-		xdr_set_iov(xdr, buf->head, buf->len);
-	else if (buf->page_len != 0)
-		xdr_set_page_base(xdr, 0, buf->len);
-	else
-		xdr_set_iov(xdr, buf->head, buf->len);
+	if (xdr_set_iov(xdr, buf->head, 0, buf->len) == 0 &&
+	    xdr_set_page_base(xdr, 0, buf->len) == 0)
+		xdr_set_iov(xdr, buf->tail, 0, buf->len);
 	if (p != NULL && p > xdr->p && xdr->end >= p) {
 		xdr->nwords -= p - xdr->p;
 		xdr->p = p;
@@ -1100,24 +1100,6 @@ static __be32 * __xdr_inline_decode(struct xdr_stream *xdr, size_t nbytes)
 	xdr->nwords -= nwords;
 	return p;
 }
-
-/**
- * xdr_set_scratch_buffer - Attach a scratch buffer for decoding data.
- * @xdr: pointer to xdr_stream struct
- * @buf: pointer to an empty buffer
- * @buflen: size of 'buf'
- *
- * The scratch buffer is used when decoding from an array of pages.
- * If an xdr_inline_decode() call spans across page boundaries, then
- * we copy the data into the scratch buffer in order to allow linear
- * access.
- */
-void xdr_set_scratch_buffer(struct xdr_stream *xdr, void *buf, size_t buflen)
-{
-	xdr->scratch.iov_base = buf;
-	xdr->scratch.iov_len = buflen;
-}
-EXPORT_SYMBOL_GPL(xdr_set_scratch_buffer);
 
 static __be32 *xdr_copy_to_scratch(struct xdr_stream *xdr, size_t nbytes)
 {
@@ -1217,44 +1199,33 @@ static unsigned int xdr_align_pages(struct xdr_stream *xdr, unsigned int len)
 }
 
 /**
- * xdr_read_pages - Ensure page-based XDR data to decode is aligned at current pointer position
+ * xdr_read_pages - align page-based XDR data to current pointer position
  * @xdr: pointer to xdr_stream struct
  * @len: number of bytes of page data
  *
  * Moves data beyond the current pointer position from the XDR head[] buffer
- * into the page list. Any data that lies beyond current position + "len"
- * bytes is moved into the XDR tail[].
+ * into the page list. Any data that lies beyond current position + @len
+ * bytes is moved into the XDR tail[]. The xdr_stream current position is
+ * then advanced past that data to align to the next XDR object in the tail.
  *
  * Returns the number of XDR encoded bytes now contained in the pages
  */
 unsigned int xdr_read_pages(struct xdr_stream *xdr, unsigned int len)
 {
-	struct xdr_buf *buf = xdr->buf;
-	struct kvec *iov;
-	unsigned int nwords;
-	unsigned int end;
-	unsigned int padding;
+	unsigned int nwords = XDR_QUADLEN(len);
+	unsigned int base, end, pglen;
 
-	len = xdr_align_pages(xdr, len);
-	if (len == 0)
+	pglen = xdr_align_pages(xdr, nwords << 2);
+	if (pglen == 0)
 		return 0;
-	nwords = XDR_QUADLEN(len);
-	padding = (nwords << 2) - len;
-	xdr->iov = iov = buf->tail;
-	/* Compute remaining message length.  */
-	end = ((xdr->nwords - nwords) << 2) + padding;
-	if (end > iov->iov_len)
-		end = iov->iov_len;
 
-	/*
-	 * Position current pointer at beginning of tail, and
-	 * set remaining message length.
-	 */
-	xdr->p = (__be32 *)((char *)iov->iov_base + padding);
-	xdr->end = (__be32 *)((char *)iov->iov_base + end);
-	xdr->page_ptr = NULL;
-	xdr->nwords = XDR_QUADLEN(end - padding);
-	return len;
+	xdr->nwords -= nwords;
+	base = (nwords << 2) - pglen;
+	end = xdr_stream_remaining(xdr) - pglen;
+
+	if (xdr_set_iov(xdr, xdr->buf->tail, base, end) == 0)
+		xdr->nwords = 0;
+	return len <= pglen ? len : pglen;
 }
 EXPORT_SYMBOL_GPL(xdr_read_pages);
 
@@ -1270,9 +1241,11 @@ uint64_t xdr_align_data(struct xdr_stream *xdr, uint64_t offset, uint32_t length
 
 	xdr_realign_pages(xdr);
 	from = xdr_page_pos(xdr);
-	bytes = xdr->nwords << 2;
+	bytes = xdr_stream_remaining(xdr);
 	if (length < bytes)
 		bytes = length;
+	if (bytes < length)
+		length = bytes;
 
 	/* Move page data to the left */
 	if (from > offset) {
@@ -1289,7 +1262,7 @@ uint64_t xdr_align_data(struct xdr_stream *xdr, uint64_t offset, uint32_t length
 	}
 
 	xdr->nwords -= XDR_QUADLEN(length);
-	xdr_set_page(xdr, from + length, PAGE_SIZE);
+	xdr_set_page(xdr, from + length, xdr_stream_remaining(xdr));
 	return length;
 }
 EXPORT_SYMBOL_GPL(xdr_align_data);
@@ -1307,13 +1280,14 @@ uint64_t xdr_expand_hole(struct xdr_stream *xdr, uint64_t offset, uint64_t lengt
 
 	xdr_realign_pages(xdr);
 	from = xdr_page_pos(xdr);
-	bytes = xdr->nwords << 2;
+	bytes = xdr_stream_remaining(xdr);
 
 	if (offset + length + bytes > buf->page_len) {
 		unsigned int shift = (offset + length + bytes) - buf->page_len;
 		unsigned int res = _shift_data_right_tail(buf, from + bytes - shift, shift);
 		truncated = shift - res;
 		xdr->nwords -= XDR_QUADLEN(truncated);
+		buf->len -= XDR_QUADLEN(truncated) << 2;
 		bytes -= shift;
 	}
 
@@ -1325,8 +1299,8 @@ uint64_t xdr_expand_hole(struct xdr_stream *xdr, uint64_t offset, uint64_t lengt
 					bytes);
 	_zero_pages(buf->pages, buf->page_base + offset, length);
 
-	buf->len += length - (from - offset) - truncated;
-	xdr_set_page(xdr, offset + length, PAGE_SIZE);
+	buf->len += length - (from - offset);
+	xdr_set_page(xdr, offset + length, xdr_stream_remaining(xdr));
 	return length;
 }
 EXPORT_SYMBOL_GPL(xdr_expand_hole);
@@ -1379,9 +1353,8 @@ EXPORT_SYMBOL_GPL(xdr_buf_from_iov);
  *
  * Returns -1 if base of length are out of bounds.
  */
-int
-xdr_buf_subsegment(struct xdr_buf *buf, struct xdr_buf *subbuf,
-			unsigned int base, unsigned int len)
+int xdr_buf_subsegment(const struct xdr_buf *buf, struct xdr_buf *subbuf,
+		       unsigned int base, unsigned int len)
 {
 	subbuf->buflen = subbuf->len = len;
 	if (base < buf->head[0].iov_len) {
@@ -1427,6 +1400,51 @@ xdr_buf_subsegment(struct xdr_buf *buf, struct xdr_buf *subbuf,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(xdr_buf_subsegment);
+
+/**
+ * xdr_stream_subsegment - set @subbuf to a portion of @xdr
+ * @xdr: an xdr_stream set up for decoding
+ * @subbuf: the result buffer
+ * @nbytes: length of @xdr to extract, in bytes
+ *
+ * Sets up @subbuf to represent a portion of @xdr. The portion
+ * starts at the current offset in @xdr, and extends for a length
+ * of @nbytes. If this is successful, @xdr is advanced to the next
+ * position following that portion.
+ *
+ * Return values:
+ *   %true: @subbuf has been initialized, and @xdr has been advanced.
+ *   %false: a bounds error has occurred
+ */
+bool xdr_stream_subsegment(struct xdr_stream *xdr, struct xdr_buf *subbuf,
+			   unsigned int nbytes)
+{
+	unsigned int remaining, offset, len;
+
+	if (xdr_buf_subsegment(xdr->buf, subbuf, xdr_stream_pos(xdr), nbytes))
+		return false;
+
+	if (subbuf->head[0].iov_len)
+		if (!__xdr_inline_decode(xdr, subbuf->head[0].iov_len))
+			return false;
+
+	remaining = subbuf->page_len;
+	offset = subbuf->page_base;
+	while (remaining) {
+		len = min_t(unsigned int, remaining, PAGE_SIZE) - offset;
+
+		if (xdr->p == xdr->end && !xdr_set_next_buffer(xdr))
+			return false;
+		if (!__xdr_inline_decode(xdr, len))
+			return false;
+
+		remaining -= len;
+		offset = 0;
+	}
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(xdr_stream_subsegment);
 
 /**
  * xdr_buf_trim - lop at most "len" bytes off the end of "buf"
@@ -1942,10 +1960,8 @@ ssize_t xdr_stream_decode_string_dup(struct xdr_stream *xdr, char **str,
 
 	ret = xdr_stream_decode_opaque_inline(xdr, &p, maxlen);
 	if (ret > 0) {
-		char *s = kmalloc(ret + 1, gfp_flags);
+		char *s = kmemdup_nul(p, ret, gfp_flags);
 		if (s != NULL) {
-			memcpy(s, p, ret);
-			s[ret] = '\0';
 			*str = s;
 			return strlen(s);
 		}

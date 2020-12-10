@@ -25,6 +25,7 @@
 #include <linux/dcbnl.h>
 #include <linux/delay.h>
 #include <linux/device.h>
+#include <linux/ethtool.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/pci.h>
@@ -80,12 +81,13 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_FD_FORWARD_TC_B,
 	HNAE3_DEV_SUPPORT_PTP_B,
 	HNAE3_DEV_SUPPORT_INT_QL_B,
-	HNAE3_DEV_SUPPORT_SIMPLE_BD_B,
+	HNAE3_DEV_SUPPORT_HW_TX_CSUM_B,
 	HNAE3_DEV_SUPPORT_TX_PUSH_B,
 	HNAE3_DEV_SUPPORT_PHY_IMP_B,
 	HNAE3_DEV_SUPPORT_TQP_TXRX_INDEP_B,
 	HNAE3_DEV_SUPPORT_HW_PAD_B,
 	HNAE3_DEV_SUPPORT_STASH_B,
+	HNAE3_DEV_SUPPORT_UDP_TUNNEL_CSUM_B,
 };
 
 #define hnae3_dev_fd_supported(hdev) \
@@ -112,8 +114,8 @@ enum HNAE3_DEV_CAP_BITS {
 #define hnae3_dev_int_ql_supported(hdev) \
 	test_bit(HNAE3_DEV_SUPPORT_INT_QL_B, (hdev)->ae_dev->caps)
 
-#define hnae3_dev_simple_bd_supported(hdev) \
-	test_bit(HNAE3_DEV_SUPPORT_SIMPLE_BD_B, (hdev)->ae_dev->caps)
+#define hnae3_dev_hw_csum_supported(hdev) \
+	test_bit(HNAE3_DEV_SUPPORT_HW_TX_CSUM_B, (hdev)->ae_dev->caps)
 
 #define hnae3_dev_tx_push_supported(hdev) \
 	test_bit(HNAE3_DEV_SUPPORT_TX_PUSH_B, (hdev)->ae_dev->caps)
@@ -278,6 +280,7 @@ struct hnae3_dev_specs {
 	u16 rss_ind_tbl_size;
 	u16 rss_key_size;
 	u16 int_ql_max; /* max value of interrupt coalesce based on INT_QL */
+	u16 max_int_gl; /* max value of interrupt coalesce based on INT_GL */
 	u8 max_non_tso_bd_num; /* max BD number of one non-TSO packet */
 };
 
@@ -688,6 +691,7 @@ struct hnae3_knic_private_info {
 struct hnae3_roce_private_info {
 	struct net_device *netdev;
 	void __iomem *roce_io_base;
+	void __iomem *roce_mem_base;
 	int base_vector;
 	int num_vectors;
 
@@ -715,6 +719,11 @@ struct hnae3_roce_private_info {
 #define HNAE3_UPE		(HNAE3_USER_UPE | HNAE3_OVERFLOW_UPE)
 #define HNAE3_MPE		(HNAE3_USER_MPE | HNAE3_OVERFLOW_MPE)
 
+enum hnae3_pflag {
+	HNAE3_PFLAG_LIMIT_PROMISC,
+	HNAE3_PFLAG_MAX
+};
+
 struct hnae3_handle {
 	struct hnae3_client *client;
 	struct pci_dev *pdev;
@@ -737,6 +746,9 @@ struct hnae3_handle {
 
 	/* Network interface message level enabled bits */
 	u32 msg_enable;
+
+	unsigned long supported_pflags;
+	unsigned long priv_flags;
 };
 
 #define hnae3_set_field(origin, mask, shift, val) \

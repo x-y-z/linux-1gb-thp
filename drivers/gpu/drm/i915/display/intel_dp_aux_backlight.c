@@ -343,13 +343,20 @@ intel_dp_aux_display_control_capable(struct intel_connector *connector)
 	 * the panel can support backlight control over the aux channel
 	 */
 	if (intel_dp->edp_dpcd[1] & DP_EDP_TCON_BACKLIGHT_ADJUSTMENT_CAP &&
-	    (intel_dp->edp_dpcd[2] & DP_EDP_BACKLIGHT_BRIGHTNESS_AUX_SET_CAP) &&
-	    !(intel_dp->edp_dpcd[2] & DP_EDP_BACKLIGHT_BRIGHTNESS_PWM_PIN_CAP)) {
+	    (intel_dp->edp_dpcd[2] & DP_EDP_BACKLIGHT_BRIGHTNESS_AUX_SET_CAP)) {
 		drm_dbg_kms(&i915->drm, "AUX Backlight Control Supported!\n");
 		return true;
 	}
 	return false;
 }
+
+static const struct intel_panel_bl_funcs intel_dp_bl_funcs = {
+	.setup = intel_dp_aux_setup_backlight,
+	.enable = intel_dp_aux_enable_backlight,
+	.disable = intel_dp_aux_disable_backlight,
+	.set = intel_dp_aux_set_backlight,
+	.get = intel_dp_aux_get_backlight,
+};
 
 int intel_dp_aux_init_backlight_funcs(struct intel_connector *intel_connector)
 {
@@ -380,11 +387,7 @@ int intel_dp_aux_init_backlight_funcs(struct intel_connector *intel_connector)
 		return -ENODEV;
 	}
 
-	panel->backlight.setup = intel_dp_aux_setup_backlight;
-	panel->backlight.enable = intel_dp_aux_enable_backlight;
-	panel->backlight.disable = intel_dp_aux_disable_backlight;
-	panel->backlight.set = intel_dp_aux_set_backlight;
-	panel->backlight.get = intel_dp_aux_get_backlight;
+	panel->backlight.funcs = &intel_dp_bl_funcs;
 
 	return 0;
 }

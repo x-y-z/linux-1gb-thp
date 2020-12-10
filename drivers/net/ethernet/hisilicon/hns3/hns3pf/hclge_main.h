@@ -27,9 +27,11 @@
 	(HCLGE_PF_CFG_BLOCK_SIZE / HCLGE_CFG_RD_LEN_BYTES)
 
 #define HCLGE_VECTOR_REG_BASE		0x20000
+#define HCLGE_VECTOR_EXT_REG_BASE	0x30000
 #define HCLGE_MISC_VECTOR_REG_BASE	0x20400
 
 #define HCLGE_VECTOR_REG_OFFSET		0x4
+#define HCLGE_VECTOR_REG_OFFSET_H	0x1000
 #define HCLGE_VECTOR_VF_OFFSET		0x100000
 
 #define HCLGE_CMDQ_TX_ADDR_L_REG	0x27000
@@ -278,6 +280,7 @@ struct hclge_mac {
 
 struct hclge_hw {
 	void __iomem *io_base;
+	void __iomem *mem_base;
 	struct hclge_mac mac;
 	int num_vec;
 	struct hclge_cmq cmq;
@@ -767,7 +770,6 @@ struct hclge_dev {
 	u16 num_msi;
 	u16 num_msi_left;
 	u16 num_msi_used;
-	u16 roce_base_msix_offset;
 	u32 base_msi_vector;
 	u16 *vector_status;
 	int *vector_irq;
@@ -848,15 +850,18 @@ struct hclge_tx_vtag_cfg {
 	bool insert_tag2_en;	/* Whether insert outer vlan tag */
 	u16  default_tag1;	/* The default inner vlan tag to insert */
 	u16  default_tag2;	/* The default outer vlan tag to insert */
+	bool tag_shift_mode_en;
 };
 
 /* VPort level vlan tag configuration for RX direction */
 struct hclge_rx_vtag_cfg {
-	u8 rx_vlan_offload_en;	/* Whether enable rx vlan offload */
-	u8 strip_tag1_en;	/* Whether strip inner vlan tag */
-	u8 strip_tag2_en;	/* Whether strip outer vlan tag */
-	u8 vlan1_vlan_prionly;	/* Inner VLAN Tag up to descriptor Enable */
-	u8 vlan2_vlan_prionly;	/* Outer VLAN Tag up to descriptor Enable */
+	bool rx_vlan_offload_en; /* Whether enable rx vlan offload */
+	bool strip_tag1_en;	 /* Whether strip inner vlan tag */
+	bool strip_tag2_en;	 /* Whether strip outer vlan tag */
+	bool vlan1_vlan_prionly; /* Inner vlan tag up to descriptor enable */
+	bool vlan2_vlan_prionly; /* Outer vlan tag up to descriptor enable */
+	bool strip_tag1_discard_en; /* Inner vlan tag discard for BD enable */
+	bool strip_tag2_discard_en; /* Outer vlan tag discard for BD enable */
 };
 
 struct hclge_rss_tuple_cfg {
