@@ -185,9 +185,7 @@ submit_bio_retry:
 			flush_dcache_page(page);
 
 			SetPageUptodate(page);
-			/* TODO: could we unlock the page earlier? */
 			unlock_page(ipage);
-			put_page(ipage);
 
 			/* imply err = 0, see erofs_map_blocks */
 			goto has_updated;
@@ -261,12 +259,13 @@ static void erofs_raw_access_readahead(struct readahead_control *rac)
 	erofs_off_t last_block;
 	unsigned int eblks;
 	struct bio *bio = NULL;
-	struct page *page;
+	struct folio *folio;
 
 	trace_erofs_readpages(rac->mapping->host, readahead_index(rac),
 			readahead_count(rac), true);
 
-	while ((page = readahead_page(rac))) {
+	while ((folio = readahead_folio(rac))) {
+		struct page *page = &folio->page;
 		prefetchw(&page->flags);
 
 		bio = erofs_read_raw_page(bio, rac->mapping, page, &last_block,
@@ -280,8 +279,6 @@ static void erofs_raw_access_readahead(struct readahead_control *rac)
 
 			bio = NULL;
 		}
-
-		put_page(page);
 	}
 
 	if (bio)

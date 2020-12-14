@@ -252,7 +252,7 @@ int ext4_mpage_readpages(struct inode *inode,
 		unsigned first_hole = blocks_per_page;
 
 		if (rac) {
-			page = readahead_page(rac);
+			page = &readahead_folio(rac)->page;
 			prefetchw(&page->flags);
 		}
 
@@ -307,7 +307,7 @@ int ext4_mpage_readpages(struct inode *inode,
 					zero_user_segment(page, 0,
 							  PAGE_SIZE);
 					unlock_page(page);
-					goto next_page;
+					continue;
 				}
 			}
 			if ((map.m_flags & EXT4_MAP_MAPPED) == 0) {
@@ -345,7 +345,7 @@ int ext4_mpage_readpages(struct inode *inode,
 					goto set_error_page;
 				SetPageUptodate(page);
 				unlock_page(page);
-				goto next_page;
+				continue;
 			}
 		} else if (fully_mapped) {
 			SetPageMappedToDisk(page);
@@ -393,7 +393,7 @@ int ext4_mpage_readpages(struct inode *inode,
 			bio = NULL;
 		} else
 			last_block_in_bio = blocks[blocks_per_page - 1];
-		goto next_page;
+		continue;
 	confused:
 		if (bio) {
 			submit_bio(bio);
@@ -403,9 +403,6 @@ int ext4_mpage_readpages(struct inode *inode,
 			block_read_full_page(page, ext4_get_block);
 		else
 			unlock_page(page);
-	next_page:
-		if (rac)
-			put_page(page);
 	}
 	if (bio)
 		submit_bio(bio);

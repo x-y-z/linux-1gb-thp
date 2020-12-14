@@ -908,3 +908,11 @@ Calling conventions for file_open_root() changed; now it takes struct path *
 instead of passing mount and dentry separately.  For callers that used to
 pass <mnt, mnt->mnt_root> pair (i.e. the root of given mount), a new helper
 is provided - file_open_root_mnt().  In-tree users adjusted.
+
+---
+
+**mandatory**
+
+->readahead() has changed the reference count on struct page so that
+the filesystem *does not* drop a reference.  This is in line with how
+->readpage works but different from how ->readpages used to work.

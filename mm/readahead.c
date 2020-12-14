@@ -118,7 +118,7 @@ static void read_pages(struct readahead_control *rac, struct list_head *pages,
 		bool skip_page)
 {
 	const struct address_space_operations *aops = rac->mapping->a_ops;
-	struct page *page;
+	struct folio *folio;
 	struct blk_plug plug;
 
 	if (!readahead_count(rac))
@@ -128,11 +128,9 @@ static void read_pages(struct readahead_control *rac, struct list_head *pages,
 
 	if (aops->readahead) {
 		aops->readahead(rac);
-		/* Clean up the remaining pages */
-		while ((page = readahead_page(rac))) {
-			unlock_page(page);
-			put_page(page);
-		}
+		/* Clean up the remaining folios */
+		while ((folio = readahead_folio(rac)))
+			folio_unlock(folio);
 	} else if (aops->readpages) {
 		aops->readpages(rac->file, rac->mapping, pages,
 				readahead_count(rac));
@@ -141,10 +139,8 @@ static void read_pages(struct readahead_control *rac, struct list_head *pages,
 		rac->_index += rac->_nr_pages;
 		rac->_nr_pages = 0;
 	} else {
-		while ((page = readahead_page(rac))) {
-			aops->readpage(rac->file, page);
-			put_page(page);
-		}
+		while ((folio = readahead_folio(rac)))
+			aops->readpage(rac->file, &folio->page);
 	}
 
 	blk_finish_plug(&plug);
@@ -224,6 +220,8 @@ void page_cache_ra_unbounded(struct readahead_control *ractl,
 			read_pages(ractl, &page_pool, true);
 			i = ractl->_index + ractl->_nr_pages - index - 1;
 			continue;
+		} else {
+			folio_put(folio);
 		}
 		if (i == nr_to_read - lookahead_size)
 			folio_set_readahead(folio);

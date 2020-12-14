@@ -3665,21 +3665,20 @@ out:
 	return ret;
 }
 
-static inline void contiguous_readpages(struct page *pages[], int nr_pages,
+static inline void contiguous_readpages(struct folio *folios[], int nr_pages,
 					u64 start, u64 end,
 					struct extent_map **em_cached,
 					struct btrfs_bio_ctrl *bio_ctrl,
 					u64 *prev_em_start)
 {
-	struct btrfs_inode *inode = BTRFS_I(pages[0]->mapping->host);
+	struct btrfs_inode *inode = BTRFS_I(folios[0]->mapping->host);
 	int index;
 
 	btrfs_lock_and_flush_ordered_range(inode, start, end, NULL);
 
 	for (index = 0; index < nr_pages; index++) {
-		btrfs_do_readpage(pages[index], em_cached, bio_ctrl,
+		btrfs_do_readpage(&folios[index]->page, em_cached, bio_ctrl,
 				  REQ_RAHEAD, prev_em_start);
-		put_page(pages[index]);
 	}
 }
 
@@ -5024,12 +5023,12 @@ int extent_writepages(struct address_space *mapping,
 void extent_readahead(struct readahead_control *rac)
 {
 	struct btrfs_bio_ctrl bio_ctrl = { 0 };
-	struct page *pagepool[16];
+	struct folio *pagepool[16];
 	struct extent_map *em_cached = NULL;
 	u64 prev_em_start = (u64)-1;
 	int nr;
 
-	while ((nr = readahead_page_batch(rac, pagepool))) {
+	while ((nr = readahead_folio_batch(rac, pagepool))) {
 		u64 contig_start = readahead_pos(rac);
 		u64 contig_end = contig_start + readahead_batch_length(rac) - 1;
 

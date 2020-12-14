@@ -803,15 +803,14 @@ cache in your filesystem.  The following members are defined:
 
 ``readahead``
 	Called by the VM to read pages associated with the address_space
-	object.  The pages are consecutive in the page cache and are
-	locked.  The implementation should decrement the page refcount
-	after starting I/O on each page.  Usually the page will be
-	unlocked by the I/O completion handler.  If the filesystem decides
-	to stop attempting I/O before reaching the end of the readahead
-	window, it can simply return.  The caller will decrement the page
-	refcount and unlock the remaining pages for you.  Set PageUptodate
-	if the I/O completes successfully.  Setting PageError on any page
-	will be ignored; simply unlock the page if an I/O error occurs.
+	object.  The pages are consecutive in the page cache and
+	are locked.  Usually the page will be unlocked by the I/O
+	completion handler.  If the filesystem decides to stop attempting
+	I/O before reaching the end of the readahead window, it can
+	simply return.	The caller will unlock the remaining pages
+	for you.  Set PageUptodate if the I/O completes successfully.
+	Setting PageError on any page will be ignored; simply unlock
+	the page if an I/O error occurs.
 
 ``readpages``
 	called by the VM to read pages associated with the address_space

@@ -376,18 +376,17 @@ confused:
  */
 void mpage_readahead(struct readahead_control *rac, get_block_t get_block)
 {
-	struct page *page;
+	struct folio *folio;
 	struct mpage_readpage_args args = {
 		.get_block = get_block,
 		.is_readahead = true,
 	};
 
-	while ((page = readahead_page(rac))) {
-		prefetchw(&page->flags);
-		args.folio = page_folio(page);
+	while ((folio = readahead_folio(rac))) {
+		prefetchw(&folio->flags);
+		args.folio = folio;
 		args.nr_pages = readahead_count(rac);
 		args.bio = do_mpage_readpage(&args);
-		put_page(page);
 	}
 	if (args.bio)
 		mpage_bio_submit(REQ_OP_READ, REQ_RAHEAD, args.bio);

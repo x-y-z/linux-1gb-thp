@@ -876,7 +876,6 @@ void netfs_readahead(struct readahead_control *ractl,
 		     void *netfs_priv)
 {
 	struct netfs_read_request *rreq;
-	struct page *page;
 	unsigned int debug_index = 0;
 	int ret;
 
@@ -910,12 +909,6 @@ void netfs_readahead(struct readahead_control *ractl,
 			break;
 
 	} while (rreq->submitted < rreq->len);
-
-	/* Drop the refs on the pages here rather than in the cache or
-	 * filesystem.  The locks will be dropped in netfs_rreq_unlock().
-	 */
-	while ((page = readahead_page(ractl)))
-		put_page(page);
 
 	/* If we decrement nr_rd_ops to 0, the ref belongs to us. */
 	if (atomic_dec_and_test(&rreq->nr_rd_ops))
@@ -1087,7 +1080,7 @@ int netfs_write_begin(struct file *file, struct address_space *mapping,
 		      void *netfs_priv)
 {
 	struct netfs_read_request *rreq;
-	struct page *page, *xpage;
+	struct page *page;
 	struct inode *inode = file_inode(file);
 	unsigned int debug_index = 0;
 	pgoff_t index = pos >> PAGE_SHIFT;
@@ -1150,11 +1143,6 @@ retry:
 	ractl._nr_pages = thp_nr_pages(page);
 	netfs_rreq_expand(rreq, &ractl);
 	netfs_get_read_request(rreq);
-
-	/* We hold the page locks, so we can drop the references */
-	while ((xpage = readahead_page(&ractl)))
-		if (xpage != page)
-			put_page(xpage);
 
 	atomic_set(&rreq->nr_rd_ops, 1);
 	do {
