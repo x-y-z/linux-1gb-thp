@@ -97,7 +97,7 @@ extern void __nfs_fscache_invalidate_page(struct page *, struct inode *);
 extern int nfs_fscache_release_page(struct page *, gfp_t);
 
 extern int __nfs_readpage_from_fscache(struct nfs_open_context *,
-				       struct inode *, struct page *);
+				       struct inode *, struct folio *);
 extern int __nfs_readpages_from_fscache(struct nfs_open_context *,
 					struct inode *, struct address_space *,
 					struct list_head *, unsigned *);
@@ -129,10 +129,10 @@ static inline void nfs_fscache_invalidate_page(struct page *page,
  */
 static inline int nfs_readpage_from_fscache(struct nfs_open_context *ctx,
 					    struct inode *inode,
-					    struct page *page)
+					    struct folio *folio)
 {
 	if (NFS_I(inode)->fscache)
-		return __nfs_readpage_from_fscache(ctx, inode, page);
+		return __nfs_readpage_from_fscache(ctx, inode, folio);
 	return -ENOBUFS;
 }
 
@@ -214,7 +214,7 @@ static inline void nfs_fscache_wait_on_page_write(struct nfs_inode *nfsi,
 
 static inline int nfs_readpage_from_fscache(struct nfs_open_context *ctx,
 					    struct inode *inode,
-					    struct page *page)
+					    struct folio *folio)
 {
 	return -ENOBUFS;
 }

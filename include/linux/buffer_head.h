@@ -225,7 +225,7 @@ int block_write_full_page(struct page *page, get_block_t *get_block,
 int __block_write_full_page(struct inode *inode, struct page *page,
 			get_block_t *get_block, struct writeback_control *wbc,
 			bh_end_io_t *handler);
-int block_read_full_page(struct page*, get_block_t*);
+int block_read_full_page(struct folio *, get_block_t *);
 int block_is_partially_uptodate(struct page *page, unsigned long from,
 				unsigned long count);
 int block_write_begin(struct address_space *mapping, loff_t pos, unsigned len,

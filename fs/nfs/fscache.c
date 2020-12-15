@@ -400,21 +400,22 @@ static void nfs_readpage_from_fscache_complete(struct page *page,
  * Retrieve a page from fscache
  */
 int __nfs_readpage_from_fscache(struct nfs_open_context *ctx,
-				struct inode *inode, struct page *page)
+				struct inode *inode, struct folio *folio)
 {
 	int ret;
 
 	dfprintk(FSCACHE,
 		 "NFS: readpage_from_fscache(fsc:%p/p:%p(i:%lx f:%lx)/0x%p)\n",
-		 nfs_i_fscache(inode), page, page->index, page->flags, inode);
+		 nfs_i_fscache(inode), folio, folio->index,
+		 folio->flags, inode);
 
-	if (PageChecked(page)) {
-		ClearPageChecked(page);
+	if (folio_test_checked(folio)) {
+		folio_clear_checked(folio);
 		return 1;
 	}
 
 	ret = fscache_read_or_alloc_page(nfs_i_fscache(inode),
-					 page,
+					 &folio->page,
 					 nfs_readpage_from_fscache_complete,
 					 ctx,
 					 GFP_KERNEL);

@@ -275,15 +275,15 @@ out:
 	return ret;
 }
 
-static int ocfs2_readpage(struct file *file, struct page *page)
+static int ocfs2_readpage(struct file *file, struct folio *folio)
 {
+	struct page *page = &folio->page;
 	struct inode *inode = page->mapping->host;
 	struct ocfs2_inode_info *oi = OCFS2_I(inode);
 	loff_t start = (loff_t)page->index << PAGE_SHIFT;
 	int ret, unlock = 1;
 
-	trace_ocfs2_readpage((unsigned long long)oi->ip_blkno,
-			     (page ? page->index : 0));
+	trace_ocfs2_readpage((unsigned long long)oi->ip_blkno, page->index);
 
 	ret = ocfs2_inode_lock_with_page(inode, NULL, 0, page);
 	if (ret != 0) {
@@ -299,7 +299,7 @@ static int ocfs2_readpage(struct file *file, struct page *page)
 		 * busyloop waiting for ip_alloc_sem to unlock
 		 */
 		ret = AOP_TRUNCATED_PAGE;
-		unlock_page(page);
+		folio_unlock(folio);
 		unlock = 0;
 		down_read(&oi->ip_alloc_sem);
 		up_read(&oi->ip_alloc_sem);
@@ -318,7 +318,7 @@ static int ocfs2_readpage(struct file *file, struct page *page)
 	 */
 	if (start >= i_size_read(inode)) {
 		zero_user(page, 0, PAGE_SIZE);
-		SetPageUptodate(page);
+		folio_mark_uptodate(folio);
 		ret = 0;
 		goto out_alloc;
 	}
@@ -326,7 +326,7 @@ static int ocfs2_readpage(struct file *file, struct page *page)
 	if (oi->ip_dyn_features & OCFS2_INLINE_DATA_FL)
 		ret = ocfs2_readpage_inline(inode, page);
 	else
-		ret = block_read_full_page(page, ocfs2_get_block);
+		ret = block_read_full_page(folio, ocfs2_get_block);
 	unlock = 0;
 
 out_alloc:
@@ -335,7 +335,7 @@ out_inode_unlock:
 	ocfs2_inode_unlock(inode, 0);
 out:
 	if (unlock)
-		unlock_page(page);
+		folio_unlock(folio);
 	return ret;
 }
 

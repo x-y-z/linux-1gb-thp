@@ -94,9 +94,9 @@ static int qnx6_check_blockptr(__fs32 ptr)
 	return 1;
 }
 
-static int qnx6_readpage(struct file *file, struct page *page)
+static int qnx6_readpage(struct file *file, struct folio *folio)
 {
-	return mpage_readpage(page, qnx6_get_block);
+	return mpage_readpage(folio, qnx6_get_block);
 }
 
 static void qnx6_readahead(struct readahead_control *rac)

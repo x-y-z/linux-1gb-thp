@@ -284,9 +284,9 @@ out:
 	return ret;
 }
 
-static int omfs_readpage(struct file *file, struct page *page)
+static int omfs_readpage(struct file *file, struct folio *folio)
 {
-	return block_read_full_page(page, omfs_get_block);
+	return block_read_full_page(folio, omfs_get_block);
 }
 
 static void omfs_readahead(struct readahead_control *rac)

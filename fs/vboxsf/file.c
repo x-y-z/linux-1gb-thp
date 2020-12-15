@@ -225,8 +225,9 @@ const struct inode_operations vboxsf_reg_iops = {
 	.setattr = vboxsf_setattr
 };
 
-static int vboxsf_readpage(struct file *file, struct page *page)
+static int vboxsf_readpage(struct file *file, struct folio *folio)
 {
+	struct page *page = &folio->page;
 	struct vboxsf_handle *sf_handle = file->private_data;
 	loff_t off = page_offset(page);
 	u32 nread = PAGE_SIZE;

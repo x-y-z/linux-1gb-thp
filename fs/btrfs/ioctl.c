@@ -1273,11 +1273,12 @@ again:
 		}
 
 		if (!PageUptodate(page)) {
-			btrfs_readpage(NULL, page);
-			lock_page(page);
-			if (!PageUptodate(page)) {
-				unlock_page(page);
-				put_page(page);
+			struct folio *folio = page_folio(page);
+			btrfs_readpage(NULL, folio);
+			folio_lock(folio);
+			if (!folio_test_uptodate(folio)) {
+				folio_unlock(folio);
+				folio_put(folio);
 				ret = -EIO;
 				break;
 			}

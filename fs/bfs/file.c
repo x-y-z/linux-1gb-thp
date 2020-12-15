@@ -155,9 +155,9 @@ static int bfs_writepage(struct page *page, struct writeback_control *wbc)
 	return block_write_full_page(page, bfs_get_block, wbc);
 }
 
-static int bfs_readpage(struct file *file, struct page *page)
+static int bfs_readpage(struct file *file, struct folio *folio)
 {
-	return block_read_full_page(page, bfs_get_block);
+	return block_read_full_page(folio, bfs_get_block);
 }
 
 static void bfs_write_failed(struct address_space *mapping, loff_t to)

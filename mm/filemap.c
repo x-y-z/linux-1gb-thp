@@ -2307,7 +2307,7 @@ static int filemap_read_folio(struct file *file, struct address_space *mapping,
 	 */
 	folio_clear_error(folio);
 	/* Start the actual read. The read will unlock the page. */
-	error = mapping->a_ops->readpage(file, &folio->page);
+	error = mapping->a_ops->readpage(file, folio);
 	if (error)
 		return error;
 
@@ -3341,9 +3341,9 @@ repeat:
 
 filler:
 		if (filler)
-			err = filler(data, &folio->page);
+			err = filler(data, folio);
 		else
-			err = mapping->a_ops->readpage(data, &folio->page);
+			err = mapping->a_ops->readpage(data, folio);
 
 		if (err < 0) {
 			folio_put(folio);

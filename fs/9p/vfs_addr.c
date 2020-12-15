@@ -35,8 +35,9 @@
  * @page: structure to page
  *
  */
-static int v9fs_fid_readpage(void *data, struct page *page)
+static int v9fs_fid_readpage(void *data, struct folio *folio)
 {
+	struct page *page = &folio->page;
 	struct p9_fid *fid = data;
 	struct inode *inode = page->mapping->host;
 	struct bio_vec bvec = {.bv_page = page, .bv_len = PAGE_SIZE};
@@ -80,9 +81,9 @@ done:
  *
  */
 
-static int v9fs_vfs_readpage(struct file *filp, struct page *page)
+static int v9fs_vfs_readpage(struct file *filp, struct folio *folio)
 {
-	return v9fs_fid_readpage(filp->private_data, page);
+	return v9fs_fid_readpage(filp->private_data, folio);
 }
 
 /**
@@ -279,7 +280,7 @@ start:
 	if (len == PAGE_SIZE)
 		goto out;
 
-	retval = v9fs_fid_readpage(v9inode->writeback_fid, page);
+	retval = v9fs_fid_readpage(v9inode->writeback_fid, page_folio(page));
 	put_page(page);
 	if (!retval)
 		goto start;

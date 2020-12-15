@@ -4617,9 +4617,9 @@ read_complete:
 	return rc;
 }
 
-static int cifs_readpage(struct file *file, struct page *page)
+static int cifs_readpage(struct file *file, struct folio *folio)
 {
-	loff_t offset = page_file_offset(page);
+	loff_t pos = folio_file_pos(folio);
 	int rc = -EACCES;
 	unsigned int xid;
 
@@ -4631,10 +4631,9 @@ static int cifs_readpage(struct file *file, struct page *page)
 		return rc;
 	}
 
-	cifs_dbg(FYI, "readpage %p at offset %d 0x%x\n",
-		 page, (int)offset, (int)offset);
+	cifs_dbg(FYI, "readpage %p at offset %lld %#llx\n", folio, pos, pos);
 
-	rc = cifs_readpage_worker(file, page, &offset);
+	rc = cifs_readpage_worker(file, &folio->page, &pos);
 
 	free_xid(xid);
 	return rc;

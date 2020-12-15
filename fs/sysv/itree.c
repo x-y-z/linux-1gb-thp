@@ -456,9 +456,9 @@ static int sysv_writepage(struct page *page, struct writeback_control *wbc)
 	return block_write_full_page(page,get_block,wbc);
 }
 
-static int sysv_readpage(struct file *file, struct page *page)
+static int sysv_readpage(struct file *file, struct folio *folio)
 {
-	return block_read_full_page(page,get_block);
+	return block_read_full_page(folio, get_block);
 }
 
 int sysv_prepare_chunk(struct page *page, loff_t pos, unsigned len)

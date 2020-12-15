@@ -222,8 +222,9 @@ static inline loff_t ext4_readpage_limit(struct inode *inode)
 }
 
 int ext4_mpage_readpages(struct inode *inode,
-		struct readahead_control *rac, struct page *page)
+		struct readahead_control *rac, struct folio *folio)
 {
+	struct page *page = &folio->page;
 	struct bio *bio = NULL;
 	sector_t last_block_in_bio = 0;
 
@@ -252,7 +253,8 @@ int ext4_mpage_readpages(struct inode *inode,
 		unsigned first_hole = blocks_per_page;
 
 		if (rac) {
-			page = &readahead_folio(rac)->page;
+			folio = readahead_folio(rac);
+			page = &folio->page;
 			prefetchw(&page->flags);
 		}
 
@@ -303,10 +305,10 @@ int ext4_mpage_readpages(struct inode *inode,
 
 				if (ext4_map_blocks(NULL, inode, &map, 0) < 0) {
 				set_error_page:
-					SetPageError(page);
+					folio_set_error(folio);
 					zero_user_segment(page, 0,
 							  PAGE_SIZE);
-					unlock_page(page);
+					folio_unlock(folio);
 					continue;
 				}
 			}
@@ -343,16 +345,16 @@ int ext4_mpage_readpages(struct inode *inode,
 				if (ext4_need_verity(inode, page->index) &&
 				    !fsverity_verify_page(page))
 					goto set_error_page;
-				SetPageUptodate(page);
-				unlock_page(page);
+				folio_mark_uptodate(folio);
+				folio_unlock(folio);
 				continue;
 			}
 		} else if (fully_mapped) {
-			SetPageMappedToDisk(page);
+			folio_set_mappedtodisk(folio);
 		}
 		if (fully_mapped && blocks_per_page == 1 &&
-		    !PageUptodate(page) && cleancache_get_page(page) == 0) {
-			SetPageUptodate(page);
+		    !folio_test_uptodate(folio) && cleancache_get_page(page) == 0) {
+			folio_mark_uptodate(folio);
 			goto confused;
 		}
 
@@ -399,10 +401,10 @@ int ext4_mpage_readpages(struct inode *inode,
 			submit_bio(bio);
 			bio = NULL;
 		}
-		if (!PageUptodate(page))
-			block_read_full_page(page, ext4_get_block);
+		if (!folio_test_uptodate(folio))
+			block_read_full_page(folio, ext4_get_block);
 		else
-			unlock_page(page);
+			folio_unlock(folio);
 	}
 	if (bio)
 		submit_bio(bio);

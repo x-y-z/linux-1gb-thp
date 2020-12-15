@@ -27,7 +27,7 @@ static int jffs2_write_end(struct file *filp, struct address_space *mapping,
 static int jffs2_write_begin(struct file *filp, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata);
-static int jffs2_readpage (struct file *filp, struct page *pg);
+static int jffs2_readpage(struct file *filp, struct folio *folio);
 
 int jffs2_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
 {
@@ -77,8 +77,9 @@ const struct address_space_operations jffs2_file_address_operations =
 	.write_end =	jffs2_write_end,
 };
 
-static int jffs2_do_readpage_nolock (struct inode *inode, struct page *pg)
+static int jffs2_do_readpage_nolock(struct inode *inode, struct folio *folio)
 {
+	struct page *pg = &folio->page;
 	struct jffs2_inode_info *f = JFFS2_INODE_INFO(inode);
 	struct jffs2_sb_info *c = JFFS2_SB_INFO(inode->i_sb);
 	unsigned char *pg_buf;
@@ -110,21 +111,22 @@ static int jffs2_do_readpage_nolock (struct inode *inode, struct page *pg)
 	return ret;
 }
 
-int jffs2_do_readpage_unlock(void *data, struct page *pg)
+int jffs2_do_readpage_unlock(void *data, struct folio *folio)
 {
-	int ret = jffs2_do_readpage_nolock(data, pg);
-	unlock_page(pg);
+	int ret = jffs2_do_readpage_nolock(data, folio);
+	folio_unlock(folio);
 	return ret;
 }
 
 
-static int jffs2_readpage (struct file *filp, struct page *pg)
+static int jffs2_readpage(struct file *file, struct folio *folio)
 {
-	struct jffs2_inode_info *f = JFFS2_INODE_INFO(pg->mapping->host);
+	struct inode *inode = folio->mapping->host;
+	struct jffs2_inode_info *f = JFFS2_INODE_INFO(inode);
 	int ret;
 
 	mutex_lock(&f->sem);
-	ret = jffs2_do_readpage_unlock(pg->mapping->host, pg);
+	ret = jffs2_do_readpage_unlock(inode, folio);
 	mutex_unlock(&f->sem);
 	return ret;
 }
@@ -219,7 +221,7 @@ static int jffs2_write_begin(struct file *filp, struct address_space *mapping,
 	 */
 	if (!PageUptodate(pg)) {
 		mutex_lock(&f->sem);
-		ret = jffs2_do_readpage_nolock(inode, pg);
+		ret = jffs2_do_readpage_nolock(inode, page_folio(pg));
 		mutex_unlock(&f->sem);
 		if (ret)
 			goto out_page;

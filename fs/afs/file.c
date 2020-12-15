@@ -18,7 +18,7 @@
 #include "internal.h"
 
 static int afs_file_mmap(struct file *file, struct vm_area_struct *vma);
-static int afs_readpage(struct file *file, struct page *page);
+static int afs_readpage(struct file *file, struct folio *folio);
 static void afs_invalidatepage(struct page *page, unsigned int offset,
 			       unsigned int length);
 static int afs_releasepage(struct page *page, gfp_t gfp_flags);
@@ -369,12 +369,12 @@ const struct netfs_read_request_ops afs_req_ops = {
 	.cleanup		= afs_priv_cleanup,
 };
 
-static int afs_readpage(struct file *file, struct page *page)
+static int afs_readpage(struct file *file, struct folio *folio)
 {
 	if (!file)
-		return afs_symlink_readpage(page);
+		return afs_symlink_readpage(&folio->page);
 
-	return netfs_readpage(file, page, &afs_req_ops, NULL);
+	return netfs_read_folio(file, folio, &afs_req_ops, NULL);
 }
 
 static void afs_readahead(struct readahead_control *ractl)

@@ -340,9 +340,10 @@ start:
 		put_page(page);
 	} else if (!once_thru &&
 		   nfs_want_read_modify_write(file, page, pos, len)) {
+		struct folio *folio = page_folio(page);
 		once_thru = 1;
-		ret = nfs_readpage(file, page);
-		put_page(page);
+		ret = nfs_readpage(file, folio);
+		folio_put(folio);
 		if (!ret)
 			goto start;
 	}
@@ -541,7 +542,7 @@ const struct address_space_operations nfs_file_aops = {
  */
 static vm_fault_t nfs_vm_page_mkwrite(struct vm_fault *vmf)
 {
-	struct page *page = vmf->page;
+	struct folio *folio = page_folio(vmf->page);
 	struct file *filp = vmf->vma->vm_file;
 	struct inode *inode = file_inode(filp);
 	unsigned pagelen;
@@ -550,35 +551,35 @@ static vm_fault_t nfs_vm_page_mkwrite(struct vm_fault *vmf)
 
 	dfprintk(PAGECACHE, "NFS: vm_page_mkwrite(%pD2(%lu), offset %lld)\n",
 		filp, filp->f_mapping->host->i_ino,
-		(long long)page_offset(page));
+		(long long)folio_pos(folio));
 
 	sb_start_pagefault(inode->i_sb);
 
 	/* make sure the cache has finished storing the page */
-	nfs_fscache_wait_on_page_write(NFS_I(inode), page);
+	nfs_fscache_wait_on_page_write(NFS_I(inode), &folio->page);
 
 	wait_on_bit_action(&NFS_I(inode)->flags, NFS_INO_INVALIDATING,
 			nfs_wait_bit_killable, TASK_KILLABLE);
 
-	lock_page(page);
-	mapping = page_file_mapping(page);
+	folio_lock(folio);
+	mapping = folio_file_mapping(folio);
 	if (mapping != inode->i_mapping)
 		goto out_unlock;
 
-	wait_on_page_writeback(page);
+	folio_wait_writeback(folio);
 
-	pagelen = nfs_page_length(page);
+	pagelen = nfs_page_length(&folio->page);
 	if (pagelen == 0)
 		goto out_unlock;
 
 	ret = VM_FAULT_LOCKED;
-	if (nfs_flush_incompatible(filp, page) == 0 &&
-	    nfs_updatepage(filp, page, 0, pagelen) == 0)
+	if (nfs_flush_incompatible(filp, &folio->page) == 0 &&
+	    nfs_updatepage(filp, &folio->page, 0, pagelen) == 0)
 		goto out;
 
 	ret = VM_FAULT_SIGBUS;
 out_unlock:
-	unlock_page(page);
+	folio_unlock(folio);
 out:
 	sb_end_pagefault(inode->i_sb);
 	return ret;

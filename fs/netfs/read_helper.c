@@ -926,7 +926,7 @@ cleanup:
 EXPORT_SYMBOL(netfs_readahead);
 
 /**
- * netfs_readpage - Helper to manage a readpage request
+ * netfs_read_folio - Helper to manage a readpage request
  * @file: The file to read from
  * @page: The page to read
  * @ops: The network filesystem's operations for the helper to use
@@ -942,32 +942,32 @@ EXPORT_SYMBOL(netfs_readahead);
  *
  * This is usable whether or not caching is enabled.
  */
-int netfs_readpage(struct file *file,
-		   struct page *page,
-		   const struct netfs_read_request_ops *ops,
-		   void *netfs_priv)
+int netfs_read_folio(struct file *file,
+		     struct folio *folio,
+		     const struct netfs_read_request_ops *ops,
+		     void *netfs_priv)
 {
 	struct netfs_read_request *rreq;
 	unsigned int debug_index = 0;
 	int ret;
 
-	_enter("%lx", page_index(page));
+	_enter("%lx", folio_index(folio));
 
 	rreq = netfs_alloc_read_request(ops, netfs_priv, file);
 	if (!rreq) {
 		if (netfs_priv)
-			ops->cleanup(netfs_priv, page_file_mapping(page));
-		unlock_page(page);
+			ops->cleanup(netfs_priv, folio_file_mapping(folio));
+		folio_unlock(folio);
 		return -ENOMEM;
 	}
-	rreq->mapping	= page_file_mapping(page);
-	rreq->start	= page_file_offset(page);
-	rreq->len	= thp_size(page);
+	rreq->mapping	= folio_file_mapping(folio);
+	rreq->start	= folio_file_pos(folio);
+	rreq->len	= folio_size(folio);
 
 	if (ops->begin_cache_operation) {
 		ret = ops->begin_cache_operation(rreq);
 		if (ret == -ENOMEM || ret == -EINTR || ret == -ERESTARTSYS) {
-			unlock_page(page);
+			folio_unlock(folio);
 			goto out;
 		}
 	}
@@ -1002,7 +1002,7 @@ out:
 	netfs_put_read_request(rreq, false);
 	return ret;
 }
-EXPORT_SYMBOL(netfs_readpage);
+EXPORT_SYMBOL(netfs_read_folio);
 
 /**
  * netfs_skip_page_read - prep a page for writing without reading first

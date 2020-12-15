@@ -292,9 +292,9 @@ static int jfs_writepages(struct address_space *mapping,
 	return mpage_writepages(mapping, wbc, jfs_get_block);
 }
 
-static int jfs_readpage(struct file *file, struct page *page)
+static int jfs_readpage(struct file *file, struct folio *folio)
 {
-	return mpage_readpage(page, jfs_get_block);
+	return mpage_readpage(folio, jfs_get_block);
 }
 
 static void jfs_readahead(struct readahead_control *rac)

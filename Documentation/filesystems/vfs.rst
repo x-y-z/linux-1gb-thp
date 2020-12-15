@@ -722,7 +722,7 @@ cache in your filesystem.  The following members are defined:
 
 	struct address_space_operations {
 		int (*writepage)(struct page *page, struct writeback_control *wbc);
-		int (*readpage)(struct file *, struct page *);
+		int (*readpage)(struct file *, struct folio *);
 		int (*writepages)(struct address_space *, struct writeback_control *);
 		int (*set_page_dirty)(struct page *page);
 		void (*readahead)(struct readahead_control *);
@@ -775,13 +775,15 @@ cache in your filesystem.  The following members are defined:
 	See the file "Locking" for more details.
 
 ``readpage``
-	called by the VM to read a page from backing store.  The page
-	will be Locked when readpage is called, and should be unlocked
-	and marked uptodate once the read completes.  If ->readpage
-	discovers that it needs to unlock the page for some reason, it
-	can do so, and then return AOP_TRUNCATED_PAGE.  In this case,
-	the page will be relocated, relocked and if that all succeeds,
-	->readpage will be called again.
+	Called by the VM to read a folio from the backing store.  If the
+	filesystem has not indicated that it can handle multi-page
+	folios by setting FS_MULTI_PAGE_FOLIOS, the folio will contain
+	one page.  The folio will be Locked when readpage is called, and
+	should be unlocked and marked uptodate once the read completes.
+	If ->readpage discovers that it needs to unlock the folio for
+	some reason, it can do so, and then return AOP_TRUNCATED_PAGE.
+	In this case, the caller will attempt to look up the page and
+	call ->readpage again.
 
 ``writepages``
 	called by the VM to write out pages associated with the

@@ -2252,8 +2252,9 @@ EXPORT_SYMBOL(block_is_partially_uptodate);
  * set/clear_buffer_uptodate() functions propagate buffer state into the
  * page struct once IO has completed.
  */
-int block_read_full_page(struct page *page, get_block_t *get_block)
+int block_read_full_page(struct folio *folio, get_block_t *get_block)
 {
+	struct page *page = &folio->page;
 	struct inode *inode = page->mapping->host;
 	sector_t iblock, lblock;
 	struct buffer_head *bh, *head, *arr[MAX_BUF_PER_PAGE];
@@ -2841,13 +2842,14 @@ has_buffers:
 
 	/* Ok, it's mapped. Make sure it's up-to-date */
 	if (!PageUptodate(page)) {
-		err = mapping->a_ops->readpage(NULL, page);
+		struct folio *folio = page_folio(page);
+		err = mapping->a_ops->readpage(NULL, folio);
 		if (err) {
-			put_page(page);
+			folio_put(folio);
 			goto out;
 		}
-		lock_page(page);
-		if (!PageUptodate(page)) {
+		folio_lock(folio);
+		if (!folio_test_uptodate(folio)) {
 			err = -EIO;
 			goto unlock;
 		}

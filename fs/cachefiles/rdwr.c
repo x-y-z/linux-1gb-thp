@@ -110,15 +110,16 @@ static int cachefiles_read_reissue(struct cachefiles_object *object,
 	folio_add_wait_queue(page_folio(backpage), &monitor->monitor);
 
 	if (trylock_page(backpage)) {
+		struct folio *folio = page_folio(backpage);
 		ret = -EIO;
-		if (PageError(backpage))
+		if (folio_test_error(folio))
 			goto unlock_discard;
 		ret = 0;
-		if (PageUptodate(backpage))
+		if (folio_test_uptodate(folio))
 			goto unlock_discard;
 
 		_debug("reissue read");
-		ret = bmapping->a_ops->readpage(NULL, backpage);
+		ret = bmapping->a_ops->readpage(NULL, folio);
 		if (ret < 0)
 			goto discard;
 	}
@@ -281,7 +282,7 @@ installed_new_backing_page:
 	newpage = NULL;
 
 read_backing_page:
-	ret = bmapping->a_ops->readpage(NULL, backpage);
+	ret = bmapping->a_ops->readpage(NULL, page_folio(backpage));
 	if (ret < 0)
 		goto read_error;
 
@@ -518,7 +519,7 @@ static int cachefiles_read_backing_file(struct cachefiles_object *object,
 		newpage = NULL;
 
 	reread_backing_page:
-		ret = bmapping->a_ops->readpage(NULL, backpage);
+		ret = bmapping->a_ops->readpage(NULL, page_folio(backpage));
 		if (ret < 0)
 			goto read_error;
 

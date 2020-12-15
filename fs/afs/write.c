@@ -884,7 +884,7 @@ vm_fault_t afs_page_mkwrite(struct vm_fault *vmf)
 	priv = afs_page_dirty(&folio->page, 0, folio_size(folio));
 	priv = afs_page_dirty_mmapped(priv);
 	if (folio_test_private(folio)) {
-		folio->private = priv;
+		folio->private = (void *)priv;
 		trace_afs_page_dirty(vnode, tracepoint_string("mkwrite+"),
 					&folio->page);
 	} else {

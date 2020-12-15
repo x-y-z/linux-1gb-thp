@@ -239,10 +239,8 @@ struct readahead_control;
 extern void netfs_readahead(struct readahead_control *,
 			    const struct netfs_read_request_ops *,
 			    void *);
-extern int netfs_readpage(struct file *,
-			  struct page *,
-			  const struct netfs_read_request_ops *,
-			  void *);
+extern int netfs_read_folio(struct file *, struct folio *,
+			    const struct netfs_read_request_ops *, void *);
 extern int netfs_write_begin(struct file *, struct address_space *,
 			     loff_t, unsigned int, unsigned int, struct page **,
 			     void **,

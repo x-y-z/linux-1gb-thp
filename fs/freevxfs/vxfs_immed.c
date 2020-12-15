@@ -38,7 +38,7 @@
 #include "vxfs_inode.h"
 
 
-static int	vxfs_immed_readpage(struct file *, struct page *);
+static int	vxfs_immed_readpage(struct file *, struct folio *);
 
 /*
  * Address space operations for immed files and directories.
@@ -50,7 +50,7 @@ const struct address_space_operations vxfs_immed_aops = {
 /**
  * vxfs_immed_readpage - read part of an immed inode into pagecache
  * @file:	file context (unused)
- * @page:	page frame to fill in.
+ * @folio:	folio to fill in.
  *
  * Description:
  *   vxfs_immed_readpage reads a part of the immed area of the
@@ -63,8 +63,9 @@ const struct address_space_operations vxfs_immed_aops = {
  *   @page is locked and will be unlocked.
  */
 static int
-vxfs_immed_readpage(struct file *fp, struct page *pp)
+vxfs_immed_readpage(struct file *fp, struct folio *folio)
 {
+	struct page *pp = &folio->page;
 	struct vxfs_inode_info	*vip = VXFS_INO(pp->mapping->host);
 	u_int64_t	offset = (u_int64_t)pp->index << PAGE_SHIFT;
 	caddr_t		kaddr;

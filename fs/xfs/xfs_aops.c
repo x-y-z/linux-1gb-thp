@@ -533,9 +533,9 @@ xfs_vm_bmap(
 STATIC int
 xfs_vm_readpage(
 	struct file		*unused,
-	struct page		*page)
+	struct folio		*folio)
 {
-	return iomap_readpage(page, &xfs_read_iomap_ops);
+	return iomap_readpage(folio, &xfs_read_iomap_ops);
 }
 
 STATIC void

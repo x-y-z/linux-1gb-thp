@@ -38,7 +38,7 @@
 #include "vxfs_extern.h"
 
 
-static int		vxfs_readpage(struct file *, struct page *);
+static int		vxfs_readpage(struct file *, struct folio *);
 static sector_t		vxfs_bmap(struct address_space *, sector_t);
 
 const struct address_space_operations vxfs_aops = {
@@ -155,10 +155,9 @@ vxfs_getblk(struct inode *ip, sector_t iblock,
  * Locking status:
  *   @page is locked and will be unlocked.
  */
-static int
-vxfs_readpage(struct file *file, struct page *page)
+static int vxfs_readpage(struct file *file, struct folio *folio)
 {
-	return block_read_full_page(page, vxfs_getblk);
+	return block_read_full_page(folio, vxfs_getblk);
 }
  
 /**

@@ -245,9 +245,9 @@ static void qnx4_kill_sb(struct super_block *sb)
 	}
 }
 
-static int qnx4_readpage(struct file *file, struct page *page)
+static int qnx4_readpage(struct file *file, struct folio *folio)
 {
-	return block_read_full_page(page,qnx4_get_block);
+	return block_read_full_page(folio, qnx4_get_block);
 }
 
 static sector_t qnx4_bmap(struct address_space *mapping, sector_t block)

@@ -87,7 +87,7 @@ static void read_cache_pages_invalidate_pages(struct address_space *mapping,
  * Returns: %0 on success, error return by @filler otherwise
  */
 int read_cache_pages(struct address_space *mapping, struct list_head *pages,
-			int (*filler)(void *, struct page *), void *data)
+			filler_t filler, void *data)
 {
 	struct page *page;
 	int ret = 0;
@@ -102,7 +102,7 @@ int read_cache_pages(struct address_space *mapping, struct list_head *pages,
 		}
 		put_page(page);
 
-		ret = filler(data, page);
+		ret = filler(data, page_folio(page));
 		if (unlikely(ret)) {
 			read_cache_pages_invalidate_pages(mapping, pages);
 			break;
@@ -140,7 +140,7 @@ static void read_pages(struct readahead_control *rac, struct list_head *pages,
 		rac->_nr_pages = 0;
 	} else {
 		while ((folio = readahead_folio(rac)))
-			aops->readpage(rac->file, &folio->page);
+			aops->readpage(rac->file, folio);
 	}
 
 	blk_finish_plug(&plug);

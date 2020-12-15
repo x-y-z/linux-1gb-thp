@@ -304,10 +304,8 @@ done:
 	return pos - orig_pos + plen;
 }
 
-int
-iomap_readpage(struct page *page, const struct iomap_ops *ops)
+int iomap_readpage(struct folio *folio, const struct iomap_ops *ops)
 {
-	struct folio *folio = page_folio(page);
 	struct iomap_readpage_ctx ctx = { .cur_folio = folio };
 	struct inode *inode = folio->mapping->host;
 	size_t poff;

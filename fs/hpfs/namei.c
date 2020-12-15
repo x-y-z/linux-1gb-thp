@@ -479,8 +479,9 @@ out:
 	return err;
 }
 
-static int hpfs_symlink_readpage(struct file *file, struct page *page)
+static int hpfs_symlink_readpage(struct file *file, struct folio *folio)
 {
+	struct page *page = &folio->page;
 	char *link = page_address(page);
 	struct inode *i = page->mapping->host;
 	struct fnode *fnode;

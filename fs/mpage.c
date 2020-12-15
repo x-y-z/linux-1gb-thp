@@ -329,7 +329,7 @@ confused:
 	if (args->bio)
 		args->bio = mpage_bio_submit(REQ_OP_READ, op_flags, args->bio);
 	if (!folio_test_uptodate(folio))
-		block_read_full_page(&folio->page, args->get_block);
+		block_read_full_page(folio, args->get_block);
 	else
 		folio_unlock(folio);
 	goto out;
@@ -396,10 +396,10 @@ EXPORT_SYMBOL(mpage_readahead);
 /*
  * This isn't called much at all
  */
-int mpage_readpage(struct page *page, get_block_t get_block)
+int mpage_readpage(struct folio *folio, get_block_t get_block)
 {
 	struct mpage_readpage_args args = {
-		.folio = page_folio(page),
+		.folio = folio,
 		.nr_pages = 1,
 		.get_block = get_block,
 	};

@@ -3233,18 +3233,18 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
 	return iomap_bmap(mapping, block, &ext4_iomap_ops);
 }
 
-static int ext4_readpage(struct file *file, struct page *page)
+static int ext4_readpage(struct file *file, struct folio *folio)
 {
 	int ret = -EAGAIN;
-	struct inode *inode = page->mapping->host;
+	struct inode *inode = folio->mapping->host;
 
-	trace_ext4_readpage(page);
+	trace_ext4_readpage(&folio->page);
 
 	if (ext4_has_inline_data(inode))
-		ret = ext4_readpage_inline(inode, page);
+		ret = ext4_readpage_inline(inode, &folio->page);
 
 	if (ret == -EAGAIN)
-		return ext4_mpage_readpages(inode, NULL, page);
+		return ext4_mpage_readpages(inode, NULL, folio);
 
 	return ret;
 }

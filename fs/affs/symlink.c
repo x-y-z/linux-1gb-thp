@@ -11,8 +11,9 @@
 
 #include "affs.h"
 
-static int affs_symlink_readpage(struct file *file, struct page *page)
+static int affs_symlink_readpage(struct file *file, struct folio *folio)
 {
+	struct page *page = &folio->page;
 	struct buffer_head *bh;
 	struct inode *inode = page->mapping->host;
 	char *link = page_address(page);

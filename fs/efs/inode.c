@@ -14,9 +14,9 @@
 #include "efs.h"
 #include <linux/efs_fs_sb.h>
 
-static int efs_readpage(struct file *file, struct page *page)
+static int efs_readpage(struct file *file, struct folio *folio)
 {
-	return block_read_full_page(page,efs_get_block);
+	return block_read_full_page(folio, efs_get_block);
 }
 static sector_t _efs_bmap(struct address_space *mapping, sector_t block)
 {

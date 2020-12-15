@@ -141,9 +141,9 @@ int nilfs_get_block(struct inode *inode, sector_t blkoff,
  * @file - file struct of the file to be read
  * @page - the page to be read
  */
-static int nilfs_readpage(struct file *file, struct page *page)
+static int nilfs_readpage(struct file *file, struct folio *folio)
 {
-	return mpage_readpage(page, nilfs_get_block);
+	return mpage_readpage(folio, nilfs_get_block);
 }
 
 static void nilfs_readahead(struct readahead_control *rac)

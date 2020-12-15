@@ -890,12 +890,12 @@ out_unlock:
 	return err;
 }
 
-static int ubifs_readpage(struct file *file, struct page *page)
+static int ubifs_readpage(struct file *file, struct folio *folio)
 {
-	if (ubifs_bulk_read(page))
+	if (ubifs_bulk_read(&folio->page))
 		return 0;
-	do_readpage(page);
-	unlock_page(page);
+	do_readpage(&folio->page);
+	folio_unlock(folio);
 	return 0;
 }
 

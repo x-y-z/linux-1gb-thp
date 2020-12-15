@@ -358,9 +358,9 @@ unlock_ret:
 	return err;
 }
 
-static int exfat_readpage(struct file *file, struct page *page)
+static int exfat_readpage(struct file *file, struct folio *folio)
 {
-	return mpage_readpage(page, exfat_get_block);
+	return mpage_readpage(folio, exfat_get_block);
 }
 
 static void exfat_readahead(struct readahead_control *rac)

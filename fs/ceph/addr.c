@@ -317,13 +317,13 @@ static const struct netfs_read_request_ops ceph_netfs_read_ops = {
 };
 
 /* read a single page, without unlocking it. */
-static int ceph_readpage(struct file *file, struct page *page)
+static int ceph_readpage(struct file *file, struct folio *folio)
 {
 	struct inode *inode = file_inode(file);
 	struct ceph_inode_info *ci = ceph_inode(inode);
 	struct ceph_vino vino = ceph_vino(inode);
-	u64 off = page_offset(page);
-	u64 len = thp_size(page);
+	u64 off = folio_pos(folio);
+	u64 len = folio_size(folio);
 
 	if (ci->i_inline_version != CEPH_INLINE_NONE) {
 		/*
@@ -331,19 +331,19 @@ static int ceph_readpage(struct file *file, struct page *page)
 		 * into page cache while getting Fcr caps.
 		 */
 		if (off == 0) {
-			unlock_page(page);
+			folio_unlock(folio);
 			return -EINVAL;
 		}
-		zero_user_segment(page, 0, thp_size(page));
-		SetPageUptodate(page);
-		unlock_page(page);
+		zero_user_segment(&folio->page, 0, len);
+		folio_mark_uptodate(folio);
+		folio_unlock(folio);
 		return 0;
 	}
 
 	dout("readpage ino %llx.%llx file %p off %llu len %llu page %p index %lu\n",
-	     vino.ino, vino.snap, file, off, len, page, page->index);
+	     vino.ino, vino.snap, file, off, len, folio, folio->index);
 
-	return netfs_readpage(file, page, &ceph_netfs_read_ops, NULL);
+	return netfs_read_folio(file, folio, &ceph_netfs_read_ops, NULL);
 }
 
 static void ceph_readahead(struct readahead_control *ractl)

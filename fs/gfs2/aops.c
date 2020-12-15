@@ -465,8 +465,9 @@ static int stuffed_readpage(struct gfs2_inode *ip, struct page *page)
 }
 
 
-static int __gfs2_readpage(void *file, struct page *page)
+static int __gfs2_readpage(void *file, struct folio *folio)
 {
+	struct page *page = &folio->page;
 	struct inode *inode = page->mapping->host;
 	struct gfs2_inode *ip = GFS2_I(inode);
 	struct gfs2_sbd *sdp = GFS2_SB(inode);
@@ -474,12 +475,12 @@ static int __gfs2_readpage(void *file, struct page *page)
 
 	if (!gfs2_is_jdata(ip) ||
 	    (i_blocksize(inode) == PAGE_SIZE && !page_has_buffers(page))) {
-		error = iomap_readpage(page, &gfs2_iomap_ops);
+		error = iomap_readpage(folio, &gfs2_iomap_ops);
 	} else if (gfs2_is_stuffed(ip)) {
 		error = stuffed_readpage(ip, page);
-		unlock_page(page);
+		folio_unlock(folio);
 	} else {
-		error = mpage_readpage(page, gfs2_block_map);
+		error = mpage_readpage(folio, gfs2_block_map);
 	}
 
 	if (unlikely(gfs2_withdrawn(sdp)))
@@ -494,9 +495,9 @@ static int __gfs2_readpage(void *file, struct page *page)
  * @page: The page of the file
  */
 
-static int gfs2_readpage(struct file *file, struct page *page)
+static int gfs2_readpage(struct file *file, struct folio *folio)
 {
-	return __gfs2_readpage(file, page);
+	return __gfs2_readpage(file, folio);
 }
 
 /**
