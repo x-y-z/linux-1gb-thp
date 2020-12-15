@@ -2463,14 +2463,14 @@ int sync_inode_metadata(struct inode *inode, int wait);
 struct file_system_type {
 	const char *name;
 	int fs_flags;
-#define FS_REQUIRES_DEV		1 
-#define FS_BINARY_MOUNTDATA	2
-#define FS_HAS_SUBTYPE		4
-#define FS_USERNS_MOUNT		8	/* Can be mounted by userns root */
-#define FS_DISALLOW_NOTIFY_PERM	16	/* Disable fanotify permission events */
-#define FS_ALLOW_IDMAP         32      /* FS has been updated to handle vfs idmappings. */
-#define FS_THP_SUPPORT		8192	/* Remove once all fs converted */
-#define FS_RENAME_DOES_D_MOVE	32768	/* FS will handle d_move() during rename() internally. */
+#define FS_REQUIRES_DEV		0x0001
+#define FS_BINARY_MOUNTDATA	0x0002
+#define FS_HAS_SUBTYPE		0x0004
+#define FS_USERNS_MOUNT		0x0008 /* Can be mounted by userns root */
+#define FS_DISALLOW_NOTIFY_PERM	0x0010 /* Disable fanotify permission events */
+#define FS_ALLOW_IDMAP		0x0020 /* Supports vfs idmappings */
+#define FS_MULTI_PAGE_FOLIO	0x2000 /* Temporary */
+#define FS_RENAME_DOES_D_MOVE	0x8000 /* Handles d_move() during rename() internally. */
 	int (*init_fs_context)(struct fs_context *);
 	const struct fs_parameter_spec *parameters;
 	struct dentry *(*mount) (struct file_system_type *, int,

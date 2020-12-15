@@ -34,8 +34,14 @@ enum mapping_flags {
 	AS_EXITING	= 4, 	/* final truncate in progress */
 	/* writeback related tags are not used */
 	AS_NO_WRITEBACK_TAGS = 5,
-	AS_THP_SUPPORT = 6,	/* THPs supported */
+	AS_FOLIO_ORDER_MIN = 8,
+	AS_FOLIO_ORDER_MAX = 13,
+	/* 8-17 are used for FOLIO_ORDER */
 };
+
+#define AS_FOLIO_ORDER_MIN_MASK	0x00001f00
+#define AS_FOLIO_ORDER_MAX_MASK 0x0002e000
+#define AS_FOLIO_ORDER_MASK (AS_FOLIO_ORDER_MIN_MASK | AS_FOLIO_ORDER_MAX_MASK)
 
 /**
  * mapping_set_error - record a writeback error in the address_space
@@ -126,9 +132,28 @@ static inline void mapping_set_gfp_mask(struct address_space *m, gfp_t mask)
 	m->gfp_mask = mask;
 }
 
-static inline bool mapping_thp_support(struct address_space *mapping)
+/**
+ * mapping_set_folio_orders - Set the range of folio sizes supported
+ * @mapping: Address space
+ * @min: Minimum folio order (between 0-31 inclusive)
+ * @max: Maximum folio order (between 0-31 inclusive)
+ *
+ * This is not atomic.  Do not call it after initialisation.
+ * Should be called by the filesystem if it needs special handling
+ * of folio sizes (ie there is something the core cannot know).  Do
+ * not tune it based on, eg, i_size.
+ */
+static inline void mapping_set_folio_orders(struct address_space *mapping,
+		unsigned int min, unsigned int max)
 {
-	return test_bit(AS_THP_SUPPORT, &mapping->flags);
+	mapping->flags = (mapping->flags & ~AS_FOLIO_ORDER_MASK) |
+			(min << AS_FOLIO_ORDER_MIN) |
+			(max << AS_FOLIO_ORDER_MAX);
+}
+
+static inline unsigned mapping_max_folio_order(struct address_space *mapping)
+{
+	return (mapping->flags & AS_FOLIO_ORDER_MAX_MASK) >> AS_FOLIO_ORDER_MAX;
 }
 
 static inline int filemap_nr_thps(struct address_space *mapping)
@@ -143,7 +168,7 @@ static inline int filemap_nr_thps(struct address_space *mapping)
 static inline void filemap_nr_thps_inc(struct address_space *mapping)
 {
 #ifdef CONFIG_READ_ONLY_THP_FOR_FS
-	if (!mapping_thp_support(mapping))
+	if (mapping_max_folio_order(mapping) == 0)
 		atomic_inc(&mapping->nr_thps);
 #else
 	WARN_ON_ONCE(1);
@@ -153,7 +178,7 @@ static inline void filemap_nr_thps_inc(struct address_space *mapping)
 static inline void filemap_nr_thps_dec(struct address_space *mapping)
 {
 #ifdef CONFIG_READ_ONLY_THP_FOR_FS
-	if (!mapping_thp_support(mapping))
+	if (mapping_max_folio_order(mapping) == 0)
 		atomic_dec(&mapping->nr_thps);
 #else
 	WARN_ON_ONCE(1);
