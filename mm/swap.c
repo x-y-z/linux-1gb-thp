@@ -513,56 +513,57 @@ void lru_cache_add_inactive_or_unevictable(struct page *page,
 }
 
 /*
- * If the page can not be invalidated, it is moved to the
+ * If the folio cannot be invalidated, it is moved to the
  * inactive list to speed up its reclaim.  It is moved to the
  * head of the list, rather than the tail, to give the flusher
  * threads some time to write it out, as this is much more
  * effective than the single-page writeout from reclaim.
  *
- * If the page isn't page_mapped and dirty/writeback, the page
- * could reclaim asap using PG_reclaim.
+ * If the folio isn't mapped and dirty/writeback, the folio
+ * could be reclaimed asap using PG_reclaim.
  *
- * 1. active, mapped page -> none
- * 2. active, dirty/writeback page -> inactive, head, PG_reclaim
- * 3. inactive, mapped page -> none
- * 4. inactive, dirty/writeback page -> inactive, head, PG_reclaim
+ * 1. active, mapped folio -> none
+ * 2. active, dirty/writeback folio -> inactive, head, PG_reclaim
+ * 3. inactive, mapped folio -> none
+ * 4. inactive, dirty/writeback folio -> inactive, head, PG_reclaim
  * 5. inactive, clean -> inactive, tail
  * 6. Others -> none
  *
- * In 4, why it moves inactive's head, the VM expects the page would
- * be write it out by flusher threads as this is much more effective
+ * In 4, it moves to the head of the inactive list so the folio is
+ * written out by flusher threads as this is much more effective
  * than the single-page writeout from reclaim.
  */
 static void lru_deactivate_file_fn(struct page *page, struct lruvec *lruvec)
 {
-	bool active = PageActive(page);
-	int nr_pages = thp_nr_pages(page);
+	struct folio *folio = page_folio(page);
+	bool active = folio_test_active(folio);
+	long nr_pages = folio_nr_pages(folio);
 
-	if (PageUnevictable(page))
+	if (folio_test_unevictable(folio))
 		return;
 
-	/* Some processes are using the page */
-	if (page_mapped(page))
+	/* Some processes are using the folio */
+	if (folio_mapped(folio))
 		return;
 
-	del_page_from_lru_list(page, lruvec);
-	ClearPageActive(page);
-	ClearPageReferenced(page);
+	lruvec_del_folio(lruvec, folio);
+	folio_clear_active(folio);
+	folio_clear_referenced(folio);
 
-	if (PageWriteback(page) || PageDirty(page)) {
+	if (folio_test_writeback(folio) || folio_test_dirty(folio)) {
 		/*
-		 * PG_reclaim could be raced with end_page_writeback
+		 * PG_reclaim could be raced with folio_end_writeback
 		 * It can make readahead confusing.  But race window
 		 * is _really_ small and  it's non-critical problem.
 		 */
-		add_page_to_lru_list(page, lruvec);
-		SetPageReclaim(page);
+		lruvec_add_folio(lruvec, folio);
+		folio_set_reclaim(folio);
 	} else {
 		/*
-		 * The page's writeback ends up during pagevec
-		 * We move that page into tail of inactive.
+		 * The folio's writeback ended while in the pagevec
+		 * We move that folio to the tail of the inactive list.
 		 */
-		add_page_to_lru_list_tail(page, lruvec);
+		lruvec_add_folio_tail(lruvec, folio);
 		__count_vm_events(PGROTATED, nr_pages);
 	}
 
@@ -652,32 +653,31 @@ void lru_add_drain_cpu(int cpu)
 }
 
 /**
- * deactivate_file_page - forcefully deactivate a file page
- * @page: page to deactivate
+ * folio_deactivate_file - Deactivate a file folio.
+ * @folio: Folio to deactivate.
  *
- * This function hints the VM that @page is a good reclaim candidate,
- * for example if its invalidation fails due to the page being dirty
+ * This function hints to the VM that @folio is a good reclaim candidate,
+ * for example if its invalidation fails due to the folio being dirty
  * or under writeback.
  */
-void deactivate_file_page(struct page *page)
+void folio_deactivate_file(struct folio *folio)
 {
+	struct pagevec *pvec;
+
 	/*
-	 * In a workload with many unevictable page such as mprotect,
-	 * unevictable page deactivation for accelerating reclaim is pointless.
+	 * Deactivating an unevictable folio for accelerating reclaim is
+	 * pointless.
 	 */
-	if (PageUnevictable(page))
+	if (folio_test_unevictable(folio))
 		return;
 
-	if (likely(get_page_unless_zero(page))) {
-		struct pagevec *pvec;
+	folio_get(folio);
+	local_lock(&lru_pvecs.lock);
+	pvec = this_cpu_ptr(&lru_pvecs.lru_deactivate_file);
 
-		local_lock(&lru_pvecs.lock);
-		pvec = this_cpu_ptr(&lru_pvecs.lru_deactivate_file);
-
-		if (pagevec_add_and_need_flush(pvec, page))
-			pagevec_lru_move_fn(pvec, lru_deactivate_file_fn);
-		local_unlock(&lru_pvecs.lock);
-	}
+	if (pagevec_add_and_need_flush(pvec, &folio->page))
+		pagevec_lru_move_fn(pvec, lru_deactivate_file_fn);
+	local_unlock(&lru_pvecs.lock);
 }
 
 /*
