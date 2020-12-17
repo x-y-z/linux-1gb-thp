@@ -879,14 +879,14 @@ void lru_cache_disable(void)
 }
 
 /**
- * release_pages - batched put_page()
- * @pages: array of pages to release
- * @nr: number of pages
+ * release_folios - batched folio_put()
+ * @folios: array of folios to release
+ * @nr: number of folios
  *
- * Decrement the reference count on all the pages in @pages.  If it
- * fell to zero, remove the page from the LRU and free it.
+ * Decrement the reference count on all the folios in @folios.  If it
+ * fell to zero, remove the folio from the LRU and free it.
  */
-void release_pages(struct page **pages, int nr)
+void release_folios(struct folio **folios, int nr)
 {
 	int i;
 	LIST_HEAD(pages_to_free);
@@ -895,11 +895,11 @@ void release_pages(struct page **pages, int nr)
 	unsigned int lock_batch;
 
 	for (i = 0; i < nr; i++) {
-		struct folio *folio = page_folio(pages[i]);
+		struct folio *folio = folios[i];
 
 		/*
 		 * Make sure the IRQ-safe lock-holding time does not get
-		 * excessive with a continuous string of pages from the
+		 * excessive with a continuous string of folios from the
 		 * same lruvec. The lock is held only if lruvec != NULL.
 		 */
 		if (lruvec && ++lock_batch == SWAP_CLUSTER_MAX) {
@@ -963,6 +963,16 @@ void release_pages(struct page **pages, int nr)
 
 	mem_cgroup_uncharge_list(&pages_to_free);
 	free_unref_page_list(&pages_to_free);
+}
+EXPORT_SYMBOL(release_folios);
+
+void release_pages(struct page **pages, int nr)
+{
+	int i;
+
+	for (i = 0; i < nr; i++)
+		pages[i] = &page_folio(pages[i])->page;
+	release_folios((struct folio **)pages, nr);
 }
 EXPORT_SYMBOL(release_pages);
 
