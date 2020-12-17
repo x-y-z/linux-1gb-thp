@@ -896,8 +896,7 @@ void release_pages(struct page **pages, int nr)
 	unsigned int lock_batch;
 
 	for (i = 0; i < nr; i++) {
-		struct page *page = pages[i];
-		struct folio *folio = page_folio(page);
+		struct folio *folio = page_folio(pages[i]);
 
 		/*
 		 * Make sure the IRQ-safe lock-holding time does not get
@@ -909,11 +908,10 @@ void release_pages(struct page **pages, int nr)
 			lruvec = NULL;
 		}
 
-		page = &folio->page;
-		if (is_huge_zero_page(page))
+		if (is_huge_zero_page(&folio->page))
 			continue;
 
-		if (is_zone_device_page(page)) {
+		if (is_zone_device_page(&folio->page)) {
 			if (lruvec) {
 				unlock_page_lruvec_irqrestore(lruvec, flags);
 				lruvec = NULL;
@@ -924,28 +922,28 @@ void release_pages(struct page **pages, int nr)
 			 * processing, and instead, expect a call to
 			 * put_page_testzero().
 			 */
-			if (page_is_devmap_managed(page)) {
-				put_devmap_managed_page(page);
+			if (page_is_devmap_managed(&folio->page)) {
+				put_devmap_managed_page(&folio->page);
 				continue;
 			}
-			if (put_page_testzero(page))
-				put_dev_pagemap(page->pgmap);
+			if (folio_put_testzero(folio))
+				put_dev_pagemap(folio->page.pgmap);
 			continue;
 		}
 
-		if (!put_page_testzero(page))
+		if (!folio_put_testzero(folio))
 			continue;
 
-		if (PageCompound(page)) {
+		if (folio_test_multi(folio)) {
 			if (lruvec) {
 				unlock_page_lruvec_irqrestore(lruvec, flags);
 				lruvec = NULL;
 			}
-			__put_compound_page(page);
+			__put_compound_page(&folio->page);
 			continue;
 		}
 
-		if (PageLRU(page)) {
+		if (folio_test_lru(folio)) {
 			struct lruvec *prev_lruvec = lruvec;
 
 			lruvec = folio_lruvec_relock_irqsave(folio, lruvec,
@@ -953,13 +951,13 @@ void release_pages(struct page **pages, int nr)
 			if (prev_lruvec != lruvec)
 				lock_batch = 0;
 
-			del_page_from_lru_list(page, lruvec);
-			__clear_page_lru_flags(page);
+			lruvec_del_folio(lruvec, folio);
+			__folio_clear_lru_flags(folio);
 		}
 
-		__ClearPageWaiters(page);
+		__folio_clear_waiters(folio);
 
-		list_add(&page->lru, &pages_to_free);
+		list_add(&folio->lru, &pages_to_free);
 	}
 	if (lruvec)
 		unlock_page_lruvec_irqrestore(lruvec, flags);
