@@ -213,17 +213,17 @@ static int __mlock_posix_error_return(long retval)
  * In case of success, @page is added to @pvec and @pgrescued is incremented
  * in case that the page was previously unevictable. @page is also unlocked.
  */
-static bool __putback_lru_fast_prepare(struct page *page, struct pagevec *pvec,
-		int *pgrescued)
+static bool __putback_lru_fast_prepare(struct folio *folio,
+		struct pagevec *pvec, int *pgrescued)
 {
-	VM_BUG_ON_PAGE(PageLRU(page), page);
-	VM_BUG_ON_PAGE(!PageLocked(page), page);
+	VM_BUG_ON_FOLIO(folio_test_lru(folio), folio);
+	VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
 
-	if (page_mapcount(page) <= 1 && page_evictable(page)) {
-		pagevec_add(pvec, page);
-		if (TestClearPageUnevictable(page))
+	if (page_mapcount(&folio->page) <= 1 && page_evictable(&folio->page)) {
+		pagevec_add(pvec, &folio->page);
+		if (folio_test_clear_unevictable(folio))
 			(*pgrescued)++;
-		unlock_page(page);
+		folio_unlock(folio);
 		return true;
 	}
 
@@ -312,17 +312,18 @@ static void __munlock_pagevec(struct pagevec *pvec, struct zone *zone)
 		struct page *page = pvec->pages[i];
 
 		if (page) {
-			lock_page(page);
-			if (!__putback_lru_fast_prepare(page, &pvec_putback,
+			struct folio *folio = page_folio(page);
+			folio_lock(folio);
+			if (!__putback_lru_fast_prepare(folio, &pvec_putback,
 					&pgrescued)) {
 				/*
 				 * Slow path. We don't want to lose the last
 				 * pin before unlock_page()
 				 */
-				get_page(page); /* for putback_lru_page() */
-				__munlock_isolated_page(page);
-				unlock_page(page);
-				put_page(page); /* from follow_page_mask() */
+				folio_get(folio); /* for putback_lru_page() */
+				__munlock_isolated_page(&folio->page);
+				folio_unlock(folio);
+				folio_put(folio); /* from follow_page_mask() */
 			}
 		}
 	}
