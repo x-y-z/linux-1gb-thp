@@ -541,9 +541,9 @@ struct page **drm_gem_get_pages(struct drm_gem_object *obj)
 {
 	struct address_space *mapping;
 	struct page *p, **pages;
+	struct folio *folio;
 	struct pagevec pvec;
 	int i, npages;
-
 
 	if (WARN_ON(!obj->filp))
 		return ERR_PTR(-EINVAL);
@@ -566,10 +566,12 @@ struct page **drm_gem_get_pages(struct drm_gem_object *obj)
 	mapping_set_unevictable(mapping);
 
 	for (i = 0; i < npages; i++) {
-		p = shmem_read_mapping_page(mapping, i);
-		if (IS_ERR(p))
-			goto fail;
-		pages[i] = p;
+		if (!p) {
+			p = shmem_read_mapping_page(mapping, i);
+			if (IS_ERR(p))
+				goto fail;
+			folio = page_folio(p);
+		}
 
 		/* Make sure shmem keeps __GFP_DMA32 allocated pages in the
 		 * correct region during swapin. Note that this requires
@@ -578,6 +580,9 @@ struct page **drm_gem_get_pages(struct drm_gem_object *obj)
 		 */
 		BUG_ON(mapping_gfp_constraint(mapping, __GFP_DMA32) &&
 				(page_to_pfn(p) >= 0x00100000UL));
+		pages[i] = p++;
+		if (p - &folio->page >= folio_nr_pages(folio))
+			p = NULL;
 	}
 
 	return pages;
@@ -586,8 +591,10 @@ fail:
 	mapping_clear_unevictable(mapping);
 	pagevec_init(&pvec);
 	while (i--) {
-		if (!pagevec_add(&pvec, pages[i]))
+		folio = page_folio(pages[i]);
+		if (!pagevec_add(&pvec, &folio->page))
 			drm_gem_check_release_pagevec(&pvec);
+		i = folio->index;
 	}
 	if (pagevec_count(&pvec))
 		drm_gem_check_release_pagevec(&pvec);
@@ -624,18 +631,22 @@ void drm_gem_put_pages(struct drm_gem_object *obj, struct page **pages,
 
 	pagevec_init(&pvec);
 	for (i = 0; i < npages; i++) {
+		struct folio *folio;
+
 		if (!pages[i])
 			continue;
+		VM_BUG_ON_PAGE(PageTail(pages[i]), pages[i]);
+		folio = page_folio(pages[i]);
 
 		if (dirty)
-			set_page_dirty(pages[i]);
-
+			folio_mark_dirty(folio);
 		if (accessed)
-			mark_page_accessed(pages[i]);
+			folio_mark_accessed(folio);
 
 		/* Undo the reference we took when populating the table */
-		if (!pagevec_add(&pvec, pages[i]))
+		if (!pagevec_add(&pvec, &folio->page))
 			drm_gem_check_release_pagevec(&pvec);
+		i += folio_nr_pages(folio) - 1;
 	}
 	if (pagevec_count(&pvec))
 		drm_gem_check_release_pagevec(&pvec);
