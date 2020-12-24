@@ -1137,54 +1137,27 @@ static inline unsigned long dir_pages(struct inode *inode)
  * @folio: the folio to check
  * @inode: the inode to check the folio against
  *
- * Return: the number of bytes in the folio up to EOF,
+ * Return: The number of bytes in the folio up to EOF,
  * or -EFAULT if the folio was truncated.
  */
 static inline ssize_t folio_mkwrite_check_truncate(struct folio *folio,
 					      struct inode *inode)
 {
 	loff_t size = i_size_read(inode);
-	pgoff_t index = size >> PAGE_SHIFT;
+	pgoff_t end_index = size >> PAGE_SHIFT;
+	pgoff_t index = folio->index;
 	size_t offset = offset_in_folio(folio, size);
 
 	if (!folio->mapping)
 		return -EFAULT;
 
 	/* folio is wholly inside EOF */
-	if (folio_next_index(folio) - 1 < index)
+	if (index + folio_nr_pages(folio) - 1 < end_index)
 		return folio_size(folio);
 	/* folio is wholly past EOF */
-	if (folio->index > index || !offset)
+	if (index > end_index || !offset)
 		return -EFAULT;
 	/* folio is partially inside EOF */
-	return offset;
-}
-
-/**
- * page_mkwrite_check_truncate - check if page was truncated
- * @page: the page to check
- * @inode: the inode to check the page against
- *
- * Returns the number of bytes in the page up to EOF,
- * or -EFAULT if the page was truncated.
- */
-static inline int page_mkwrite_check_truncate(struct page *page,
-					      struct inode *inode)
-{
-	loff_t size = i_size_read(inode);
-	pgoff_t index = size >> PAGE_SHIFT;
-	int offset = offset_in_page(size);
-
-	if (page->mapping != inode->i_mapping)
-		return -EFAULT;
-
-	/* page is wholly inside EOF */
-	if (page->index < index)
-		return PAGE_SIZE;
-	/* page is wholly past EOF */
-	if (page->index > index || !offset)
-		return -EFAULT;
-	/* page is partially inside EOF */
 	return offset;
 }
 
