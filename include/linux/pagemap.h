@@ -1166,7 +1166,7 @@ static inline ssize_t folio_mkwrite_check_truncate(struct folio *folio,
  * @inode: The inode which contains the blocks.
  * @folio: The folio.
  *
- * If the block size is larger than the size of this folio, return zero.
+ * If the block size is larger than the size of this folio, returns zero.
  *
  * Context: The caller should hold a refcount on the folio to prevent it
  * from being split.
@@ -1176,11 +1176,5 @@ static inline
 unsigned int i_blocks_per_folio(struct inode *inode, struct folio *folio)
 {
 	return folio_size(folio) >> inode->i_blkbits;
-}
-
-static inline
-unsigned int i_blocks_per_page(struct inode *inode, struct page *page)
-{
-	return i_blocks_per_folio(inode, page_folio(page));
 }
 #endif /* _LINUX_PAGEMAP_H */
