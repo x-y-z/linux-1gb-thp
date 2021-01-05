@@ -122,6 +122,8 @@ config UBSAN_SIGNED_OVERFLOW
 
 config UBSAN_UNSIGNED_OVERFLOW
 	bool "Perform checking for unsigned arithmetic overflow"
+	# clang hugely expands stack usage with -fsanitize=object-size
+	depends on !CC_IS_CLANG
 	depends on $(cc-option,-fsanitize=unsigned-integer-overflow)
 	help
 	  This option enables -fsanitize=unsigned-integer-overflow which checks
