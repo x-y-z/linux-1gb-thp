@@ -964,19 +964,15 @@ struct dc *dc_create(const struct dc_init_data *init_params)
 	struct dc *dc = kzalloc(sizeof(*dc), GFP_KERNEL);
 	unsigned int full_pipe_count;
 
-	if (NULL == dc)
-		goto alloc_fail;
+	if (!dc)
+		return NULL;
 
 	if (init_params->dce_environment == DCE_ENV_VIRTUAL_HW) {
-		if (false == dc_construct_ctx(dc, init_params)) {
-			dc_destruct(dc);
-			goto construct_fail;
-		}
+		if (!dc_construct_ctx(dc, init_params))
+			goto destruct_dc;
 	} else {
-		if (false == dc_construct(dc, init_params)) {
-			dc_destruct(dc);
-			goto construct_fail;
-		}
+		if (!dc_construct(dc, init_params))
+			goto destruct_dc;
 
 		full_pipe_count = dc->res_pool->pipe_count;
 		if (dc->res_pool->underlay_pipe_index != NO_UNDERLAY_PIPE)
@@ -1007,10 +1003,9 @@ struct dc *dc_create(const struct dc_init_data *init_params)
 
 	return dc;
 
-construct_fail:
+destruct_dc:
+	dc_destruct(dc);
 	kfree(dc);
-
-alloc_fail:
 	return NULL;
 }
 
