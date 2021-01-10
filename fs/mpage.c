@@ -135,7 +135,7 @@ map_buffer_to_page(struct page *page, struct buffer_head *bh, int page_block)
 
 struct mpage_readpage_args {
 	struct bio *bio;
-	struct page *page;
+	struct folio *folio;
 	unsigned int nr_pages;
 	bool is_readahead;
 	sector_t last_block_in_bio;
@@ -155,8 +155,8 @@ struct mpage_readpage_args {
  */
 static struct bio *do_mpage_readpage(struct mpage_readpage_args *args)
 {
-	struct page *page = args->page;
-	struct inode *inode = page->mapping->host;
+	struct folio *folio = args->folio;
+	struct inode *inode = folio->mapping->host;
 	const unsigned blkbits = inode->i_blkbits;
 	const unsigned blocks_per_page = PAGE_SIZE >> blkbits;
 	const unsigned blocksize = 1 << blkbits;
@@ -177,16 +177,16 @@ static struct bio *do_mpage_readpage(struct mpage_readpage_args *args)
 
 	if (args->is_readahead) {
 		op_flags = REQ_RAHEAD;
-		gfp = readahead_gfp_mask(page->mapping);
+		gfp = readahead_gfp_mask(folio->mapping);
 	} else {
 		op_flags = 0;
-		gfp = mapping_gfp_constraint(page->mapping, GFP_KERNEL);
+		gfp = mapping_gfp_constraint(folio->mapping, GFP_KERNEL);
 	}
 
-	if (page_has_buffers(page))
+	if (page_has_buffers(&folio->page))
 		goto confused;
 
-	block_in_file = (sector_t)page->index << (PAGE_SHIFT - blkbits);
+	block_in_file = (sector_t)folio->index << (PAGE_SHIFT - blkbits);
 	last_block = block_in_file + args->nr_pages * blocks_per_page;
 	last_block_in_file = (i_size_read(inode) + blocksize - 1) >> blkbits;
 	if (last_block > last_block_in_file)
@@ -219,9 +219,9 @@ static struct bio *do_mpage_readpage(struct mpage_readpage_args *args)
 	}
 
 	/*
-	 * Then do more get_blocks calls until we are done with this page.
+	 * Then do more get_blocks calls until we are done with this folio.
 	 */
-	map_bh->b_page = page;
+	map_bh->b_page = &folio->page;
 	while (page_block < blocks_per_page) {
 		map_bh->b_state = 0;
 		map_bh->b_size = 0;
@@ -249,7 +249,7 @@ static struct bio *do_mpage_readpage(struct mpage_readpage_args *args)
 		 * so readpage doesn't have to repeat the get_block call
 		 */
 		if (buffer_uptodate(map_bh)) {
-			map_buffer_to_page(page, map_bh, page_block);
+			map_buffer_to_page(&folio->page, map_bh, page_block);
 			goto confused;
 		}
 	
@@ -274,19 +274,19 @@ static struct bio *do_mpage_readpage(struct mpage_readpage_args *args)
 	}
 
 	if (first_hole != blocks_per_page) {
-		zero_user_segment(page, first_hole << blkbits, PAGE_SIZE);
+		zero_user_segment(&folio->page, first_hole << blkbits, PAGE_SIZE);
 		if (first_hole == 0) {
-			SetPageUptodate(page);
-			unlock_page(page);
+			folio_mark_uptodate(folio);
+			folio_unlock(folio);
 			goto out;
 		}
 	} else if (fully_mapped) {
-		SetPageMappedToDisk(page);
+		folio_set_mappedtodisk(folio);
 	}
 
-	if (fully_mapped && blocks_per_page == 1 && !PageUptodate(page) &&
-	    cleancache_get_page(page) == 0) {
-		SetPageUptodate(page);
+	if (fully_mapped && blocks_per_page == 1 && !folio_test_uptodate(folio) &&
+	    cleancache_get_page(&folio->page) == 0) {
+		folio_mark_uptodate(folio);
 		goto confused;
 	}
 
@@ -300,7 +300,7 @@ alloc_new:
 	if (args->bio == NULL) {
 		if (first_hole == blocks_per_page) {
 			if (!bdev_read_page(bdev, blocks[0] << (blkbits - 9),
-								page))
+								&folio->page))
 				goto out;
 		}
 		args->bio = mpage_alloc(bdev, blocks[0] << (blkbits - 9),
@@ -310,7 +310,7 @@ alloc_new:
 	}
 
 	length = first_hole << blkbits;
-	if (bio_add_page(args->bio, page, length, 0) < length) {
+	if (bio_add_page(args->bio, &folio->page, length, 0) < length) {
 		args->bio = mpage_bio_submit(REQ_OP_READ, op_flags, args->bio);
 		goto alloc_new;
 	}
@@ -328,10 +328,10 @@ out:
 confused:
 	if (args->bio)
 		args->bio = mpage_bio_submit(REQ_OP_READ, op_flags, args->bio);
-	if (!PageUptodate(page))
-		block_read_full_page(page, args->get_block);
+	if (!folio_test_uptodate(folio))
+		block_read_full_page(&folio->page, args->get_block);
 	else
-		unlock_page(page);
+		folio_unlock(folio);
 	goto out;
 }
 
@@ -384,7 +384,7 @@ void mpage_readahead(struct readahead_control *rac, get_block_t get_block)
 
 	while ((page = readahead_page(rac))) {
 		prefetchw(&page->flags);
-		args.page = page;
+		args.folio = page_folio(page);
 		args.nr_pages = readahead_count(rac);
 		args.bio = do_mpage_readpage(&args);
 		put_page(page);
@@ -400,7 +400,7 @@ EXPORT_SYMBOL(mpage_readahead);
 int mpage_readpage(struct page *page, get_block_t get_block)
 {
 	struct mpage_readpage_args args = {
-		.page = page,
+		.folio = page_folio(page),
 		.nr_pages = 1,
 		.get_block = get_block,
 	};
