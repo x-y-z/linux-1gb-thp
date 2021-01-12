@@ -19,8 +19,8 @@
 
 static int afs_file_mmap(struct file *file, struct vm_area_struct *vma);
 static int afs_readpage(struct file *file, struct folio *folio);
-static void afs_invalidatepage(struct page *page, unsigned int offset,
-			       unsigned int length);
+static void afs_invalidate_folio(struct folio *folio, size_t offset,
+			       size_t length);
 static int afs_releasepage(struct page *page, gfp_t gfp_flags);
 
 static void afs_readahead(struct readahead_control *ractl);
@@ -51,7 +51,7 @@ const struct address_space_operations afs_fs_aops = {
 	.set_page_dirty	= afs_set_page_dirty,
 	.launder_page	= afs_launder_page,
 	.releasepage	= afs_releasepage,
-	.invalidatepage	= afs_invalidatepage,
+	.invalidate_folio	= afs_invalidate_folio,
 	.write_begin	= afs_write_begin,
 	.write_end	= afs_write_end,
 	.writepage	= afs_writepage,
@@ -444,17 +444,17 @@ full_invalidate:
  * - release a page and clean up its private data if offset is 0 (indicating
  *   the entire page)
  */
-static void afs_invalidatepage(struct page *page, unsigned int offset,
-			       unsigned int length)
+static void afs_invalidate_folio(struct folio *folio, size_t offset,
+			       size_t length)
 {
-	_enter("{%lu},%u,%u", page->index, offset, length);
+	_enter("{%lu},%zu,%zu", folio->index, offset, length);
 
-	BUG_ON(!PageLocked(page));
+	BUG_ON(!folio_test_locked(folio));
 
-	if (PagePrivate(page))
-		afs_invalidate_dirty(page, offset, length);
+	if (folio_test_private(folio))
+		afs_invalidate_dirty(&folio->page, offset, length);
 
-	wait_on_page_fscache(page);
+	folio_wait_fscache(folio);
 	_leave("");
 }
 

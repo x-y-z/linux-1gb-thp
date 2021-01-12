@@ -3985,8 +3985,10 @@ static int __extent_writepage(struct page *page, struct writeback_control *wbc,
 	pg_offset = offset_in_page(i_size);
 	if (page->index > end_index ||
 	   (page->index == end_index && !pg_offset)) {
-		page->mapping->a_ops->invalidatepage(page, 0, PAGE_SIZE);
-		unlock_page(page);
+		struct folio *folio = page_folio(page);
+
+		do_invalidatepage(folio, 0, PAGE_SIZE);
+		folio_unlock(folio);
 		return 0;
 	}
 

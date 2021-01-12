@@ -1478,30 +1478,28 @@ static void discard_buffer(struct buffer_head * bh)
 }
 
 /**
- * block_invalidatepage - invalidate part or all of a buffer-backed page
- *
- * @page: the page which is affected
+ * block_invalidate_folio - invalidate part or all of a buffer-backed page
+ * @folio: the page which is affected
  * @offset: start of the range to invalidate
  * @length: length of the range to invalidate
  *
- * block_invalidatepage() is called when all or part of the page has become
+ * block_invalidate_folio() is called when all or part of the page has become
  * invalidated by a truncate operation.
  *
- * block_invalidatepage() does not have to release all buffers, but it must
+ * block_invalidate_folio() does not have to release all buffers, but it must
  * ensure that no dirty buffer is left outside @offset and that no I/O
  * is underway against any of the blocks which are outside the truncation
  * point.  Because the caller is about to free (and possibly reuse) those
  * blocks on-disk.
  */
-void block_invalidatepage(struct page *page, unsigned int offset,
-			  unsigned int length)
+void block_invalidate_folio(struct folio *folio, size_t offset, size_t length)
 {
 	struct buffer_head *head, *bh, *next;
 	unsigned int curr_off = 0;
 	unsigned int stop = length + offset;
 
-	BUG_ON(!PageLocked(page));
-	if (!page_has_buffers(page))
+	BUG_ON(!folio_test_locked(folio));
+	if (!folio_has_buffers(folio))
 		goto out;
 
 	/*
@@ -1509,7 +1507,7 @@ void block_invalidatepage(struct page *page, unsigned int offset,
 	 */
 	BUG_ON(stop > PAGE_SIZE || stop < length);
 
-	head = page_buffers(page);
+	head = page_buffers(&folio->page);
 	bh = head;
 	do {
 		unsigned int next_off = curr_off + bh->b_size;
@@ -1536,11 +1534,11 @@ void block_invalidatepage(struct page *page, unsigned int offset,
 	 * so real IO is not possible anymore.
 	 */
 	if (length == PAGE_SIZE)
-		try_to_release_page(page, 0);
+		try_to_release_page(&folio->page, 0);
 out:
 	return;
 }
-EXPORT_SYMBOL(block_invalidatepage);
+EXPORT_SYMBOL(block_invalidate_folio);
 
 
 /*

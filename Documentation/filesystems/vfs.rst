@@ -735,7 +735,7 @@ cache in your filesystem.  The following members are defined:
 				 loff_t pos, unsigned len, unsigned copied,
 				 struct page *page, void *fsdata);
 		sector_t (*bmap)(struct address_space *, sector_t);
-		void (*invalidatepage) (struct page *, unsigned int, unsigned int);
+		void (*invalidate_folio)(struct folio *, size_t, size_t);
 		int (*releasepage) (struct page *, int);
 		void (*freepage)(struct page *);
 		ssize_t (*direct_IO)(struct kiocb *, struct iov_iter *iter);
@@ -869,18 +869,18 @@ cache in your filesystem.  The following members are defined:
 	to find out where the blocks in the file are and uses those
 	addresses directly.
 
-``invalidatepage``
-	If a page has PagePrivate set, then invalidatepage will be
-	called when part or all of the page is to be removed from the
-	address space.  This generally corresponds to either a
-	truncation, punch hole or a complete invalidation of the address
-	space (in the latter case 'offset' will always be 0 and 'length'
-	will be PAGE_SIZE).  Any private data associated with the page
-	should be updated to reflect this truncation.  If offset is 0
-	and length is PAGE_SIZE, then the private data should be
-	released, because the page must be able to be completely
-	discarded.  This may be done by calling the ->releasepage
-	function, but in this case the release MUST succeed.
+``invalidate_folio``
+	If a folio has private data, then invalidate_folio will be
+	called when part or all of the folio is to be removed from the
+	address space.	This generally corresponds to either a truncation,
+	punch hole or a complete invalidation of the address space (in
+	the latter case 'offset' will always be 0 and 'length' will be
+	the size of the folio).  Any private data associated with the
+	folio should be updated to reflect this truncation.  If offset
+	is 0 and length is folio_size(), then the private data should be
+	released, because the page is about to be completely discarded.
+	This may be implemented by calling the ->releasepage function,
+	but in this case the release MUST succeed.
 
 ``releasepage``
 	releasepage is called on PagePrivate pages to indicate that the

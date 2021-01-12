@@ -129,8 +129,8 @@ static int invalidate_exceptional_entry2(struct address_space *mapping,
 }
 
 /**
- * do_invalidatepage - invalidate part or all of a page
- * @page: the page which is affected
+ * do_invalidatepage - invalidate part or all of a folio
+ * @folio: the folio which is affected
  * @offset: start of the range to invalidate
  * @length: length of the range to invalidate
  *
@@ -143,19 +143,19 @@ static int invalidate_exceptional_entry2(struct address_space *mapping,
  * point.  Because the caller is about to free (and possibly reuse) those
  * blocks on-disk.
  */
-void do_invalidatepage(struct page *page, unsigned int offset,
-		       unsigned int length)
+void do_invalidatepage(struct folio *folio, size_t offset, size_t length)
 {
-	void (*invalidatepage)(struct page *, unsigned int, unsigned int);
+	void (*invalidate_folio)(struct folio *, size_t, size_t);
 
-	invalidatepage = page->mapping->a_ops->invalidatepage;
+	invalidate_folio = folio->mapping->a_ops->invalidate_folio;
 #ifdef CONFIG_BLOCK
-	if (!invalidatepage)
-		invalidatepage = block_invalidatepage;
+	if (!invalidate_folio)
+		invalidate_folio = block_invalidate_folio;
 #endif
-	if (invalidatepage)
-		(*invalidatepage)(page, offset, length);
+	if (invalidate_folio)
+		invalidate_folio(folio, offset, length);
 }
+EXPORT_SYMBOL(do_invalidatepage);
 
 /*
  * If truncate cannot remove the fs-private metadata from the page, the page
@@ -169,19 +169,21 @@ void do_invalidatepage(struct page *page, unsigned int offset,
  */
 static void truncate_cleanup_page(struct page *page)
 {
-	if (page_mapped(page))
-		unmap_mapping_page(page);
+	struct folio *folio = page_folio(page);
 
-	if (page_has_private(page))
-		do_invalidatepage(page, 0, thp_size(page));
+	if (folio_mapped(folio))
+		unmap_mapping_page(&folio->page);
+
+	if (folio_has_private(folio))
+		do_invalidatepage(folio, 0, folio_size(folio));
 
 	/*
-	 * Some filesystems seem to re-dirty the page even after
+	 * Some filesystems seem to re-dirty the folio even after
 	 * the VM has canceled the dirty bit (eg ext3 journaling).
 	 * Hence dirty accounting check is placed after invalidation.
 	 */
-	cancel_dirty_page(page);
-	ClearPageMappedToDisk(page);
+	folio_cancel_dirty(folio);
+	folio_clear_mappedtodisk(folio);
 }
 
 /*
@@ -261,7 +263,7 @@ bool truncate_inode_partial_page(struct page *page, loff_t start, loff_t end)
 
 	cleancache_invalidate_page(page->mapping, page);
 	if (page_has_private(page))
-		do_invalidatepage(page, offset, length);
+		do_invalidatepage(page_folio(page), offset, length);
 	if (!PageTransHuge(page))
 		return true;
 	if (split_huge_page(page) == 0)
@@ -334,7 +336,7 @@ static inline struct page *find_lock_head(struct address_space *mapping,
  * mapping is large, it is probably the case that the final pages are the most
  * recently touched, and freeing happens in ascending file offset order.
  *
- * Note that since ->invalidatepage() accepts range to invalidate
+ * Note that since ->invalidate_folio() accepts range to invalidate
  * truncate_inode_pages_range is able to handle cases where lend + 1 is not
  * page aligned properly.
  */

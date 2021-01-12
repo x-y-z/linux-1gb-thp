@@ -128,22 +128,21 @@ static int v9fs_release_page(struct page *page, gfp_t gfp)
 	return v9fs_fscache_release_page(page, gfp);
 }
 
-/**
+/*
  * v9fs_invalidate_page - Invalidate a page completely or partially
  *
- * @page: structure to page
+ * @folio: structure to page
  * @offset: offset in the page
  */
-
-static void v9fs_invalidate_page(struct page *page, unsigned int offset,
-				 unsigned int length)
+static void v9fs_invalidate_folio(struct folio *folio, size_t offset,
+				 size_t length)
 {
 	/*
 	 * If called with zero offset, we should release
 	 * the private state assocated with the page
 	 */
 	if (offset == 0 && length == PAGE_SIZE)
-		v9fs_fscache_invalidate_page(page);
+		v9fs_fscache_invalidate_page(&folio->page);
 }
 
 static int v9fs_vfs_writepage_locked(struct page *page)
@@ -331,7 +330,7 @@ const struct address_space_operations v9fs_addr_operations = {
 	.write_begin = v9fs_write_begin,
 	.write_end = v9fs_write_end,
 	.releasepage = v9fs_release_page,
-	.invalidatepage = v9fs_invalidate_page,
+	.invalidate_folio = v9fs_invalidate_folio,
 	.launder_page = v9fs_launder_page,
 	.direct_IO = v9fs_direct_IO,
 };

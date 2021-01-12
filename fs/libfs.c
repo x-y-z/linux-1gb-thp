@@ -1171,16 +1171,15 @@ int noop_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 }
 EXPORT_SYMBOL(noop_fsync);
 
-void noop_invalidatepage(struct page *page, unsigned int offset,
-		unsigned int length)
+void noop_invalidate_folio(struct folio *folio, size_t offset, size_t length)
 {
 	/*
 	 * There is no page cache to invalidate in the dax case, however
 	 * we need this callback defined to prevent falling back to
-	 * block_invalidatepage() in do_invalidatepage().
+	 * block_invalidate_folio() in do_invalidatepage().
 	 */
 }
-EXPORT_SYMBOL_GPL(noop_invalidatepage);
+EXPORT_SYMBOL_GPL(noop_invalidate_folio);
 
 ssize_t noop_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 {

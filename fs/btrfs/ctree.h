@@ -3807,5 +3807,8 @@ static inline bool btrfs_is_zoned(const struct btrfs_fs_info *fs_info)
 #define PageOrdered(page)		PagePrivate2(page)
 #define SetPageOrdered(page)		SetPagePrivate2(page)
 #define ClearPageOrdered(page)		ClearPagePrivate2(page)
+#define folio_test_ordered(folio)	folio_test_private_2(folio)
+#define folio_set_ordered(folio)	folio_set_private_2(folio)
+#define folio_clear_ordered(folio)	folio_clear_private_2(folio)
 
 #endif

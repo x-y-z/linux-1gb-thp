@@ -136,8 +136,8 @@ static inline int ext4_begin_ordered_truncate(struct inode *inode,
 						   new_size);
 }
 
-static void ext4_invalidatepage(struct page *page, unsigned int offset,
-				unsigned int length);
+static void ext4_invalidate_folio(struct folio *folio, size_t offset,
+				size_t length);
 static int __ext4_journalled_writepage(struct page *page, unsigned int len);
 static int ext4_bh_delay_or_unwritten(handle_t *handle, struct buffer_head *bh);
 static int ext4_meta_trans_blocks(struct inode *inode, int lblocks,
@@ -186,7 +186,7 @@ void ext4_evict_inode(struct inode *inode)
 		 * journal. So although mm thinks everything is clean and
 		 * ready for reaping the inode might still have some pages to
 		 * write in the running transaction or waiting to be
-		 * checkpointed. Thus calling jbd2_journal_invalidatepage()
+		 * checkpointed. Thus calling jbd2_journal_invalidate_folio()
 		 * (via truncate_inode_pages()) to discard these buffers can
 		 * cause data loss. Also even if we did not discard these
 		 * buffers, we would have no way to find them after the inode
@@ -1581,17 +1581,18 @@ static void mpage_release_unused_pages(struct mpage_da_data *mpd,
 		if (nr_pages == 0)
 			break;
 		for (i = 0; i < nr_pages; i++) {
-			struct page *page = pvec.pages[i];
+			struct folio *folio = page_folio(pvec.pages[i]);
 
-			BUG_ON(!PageLocked(page));
-			BUG_ON(PageWriteback(page));
+			BUG_ON(!folio_test_locked(folio));
+			BUG_ON(folio_test_writeback(folio));
 			if (invalidate) {
-				if (page_mapped(page))
-					clear_page_dirty_for_io(page);
-				block_invalidatepage(page, 0, PAGE_SIZE);
-				ClearPageUptodate(page);
+				if (folio_mapped(folio))
+					folio_clear_dirty_for_io(folio);
+				block_invalidate_folio(folio, 0,
+							folio_size(folio));
+				folio_clear_uptodate(folio);
 			}
-			unlock_page(page);
+			folio_unlock(folio);
 		}
 		pagevec_release(&pvec);
 	}
@@ -2000,7 +2001,7 @@ static int ext4_writepage(struct page *page,
 	bool keep_towrite = false;
 
 	if (unlikely(ext4_forced_shutdown(EXT4_SB(inode->i_sb)))) {
-		inode->i_mapping->a_ops->invalidatepage(page, 0, PAGE_SIZE);
+		inode->i_mapping->a_ops->invalidate_folio(page_folio(page), 0, PAGE_SIZE);
 		unlock_page(page);
 		return -EIO;
 	}
@@ -3260,15 +3261,16 @@ static void ext4_readahead(struct readahead_control *rac)
 	ext4_mpage_readpages(inode, rac, NULL);
 }
 
-static void ext4_invalidatepage(struct page *page, unsigned int offset,
-				unsigned int length)
+static void ext4_invalidate_folio(struct folio *folio, size_t offset,
+				size_t length)
 {
-	trace_ext4_invalidatepage(page, offset, length);
+	trace_ext4_invalidatepage(&folio->page, offset, length);
 
 	/* No journalling happens on data buffers when this function is used */
-	WARN_ON(page_has_buffers(page) && buffer_jbd(page_buffers(page)));
+	WARN_ON(page_has_buffers(&folio->page) &&
+		buffer_jbd(page_buffers(&folio->page)));
 
-	block_invalidatepage(page, offset, length);
+	block_invalidate_folio(folio, offset, length);
 }
 
 static int __ext4_journalled_invalidatepage(struct page *page,
@@ -3289,11 +3291,10 @@ static int __ext4_journalled_invalidatepage(struct page *page,
 }
 
 /* Wrapper for aops... */
-static void ext4_journalled_invalidatepage(struct page *page,
-					   unsigned int offset,
-					   unsigned int length)
+static void ext4_journalled_invalidate_folio(struct folio *folio,
+					   size_t offset, size_t length)
 {
-	WARN_ON(__ext4_journalled_invalidatepage(page, offset, length) < 0);
+	WARN_ON(__ext4_journalled_invalidatepage(&folio->page, offset, length) < 0);
 }
 
 static int ext4_releasepage(struct page *page, gfp_t wait)
@@ -3654,7 +3655,7 @@ static const struct address_space_operations ext4_aops = {
 	.write_end		= ext4_write_end,
 	.set_page_dirty		= ext4_set_page_dirty,
 	.bmap			= ext4_bmap,
-	.invalidatepage		= ext4_invalidatepage,
+	.invalidate_folio	= ext4_invalidate_folio,
 	.releasepage		= ext4_releasepage,
 	.direct_IO		= noop_direct_IO,
 	.migratepage		= buffer_migrate_page,
@@ -3672,7 +3673,7 @@ static const struct address_space_operations ext4_journalled_aops = {
 	.write_end		= ext4_journalled_write_end,
 	.set_page_dirty		= ext4_journalled_set_page_dirty,
 	.bmap			= ext4_bmap,
-	.invalidatepage		= ext4_journalled_invalidatepage,
+	.invalidate_folio	= ext4_journalled_invalidate_folio,
 	.releasepage		= ext4_releasepage,
 	.direct_IO		= noop_direct_IO,
 	.is_partially_uptodate  = block_is_partially_uptodate,
@@ -3689,7 +3690,7 @@ static const struct address_space_operations ext4_da_aops = {
 	.write_end		= ext4_da_write_end,
 	.set_page_dirty		= ext4_set_page_dirty,
 	.bmap			= ext4_bmap,
-	.invalidatepage		= ext4_invalidatepage,
+	.invalidate_folio	= ext4_invalidate_folio,
 	.releasepage		= ext4_releasepage,
 	.direct_IO		= noop_direct_IO,
 	.migratepage		= buffer_migrate_page,
@@ -3703,7 +3704,7 @@ static const struct address_space_operations ext4_dax_aops = {
 	.direct_IO		= noop_direct_IO,
 	.set_page_dirty		= __set_page_dirty_no_writeback,
 	.bmap			= ext4_bmap,
-	.invalidatepage		= noop_invalidatepage,
+	.invalidate_folio	= noop_invalidate_folio,
 	.swap_activate		= ext4_iomap_swap_activate,
 };
 

@@ -875,7 +875,7 @@ upon it.
 The netfs can use this information in methods such as releasepage() to
 determine whether it needs to uncache a page or update it.
 
-Furthermore, if this bit is set, releasepage() and invalidatepage() operations
+Furthermore, if this bit is set, releasepage() and invalidate_folio() operations
 will be called on a page to get rid of it, even if PG_private is not set.  This
 allows caching to attempted on a page before read_cache_pages() to be called
 after fscache_read_or_alloc_pages() as the former will try and release pages it

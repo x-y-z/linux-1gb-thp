@@ -3148,25 +3148,25 @@ free_jh:
 }
 
 /* clm -- taken from fs/buffer.c:block_invalidate_page */
-static void reiserfs_invalidatepage(struct page *page, unsigned int offset,
-				    unsigned int length)
+static void reiserfs_invalidate_folio(struct folio *folio, size_t offset,
+				    size_t length)
 {
 	struct buffer_head *head, *bh, *next;
-	struct inode *inode = page->mapping->host;
+	struct inode *inode = folio->mapping->host;
 	unsigned int curr_off = 0;
 	unsigned int stop = offset + length;
 	int partial_page = (offset || length < PAGE_SIZE);
 	int ret = 1;
 
-	BUG_ON(!PageLocked(page));
+	BUG_ON(!folio_test_locked(folio));
 
 	if (!partial_page)
-		ClearPageChecked(page);
+		folio_clear_checked(folio);
 
-	if (!page_has_buffers(page))
+	if (!folio_has_buffers(folio))
 		goto out;
 
-	head = page_buffers(page);
+	head = page_buffers(&folio->page);
 	bh = head;
 	do {
 		unsigned int next_off = curr_off + bh->b_size;
@@ -3194,7 +3194,7 @@ static void reiserfs_invalidatepage(struct page *page, unsigned int offset,
 	 * so real IO is not possible anymore.
 	 */
 	if (!partial_page && ret) {
-		ret = try_to_release_page(page, 0);
+		ret = try_to_release_page(&folio->page, 0);
 		/* maybe should BUG_ON(!ret); - neilb */
 	}
 out:
@@ -3430,7 +3430,7 @@ const struct address_space_operations reiserfs_address_space_operations = {
 	.readpage = reiserfs_readpage,
 	.readahead = reiserfs_readahead,
 	.releasepage = reiserfs_releasepage,
-	.invalidatepage = reiserfs_invalidatepage,
+	.invalidate_folio = reiserfs_invalidate_folio,
 	.write_begin = reiserfs_write_begin,
 	.write_end = reiserfs_write_end,
 	.bmap = reiserfs_aop_bmap,

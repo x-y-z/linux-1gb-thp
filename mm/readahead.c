@@ -46,17 +46,17 @@ EXPORT_SYMBOL_GPL(file_ra_state_init);
  *   an error
  */
 static void read_cache_pages_invalidate_page(struct address_space *mapping,
-					     struct page *page)
+					     struct folio *folio)
 {
-	if (page_has_private(page)) {
-		if (!trylock_page(page))
+	if (folio_has_private(folio)) {
+		if (!folio_trylock(folio))
 			BUG();
-		page->mapping = mapping;
-		do_invalidatepage(page, 0, PAGE_SIZE);
-		page->mapping = NULL;
-		unlock_page(page);
+		folio->mapping = mapping;
+		do_invalidatepage(folio, 0, folio_size(folio));
+		folio->mapping = NULL;
+		folio_unlock(folio);
 	}
-	put_page(page);
+	folio_put(folio);
 }
 
 /*
@@ -70,7 +70,7 @@ static void read_cache_pages_invalidate_pages(struct address_space *mapping,
 	while (!list_empty(pages)) {
 		victim = lru_to_page(pages);
 		list_del(&victim->lru);
-		read_cache_pages_invalidate_page(mapping, victim);
+		read_cache_pages_invalidate_page(mapping, page_folio(victim));
 	}
 }
 
@@ -97,7 +97,8 @@ int read_cache_pages(struct address_space *mapping, struct list_head *pages,
 		list_del(&page->lru);
 		if (add_to_page_cache_lru(page, mapping, page->index,
 				readahead_gfp_mask(mapping))) {
-			read_cache_pages_invalidate_page(mapping, page);
+			read_cache_pages_invalidate_page(mapping,
+					page_folio(page));
 			continue;
 		}
 		put_page(page);

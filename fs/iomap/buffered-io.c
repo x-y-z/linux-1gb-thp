@@ -465,7 +465,7 @@ EXPORT_SYMBOL_GPL(iomap_releasepage);
 
 void iomap_invalidate_folio(struct folio *folio, size_t offset, size_t len)
 {
-	trace_iomap_invalidatepage(folio->mapping->host, offset, len);
+	trace_iomap_invalidate_folio(folio->mapping->host, offset, len);
 
 	/*
 	 * If we're invalidating the entire folio, clear the dirty state
@@ -483,13 +483,6 @@ void iomap_invalidate_folio(struct folio *folio, size_t offset, size_t len)
 	}
 }
 EXPORT_SYMBOL_GPL(iomap_invalidate_folio);
-
-void iomap_invalidatepage(struct page *page, unsigned int offset,
-		unsigned int len)
-{
-	iomap_invalidate_folio(page_folio(page), offset, len);
-}
-EXPORT_SYMBOL_GPL(iomap_invalidatepage);
 
 #ifdef CONFIG_MIGRATION
 int

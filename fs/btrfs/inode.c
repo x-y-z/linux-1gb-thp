@@ -5369,8 +5369,8 @@ static int btrfs_setattr(struct user_namespace *mnt_userns, struct dentry *dentr
 
 /*
  * While truncating the inode pages during eviction, we get the VFS calling
- * btrfs_invalidatepage() against each page of the inode. This is slow because
- * the calls to btrfs_invalidatepage() result in a huge amount of calls to
+ * btrfs_invalidate_folio() against each page of the inode. This is slow because
+ * the calls to btrfs_invalidate_folio() result in a huge amount of calls to
  * lock_extent_bits() and clear_extent_bit(), which keep merging and splitting
  * extent_state structures over and over, wasting lots of time.
  *
@@ -5443,7 +5443,7 @@ static void evict_inode_truncate_pages(struct inode *inode)
 		 * If still has DELALLOC flag, the extent didn't reach disk,
 		 * and its reserved space won't be freed by delayed_ref.
 		 * So we need to free its reserved space here.
-		 * (Refer to comment in btrfs_invalidatepage, case 2)
+		 * (Refer to comment in btrfs_invalidate_folio, case 2)
 		 *
 		 * Note, end is the bytenr of last byte, so we need + 1 here.
 		 */
@@ -8446,15 +8446,15 @@ static int btrfs_migratepage(struct address_space *mapping,
 }
 #endif
 
-static void btrfs_invalidatepage(struct page *page, unsigned int offset,
-				 unsigned int length)
+static void btrfs_invalidate_folio(struct folio *folio, size_t offset,
+				 size_t length)
 {
-	struct btrfs_inode *inode = BTRFS_I(page->mapping->host);
+	struct btrfs_inode *inode = BTRFS_I(folio->mapping->host);
 	struct btrfs_fs_info *fs_info = inode->root->fs_info;
 	struct extent_io_tree *tree = &inode->io_tree;
 	struct extent_state *cached_state = NULL;
-	u64 page_start = page_offset(page);
-	u64 page_end = page_start + PAGE_SIZE - 1;
+	u64 page_start = folio_pos(folio);
+	u64 page_end = page_start + folio_size(folio) - 1;
 	u64 cur;
 	int inode_evicting = inode->vfs_inode.i_state & I_FREEING;
 
@@ -8465,13 +8465,13 @@ static void btrfs_invalidatepage(struct page *page, unsigned int offset,
 	 * But already submitted bio can still be finished on this page.
 	 * Furthermore, endio function won't skip page which has Ordered
 	 * (Private2) already cleared, so it's possible for endio and
-	 * invalidatepage to do the same ordered extent accounting twice
+	 * invalidate_folio to do the same ordered extent accounting twice
 	 * on one page.
 	 *
 	 * So here we wait for any submitted bios to finish, so that we won't
 	 * do double ordered extent accounting on the same page.
 	 */
-	wait_on_page_writeback(page);
+	folio_wait_writeback(folio);
 
 	/*
 	 * For subpage case, we have call sites like
@@ -8485,8 +8485,8 @@ static void btrfs_invalidatepage(struct page *page, unsigned int offset,
 	 * cover the full page, like invalidating the last page, we're
 	 * still safe to wait for ordered extent to finish.
 	 */
-	if (!(offset == 0 && length == PAGE_SIZE)) {
-		btrfs_releasepage(page, GFP_NOFS);
+	if (!(offset == 0 && length == folio_size(folio))) {
+		btrfs_releasepage(&folio->page, GFP_NOFS);
 		return;
 	}
 
@@ -8527,7 +8527,7 @@ static void btrfs_invalidatepage(struct page *page, unsigned int offset,
 				page_end);
 		ASSERT(range_end + 1 - cur < U32_MAX);
 		range_len = range_end + 1 - cur;
-		if (!btrfs_page_test_ordered(fs_info, page, cur, range_len)) {
+		if (!btrfs_page_test_ordered(fs_info, &folio->page, cur, range_len)) {
 			/*
 			 * If Ordered (Private2) is cleared, it means endio has
 			 * already been executed for the range.
@@ -8537,7 +8537,7 @@ static void btrfs_invalidatepage(struct page *page, unsigned int offset,
 			delete_states = false;
 			goto next;
 		}
-		btrfs_page_clear_ordered(fs_info, page, cur, range_len);
+		btrfs_page_clear_ordered(fs_info, &folio->page, cur, range_len);
 
 		/*
 		 * IO on this page will never be started, so we need to account
@@ -8607,11 +8607,11 @@ next:
 	 * should not have Ordered (Private2) anymore, or the above iteration
 	 * did something wrong.
 	 */
-	ASSERT(!PageOrdered(page));
+	ASSERT(!folio_test_ordered(folio));
 	if (!inode_evicting)
-		__btrfs_releasepage(page, GFP_NOFS);
-	ClearPageChecked(page);
-	clear_page_extent_mapped(page);
+		__btrfs_releasepage(&folio->page, GFP_NOFS);
+	folio_clear_checked(folio);
+	clear_page_extent_mapped(&folio->page);
 }
 
 /*
@@ -10803,7 +10803,7 @@ static const struct address_space_operations btrfs_aops = {
 	.writepages	= btrfs_writepages,
 	.readahead	= btrfs_readahead,
 	.direct_IO	= noop_direct_IO,
-	.invalidatepage = btrfs_invalidatepage,
+	.invalidate_folio = btrfs_invalidate_folio,
 	.releasepage	= btrfs_releasepage,
 #ifdef CONFIG_MIGRATION
 	.migratepage	= btrfs_migratepage,

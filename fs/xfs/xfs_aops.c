@@ -563,7 +563,7 @@ const struct address_space_operations xfs_address_space_operations = {
 	.writepages		= xfs_vm_writepages,
 	.set_page_dirty		= __set_page_dirty_nobuffers,
 	.releasepage		= iomap_releasepage,
-	.invalidatepage		= iomap_invalidatepage,
+	.invalidate_folio	= iomap_invalidate_folio,
 	.bmap			= xfs_vm_bmap,
 	.direct_IO		= noop_direct_IO,
 	.migratepage		= iomap_migrate_page,
@@ -576,6 +576,6 @@ const struct address_space_operations xfs_dax_aops = {
 	.writepages		= xfs_dax_writepages,
 	.direct_IO		= noop_direct_IO,
 	.set_page_dirty		= __set_page_dirty_no_writeback,
-	.invalidatepage		= noop_invalidatepage,
+	.invalidate_folio	= noop_invalidate_folio,
 	.swap_activate		= xfs_iomap_swapfile_activate,
 };

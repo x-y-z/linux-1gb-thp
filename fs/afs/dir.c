@@ -42,8 +42,8 @@ static int afs_rename(struct user_namespace *mnt_userns, struct inode *old_dir,
 		      struct dentry *old_dentry, struct inode *new_dir,
 		      struct dentry *new_dentry, unsigned int flags);
 static int afs_dir_releasepage(struct page *page, gfp_t gfp_flags);
-static void afs_dir_invalidatepage(struct page *page, unsigned int offset,
-				   unsigned int length);
+static void afs_dir_invalidate_folio(struct folio *folio, size_t offset,
+				   size_t length);
 
 static int afs_dir_set_page_dirty(struct page *page)
 {
@@ -75,7 +75,7 @@ const struct inode_operations afs_dir_inode_operations = {
 const struct address_space_operations afs_dir_aops = {
 	.set_page_dirty	= afs_dir_set_page_dirty,
 	.releasepage	= afs_dir_releasepage,
-	.invalidatepage	= afs_dir_invalidatepage,
+	.invalidate_folio	= afs_dir_invalidate_folio,
 };
 
 const struct dentry_operations afs_fs_dentry_operations = {
@@ -2080,20 +2080,20 @@ static int afs_dir_releasepage(struct page *page, gfp_t gfp_flags)
  * - release a page and clean up its private data if offset is 0 (indicating
  *   the entire page)
  */
-static void afs_dir_invalidatepage(struct page *page, unsigned int offset,
-				   unsigned int length)
+static void afs_dir_invalidate_folio(struct folio *folio, size_t offset,
+				   size_t length)
 {
-	struct afs_vnode *dvnode = AFS_FS_I(page->mapping->host);
+	struct afs_vnode *dvnode = AFS_FS_I(folio->mapping->host);
 
-	_enter("{%lu},%u,%u", page->index, offset, length);
+	_enter("{%lu},%zu,%zu", folio->index, offset, length);
 
-	BUG_ON(!PageLocked(page));
+	BUG_ON(!folio_test_locked(folio));
 
 	/* The directory will need reloading. */
 	if (test_and_clear_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
 		afs_stat_v(dvnode, n_inval);
 
 	/* we clean up only if the entire page is being invalidated */
-	if (offset == 0 && length == thp_size(page))
-		detach_page_private(page);
+	if (offset == 0 && length == folio_size(folio))
+		folio_detach_private(folio);
 }

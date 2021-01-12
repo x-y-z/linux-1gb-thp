@@ -678,22 +678,22 @@ static void gfs2_discard(struct gfs2_sbd *sdp, struct buffer_head *bh)
 	unlock_buffer(bh);
 }
 
-static void gfs2_invalidatepage(struct page *page, unsigned int offset,
-				unsigned int length)
+static void gfs2_invalidate_folio(struct folio *folio, size_t offset,
+				size_t length)
 {
-	struct gfs2_sbd *sdp = GFS2_SB(page->mapping->host);
+	struct gfs2_sbd *sdp = GFS2_SB(folio->mapping->host);
 	unsigned int stop = offset + length;
 	int partial_page = (offset || length < PAGE_SIZE);
 	struct buffer_head *bh, *head;
 	unsigned long pos = 0;
 
-	BUG_ON(!PageLocked(page));
+	BUG_ON(!folio_test_locked(folio));
 	if (!partial_page)
-		ClearPageChecked(page);
-	if (!page_has_buffers(page))
+		folio_clear_checked(folio);
+	if (!folio_has_buffers(folio))
 		goto out;
 
-	bh = head = page_buffers(page);
+	bh = head = page_buffers(&folio->page);
 	do {
 		if (pos + bh->b_size > stop)
 			return;
@@ -705,7 +705,7 @@ static void gfs2_invalidatepage(struct page *page, unsigned int offset,
 	} while (bh != head);
 out:
 	if (!partial_page)
-		try_to_release_page(page, 0);
+		try_to_release_page(&folio->page, 0);
 }
 
 /**
@@ -787,7 +787,7 @@ static const struct address_space_operations gfs2_aops = {
 	.readahead = gfs2_readahead,
 	.set_page_dirty = __set_page_dirty_nobuffers,
 	.releasepage = iomap_releasepage,
-	.invalidatepage = iomap_invalidatepage,
+	.invalidate_folio = iomap_invalidate_folio,
 	.bmap = gfs2_bmap,
 	.direct_IO = noop_direct_IO,
 	.migratepage = iomap_migrate_page,
@@ -802,7 +802,7 @@ static const struct address_space_operations gfs2_jdata_aops = {
 	.readahead = gfs2_readahead,
 	.set_page_dirty = jdata_set_page_dirty,
 	.bmap = gfs2_bmap,
-	.invalidatepage = gfs2_invalidatepage,
+	.invalidate_folio = gfs2_invalidate_folio,
 	.releasepage = gfs2_releasepage,
 	.is_partially_uptodate = block_is_partially_uptodate,
 	.error_remove_page = generic_error_remove_page,

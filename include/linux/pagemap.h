@@ -922,6 +922,8 @@ static inline int add_to_page_cache(struct page *page,
 int __filemap_add_folio(struct address_space *mapping, struct folio *folio,
 		pgoff_t index, gfp_t gfp, void **shadowp);
 
+void do_invalidatepage(struct folio *folio, size_t offset, size_t length);
+
 /**
  * struct readahead_control - Describes a readahead request.
  *
