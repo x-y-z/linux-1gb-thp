@@ -365,6 +365,22 @@ static inline void bio_next_folio(struct folio_iter *fi, struct bio *bio)
 #define bio_for_each_folio_all(fi, bio)				\
 	for (bio_first_folio(&fi, bio, 0); fi.folio; bio_next_folio(&fi, bio))
 
+/**
+ * folio_nr_vecs - Estimate the number of vectors needed for an I/O.
+ * @folio: The current folio we're working on.
+ * @length: The number of bytes for this I/O.
+ *
+ * Estimate the number of vectors we need for a call to bio_alloc() based
+ * on the size of the current folio.  If subsequent pages are smaller,
+ * we may need to allocate an extra bio; if they're larger, we may have
+ * allocated a bio which is larger than necessary.  Neither consequence
+ * is a big deal.
+ */
+static inline unsigned int folio_nr_vecs(struct folio *folio, size_t length)
+{
+       return (length + folio_size(folio) - 1) >> folio_shift(folio);
+}
+
 enum bip_flags {
 	BIP_BLOCK_INTEGRITY	= 1 << 0, /* block layer owns integrity data */
 	BIP_MAPPED_INTEGRITY	= 1 << 1, /* ref tag has been remapped */
