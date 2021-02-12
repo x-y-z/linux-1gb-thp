@@ -105,12 +105,16 @@ struct dm_io {
 	struct dm_target_io tio;
 };
 
+#define DM_TARGET_IO_BIO_OFFSET (offsetof(struct dm_target_io, clone))
+#define DM_IO_BIO_OFFSET \
+	(offsetof(struct dm_target_io, clone) + offsetof(struct dm_io, tio))
+
 void *dm_per_bio_data(struct bio *bio, size_t data_size)
 {
 	struct dm_target_io *tio = container_of(bio, struct dm_target_io, clone);
 	if (!tio->inside_dm_io)
-		return (char *)bio - offsetof(struct dm_target_io, clone) - data_size;
-	return (char *)bio - offsetof(struct dm_target_io, clone) - offsetof(struct dm_io, tio) - data_size;
+		return (char *)bio - DM_TARGET_IO_BIO_OFFSET - data_size;
+	return (char *)bio - DM_IO_BIO_OFFSET - data_size;
 }
 EXPORT_SYMBOL_GPL(dm_per_bio_data);
 
@@ -118,9 +122,9 @@ struct bio *dm_bio_from_per_bio_data(void *data, size_t data_size)
 {
 	struct dm_io *io = (struct dm_io *)((char *)data + data_size);
 	if (io->magic == DM_IO_MAGIC)
-		return (struct bio *)((char *)io + offsetof(struct dm_io, tio) + offsetof(struct dm_target_io, clone));
+		return (struct bio *)((char *)io + DM_IO_BIO_OFFSET);
 	BUG_ON(io->magic != DM_TIO_MAGIC);
-	return (struct bio *)((char *)io + offsetof(struct dm_target_io, clone));
+	return (struct bio *)((char *)io + DM_TARGET_IO_BIO_OFFSET);
 }
 EXPORT_SYMBOL_GPL(dm_bio_from_per_bio_data);
 
@@ -977,16 +981,17 @@ static void clone_endio(struct bio *bio)
 	struct mapped_device *md = tio->io->md;
 	dm_endio_fn endio = tio->ti->type->end_io;
 	struct bio *orig_bio = io->orig_bio;
+	struct request_queue *q = bio->bi_bdev->bd_disk->queue;
 
 	if (unlikely(error == BLK_STS_TARGET)) {
 		if (bio_op(bio) == REQ_OP_DISCARD &&
-		    !bio->bi_disk->queue->limits.max_discard_sectors)
+		    !q->limits.max_discard_sectors)
 			disable_discard(md);
 		else if (bio_op(bio) == REQ_OP_WRITE_SAME &&
-			 !bio->bi_disk->queue->limits.max_write_same_sectors)
+			 !q->limits.max_write_same_sectors)
 			disable_write_same(md);
 		else if (bio_op(bio) == REQ_OP_WRITE_ZEROES &&
-			 !bio->bi_disk->queue->limits.max_write_zeroes_sectors)
+			 !q->limits.max_write_zeroes_sectors)
 			disable_write_zeroes(md);
 	}
 
@@ -996,7 +1001,7 @@ static void clone_endio(struct bio *bio)
 	 */
 	if (bio_op(orig_bio) == REQ_OP_ZONE_APPEND) {
 		sector_t written_sector = bio->bi_iter.bi_sector;
-		struct request_queue *q = orig_bio->bi_disk->queue;
+		struct request_queue *q = orig_bio->bi_bdev->bd_disk->queue;
 		u64 mask = (u64)blk_queue_zone_sectors(q) - 1;
 
 		orig_bio->bi_iter.bi_sector += written_sector & mask;
@@ -1128,7 +1133,7 @@ static bool dm_dax_supported(struct dax_device *dax_dev, struct block_device *bd
 	if (!map)
 		goto out;
 
-	ret = dm_table_supports_dax(map, device_supports_dax, &blocksize);
+	ret = dm_table_supports_dax(map, device_not_dax_capable, &blocksize);
 
 out:
 	dm_put_live_table(md, srcu_idx);
@@ -1422,8 +1427,7 @@ static int __send_empty_flush(struct clone_info *ci)
 	 */
 	bio_init(&flush_bio, NULL, 0);
 	flush_bio.bi_opf = REQ_OP_WRITE | REQ_PREFLUSH | REQ_SYNC;
-	flush_bio.bi_disk = ci->io->md->disk;
-	bio_associate_blkg(&flush_bio);
+	bio_set_dev(&flush_bio, ci->io->md->disk->part0);
 
 	ci->bio = &flush_bio;
 	ci->sector_count = 0;
@@ -1626,7 +1630,7 @@ static blk_qc_t __split_and_process_bio(struct mapped_device *md,
 
 static blk_qc_t dm_submit_bio(struct bio *bio)
 {
-	struct mapped_device *md = bio->bi_disk->private_data;
+	struct mapped_device *md = bio->bi_bdev->bd_disk->private_data;
 	blk_qc_t ret = BLK_QC_T_NONE;
 	int srcu_idx;
 	struct dm_table *map;
@@ -2849,8 +2853,8 @@ struct dm_md_mempools *dm_alloc_md_mempools(struct mapped_device *md, enum dm_qu
 	case DM_TYPE_BIO_BASED:
 	case DM_TYPE_DAX_BIO_BASED:
 		pool_size = max(dm_get_reserved_bio_based_ios(), min_pool_size);
-		front_pad = roundup(per_io_data_size, __alignof__(struct dm_target_io)) + offsetof(struct dm_target_io, clone);
-		io_front_pad = roundup(front_pad,  __alignof__(struct dm_io)) + offsetof(struct dm_io, tio);
+		front_pad = roundup(per_io_data_size, __alignof__(struct dm_target_io)) + DM_TARGET_IO_BIO_OFFSET;
+		io_front_pad = roundup(per_io_data_size,  __alignof__(struct dm_io)) + DM_IO_BIO_OFFSET;
 		ret = bioset_init(&pools->io_bs, pool_size, io_front_pad, 0);
 		if (ret)
 			goto out;

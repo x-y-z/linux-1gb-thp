@@ -80,8 +80,7 @@ static void etnaviv_gem_prime_release(struct etnaviv_gem_object *etnaviv_obj)
 	/* Don't drop the pages for imported dmabuf, as they are not
 	 * ours, just free the array we allocated:
 	 */
-	if (etnaviv_obj->pages)
-		kvfree(etnaviv_obj->pages);
+	kvfree(etnaviv_obj->pages);
 
 	drm_prime_gem_destroy(&etnaviv_obj->base, etnaviv_obj->sgt);
 }
@@ -135,8 +134,7 @@ struct drm_gem_object *etnaviv_gem_prime_import_sg_table(struct drm_device *dev,
 		goto fail;
 	}
 
-	ret = drm_prime_sg_to_page_addr_arrays(sgt, etnaviv_obj->pages,
-					       NULL, npages);
+	ret = drm_prime_sg_to_page_array(sgt, etnaviv_obj->pages, npages);
 	if (ret)
 		goto fail;
 

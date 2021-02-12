@@ -729,15 +729,6 @@ bool ice_alloc_rx_bufs(struct ice_ring *rx_ring, u16 cleaned_count)
 }
 
 /**
- * ice_page_is_reserved - check if reuse is possible
- * @page: page struct to check
- */
-static bool ice_page_is_reserved(struct page *page)
-{
-	return (page_to_nid(page) != numa_mem_id()) || page_is_pfmemalloc(page);
-}
-
-/**
  * ice_rx_buf_adjust_pg_offset - Prepare Rx buffer for reuse
  * @rx_buf: Rx buffer to adjust
  * @size: Size of adjustment
@@ -775,8 +766,8 @@ ice_can_reuse_rx_page(struct ice_rx_buf *rx_buf, int rx_buf_pgcnt)
 	unsigned int pagecnt_bias = rx_buf->pagecnt_bias;
 	struct page *page = rx_buf->page;
 
-	/* avoid re-using remote pages */
-	if (unlikely(ice_page_is_reserved(page)))
+	/* avoid re-using remote and pfmemalloc pages */
+	if (!dev_page_is_reusable(page))
 		return false;
 
 #if (PAGE_SIZE < 8192)
@@ -1089,23 +1080,25 @@ ice_is_non_eop(struct ice_ring *rx_ring, union ice_32b_rx_flex_desc *rx_desc,
  */
 int ice_clean_rx_irq(struct ice_ring *rx_ring, int budget)
 {
-	unsigned int total_rx_bytes = 0, total_rx_pkts = 0;
+	unsigned int total_rx_bytes = 0, total_rx_pkts = 0, frame_sz = 0;
 	u16 cleaned_count = ICE_DESC_UNUSED(rx_ring);
 	unsigned int xdp_res, xdp_xmit = 0;
 	struct bpf_prog *xdp_prog = NULL;
 	struct xdp_buff xdp;
 	bool failure;
 
-	xdp.rxq = &rx_ring->xdp_rxq;
 	/* Frame size depend on rx_ring setup when PAGE_SIZE=4K */
 #if (PAGE_SIZE < 8192)
-	xdp.frame_sz = ice_rx_frame_truesize(rx_ring, 0);
+	frame_sz = ice_rx_frame_truesize(rx_ring, 0);
 #endif
+	xdp_init_buff(&xdp, frame_sz, &rx_ring->xdp_rxq);
 
 	/* start the loop to process Rx packets bounded by 'budget' */
 	while (likely(total_rx_pkts < (unsigned int)budget)) {
+		unsigned int offset = ice_rx_offset(rx_ring);
 		union ice_32b_rx_flex_desc *rx_desc;
 		struct ice_rx_buf *rx_buf;
+		unsigned char *hard_start;
 		struct sk_buff *skb;
 		unsigned int size;
 		u16 stat_err_bits;
@@ -1151,10 +1144,9 @@ int ice_clean_rx_irq(struct ice_ring *rx_ring, int budget)
 			goto construct_skb;
 		}
 
-		xdp.data = page_address(rx_buf->page) + rx_buf->page_offset;
-		xdp.data_hard_start = xdp.data - ice_rx_offset(rx_ring);
-		xdp.data_meta = xdp.data;
-		xdp.data_end = xdp.data + size;
+		hard_start = page_address(rx_buf->page) + rx_buf->page_offset -
+			     offset;
+		xdp_prepare_buff(&xdp, hard_start, offset, size, true);
 #if (PAGE_SIZE > 4096)
 		/* At larger PAGE_SIZE, frame_sz depend on len size */
 		xdp.frame_sz = ice_rx_frame_truesize(rx_ring, size);
@@ -1505,22 +1497,11 @@ static void ice_update_ena_itr(struct ice_q_vector *q_vector)
 	struct ice_vsi *vsi = q_vector->vsi;
 	u32 itr_val;
 
-	/* when exiting WB_ON_ITR lets set a low ITR value and trigger
-	 * interrupts to expire right away in case we have more work ready to go
-	 * already
+	/* when exiting WB_ON_ITR just reset the countdown and let ITR
+	 * resume it's normal "interrupts-enabled" path
 	 */
-	if (q_vector->itr_countdown == ICE_IN_WB_ON_ITR_MODE) {
-		itr_val = ice_buildreg_itr(rx->itr_idx, ICE_WB_ON_ITR_USECS);
-		wr32(&vsi->back->hw, GLINT_DYN_CTL(q_vector->reg_idx), itr_val);
-		/* set target back to last user set value */
-		rx->target_itr = rx->itr_setting;
-		/* set current to what we just wrote and dynamic if needed */
-		rx->current_itr = ICE_WB_ON_ITR_USECS |
-			(rx->itr_setting & ICE_ITR_DYNAMIC);
-		/* allow normal interrupt flow to start */
+	if (q_vector->itr_countdown == ICE_IN_WB_ON_ITR_MODE)
 		q_vector->itr_countdown = 0;
-		return;
-	}
 
 	/* This will do nothing if dynamic updates are not enabled */
 	ice_update_itr(q_vector, tx);
@@ -1560,10 +1541,8 @@ static void ice_update_ena_itr(struct ice_q_vector *q_vector)
 			q_vector->itr_countdown--;
 	}
 
-	if (!test_bit(__ICE_DOWN, q_vector->vsi->state))
-		wr32(&q_vector->vsi->back->hw,
-		     GLINT_DYN_CTL(q_vector->reg_idx),
-		     itr_val);
+	if (!test_bit(__ICE_DOWN, vsi->state))
+		wr32(&vsi->back->hw, GLINT_DYN_CTL(q_vector->reg_idx), itr_val);
 }
 
 /**
@@ -1573,30 +1552,29 @@ static void ice_update_ena_itr(struct ice_q_vector *q_vector)
  * We need to tell hardware to write-back completed descriptors even when
  * interrupts are disabled. Descriptors will be written back on cache line
  * boundaries without WB_ON_ITR enabled, but if we don't enable WB_ON_ITR
- * descriptors may not be written back if they don't fill a cache line until the
- * next interrupt.
+ * descriptors may not be written back if they don't fill a cache line until
+ * the next interrupt.
  *
- * This sets the write-back frequency to 2 microseconds as that is the minimum
- * value that's not 0 due to ITR granularity. Also, set the INTENA_MSK bit to
- * make sure hardware knows we aren't meddling with the INTENA_M bit.
+ * This sets the write-back frequency to whatever was set previously for the
+ * ITR indices. Also, set the INTENA_MSK bit to make sure hardware knows we
+ * aren't meddling with the INTENA_M bit.
  */
 static void ice_set_wb_on_itr(struct ice_q_vector *q_vector)
 {
 	struct ice_vsi *vsi = q_vector->vsi;
 
-	/* already in WB_ON_ITR mode no need to change it */
+	/* already in wb_on_itr mode no need to change it */
 	if (q_vector->itr_countdown == ICE_IN_WB_ON_ITR_MODE)
 		return;
 
-	if (q_vector->num_ring_rx)
-		wr32(&vsi->back->hw, GLINT_DYN_CTL(q_vector->reg_idx),
-		     ICE_GLINT_DYN_CTL_WB_ON_ITR(ICE_WB_ON_ITR_USECS,
-						 ICE_RX_ITR));
-
-	if (q_vector->num_ring_tx)
-		wr32(&vsi->back->hw, GLINT_DYN_CTL(q_vector->reg_idx),
-		     ICE_GLINT_DYN_CTL_WB_ON_ITR(ICE_WB_ON_ITR_USECS,
-						 ICE_TX_ITR));
+	/* use previously set ITR values for all of the ITR indices by
+	 * specifying ICE_ITR_NONE, which will vary in adaptive (AIM) mode and
+	 * be static in non-adaptive mode (user configured)
+	 */
+	wr32(&vsi->back->hw, GLINT_DYN_CTL(q_vector->reg_idx),
+	     ((ICE_ITR_NONE << GLINT_DYN_CTL_ITR_INDX_S) &
+	      GLINT_DYN_CTL_ITR_INDX_M) | GLINT_DYN_CTL_INTENA_MSK_M |
+	     GLINT_DYN_CTL_WB_ON_ITR_M);
 
 	q_vector->itr_countdown = ICE_IN_WB_ON_ITR_MODE;
 }
@@ -1663,8 +1641,13 @@ int ice_napi_poll(struct napi_struct *napi, int budget)
 	}
 
 	/* If work not completed, return budget and polling will return */
-	if (!clean_complete)
+	if (!clean_complete) {
+		/* Set the writeback on ITR so partial completions of
+		 * cache-lines will still continue even if we're polling.
+		 */
+		ice_set_wb_on_itr(q_vector);
 		return budget;
+	}
 
 	/* Exit the polling mode, but don't re-enable interrupts if stack might
 	 * poll us due to busy-polling
@@ -2421,7 +2404,7 @@ ice_xmit_frame_ring(struct sk_buff *skb, struct ice_ring *tx_ring)
 	/* allow CONTROL frames egress from main VSI if FW LLDP disabled */
 	if (unlikely(skb->priority == TC_PRIO_CONTROL &&
 		     vsi->type == ICE_VSI_PF &&
-		     vsi->port_info->is_sw_lldp))
+		     vsi->port_info->qos_cfg.is_sw_lldp))
 		offload.cd_qw1 |= (u64)(ICE_TX_DESC_DTYPE_CTX |
 					ICE_TX_CTX_DESC_SWTCH_UPLINK <<
 					ICE_TXD_CTX_QW1_CMD_S);

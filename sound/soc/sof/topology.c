@@ -1073,7 +1073,7 @@ static int sof_control_load_volume(struct snd_soc_component *scomp,
 	scontrol->cmd = SOF_CTRL_CMD_VOLUME;
 
 	/* extract tlv data */
-	if (get_tlv_data(kc->tlv.p, tlv) < 0) {
+	if (!kc->tlv.p || get_tlv_data(kc->tlv.p, tlv) < 0) {
 		dev_err(scomp->dev, "error: invalid TLV data\n");
 		ret = -EINVAL;
 		goto out_free;
@@ -1352,10 +1352,6 @@ static int sof_core_enable(struct snd_sof_dev *sdev, int core)
 			core, ret);
 		goto err;
 	}
-
-	/* update enabled cores mask */
-	sdev->enabled_cores_mask |= BIT(core);
-
 	return ret;
 err:
 	/* power down core if it is host managed and return the original error if this fails too */
@@ -2603,10 +2599,6 @@ static int sof_widget_unload(struct snd_soc_component *scomp,
 		if (ret < 0)
 			dev_err(scomp->dev, "error: powering down pipeline schedule core %d\n",
 				pipeline->core);
-
-		/* update enabled cores mask */
-		sdev->enabled_cores_mask &= ~(1 << pipeline->core);
-
 		break;
 	default:
 		break;
@@ -3740,6 +3732,8 @@ int snd_sof_load_topology(struct snd_soc_component *scomp, const char *file)
 	if (ret < 0) {
 		dev_err(scomp->dev, "error: tplg request firmware %s failed err: %d\n",
 			file, ret);
+		dev_err(scomp->dev,
+			"you may need to download the firmware from https://github.com/thesofproject/sof-bin/\n");
 		return ret;
 	}
 

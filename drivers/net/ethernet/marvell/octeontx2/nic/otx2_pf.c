@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Marvell OcteonTx2 RVU Physcial Function ethernet driver
+/* Marvell OcteonTx2 RVU Physical Function ethernet driver
  *
  * Copyright (C) 2020 Marvell International Ltd.
  *
@@ -778,6 +778,9 @@ static void otx2_process_pfaf_mbox_msg(struct otx2_nic *pf,
 		break;
 	case MBOX_MSG_CGX_STATS:
 		mbox_handler_cgx_stats(pf, (struct cgx_stats_rsp *)msg);
+		break;
+	case MBOX_MSG_CGX_FEC_STATS:
+		mbox_handler_cgx_fec_stats(pf, (struct cgx_fec_stats_rsp *)msg);
 		break;
 	default:
 		if (msg->rc)

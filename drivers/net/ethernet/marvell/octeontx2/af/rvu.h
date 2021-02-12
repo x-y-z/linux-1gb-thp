@@ -33,6 +33,7 @@
 
 #define NAME_SIZE				32
 #define MAX_NIX_BLKS				2
+#define MAX_CPT_BLKS				2
 
 /* PF_FUNC */
 #define RVU_PFVF_PF_SHIFT	10
@@ -45,6 +46,11 @@ struct dump_ctx {
 	int	lf;
 	int	id;
 	bool	all;
+};
+
+struct cpt_ctx {
+	int blkaddr;
+	struct rvu *rvu;
 };
 
 struct rvu_debugfs {
@@ -61,6 +67,7 @@ struct rvu_debugfs {
 	struct dump_ctx nix_cq_ctx;
 	struct dump_ctx nix_rq_ctx;
 	struct dump_ctx nix_sq_ctx;
+	struct cpt_ctx cpt_ctx[MAX_CPT_BLKS];
 	int npa_qsize_id;
 	int nix_qsize_id;
 };
@@ -350,6 +357,10 @@ struct rvu_fwdata {
 	u64 msixtr_base;
 #define FWDATA_RESERVED_MEM 1023
 	u64 reserved[FWDATA_RESERVED_MEM];
+#define CGX_MAX         5
+#define CGX_LMACS_MAX   4
+	struct cgx_lmac_fwdata_s cgx_fw_data[CGX_MAX][CGX_LMACS_MAX];
+	/* Do not add new fields below this line */
 };
 
 struct ptp;
@@ -601,6 +612,8 @@ void npc_enable_mcam_entry(struct rvu *rvu, struct npc_mcam *mcam,
 void npc_read_mcam_entry(struct rvu *rvu, struct npc_mcam *mcam,
 			 int blkaddr, u16 src, struct mcam_entry *entry,
 			 u8 *intf, u8 *ena);
+/* CPT APIs */
+int rvu_cpt_lf_teardown(struct rvu *rvu, u16 pcifunc, int lf, int slot);
 
 #ifdef CONFIG_DEBUG_FS
 void rvu_dbg_init(struct rvu *rvu);

@@ -27,7 +27,6 @@
 #include <linux/dma-map-ops.h>
 #include <linux/decompress/generic.h>
 #include <linux/of_fdt.h>
-#include <linux/of_reserved_mem.h>
 #include <linux/dmi.h>
 
 #include <asm/addrspace.h>
@@ -83,6 +82,9 @@ EXPORT_SYMBOL(mips_io_port_base);
 static struct resource code_resource = { .name = "Kernel code", };
 static struct resource data_resource = { .name = "Kernel data", };
 static struct resource bss_resource = { .name = "Kernel bss", };
+
+unsigned long __kaslr_offset __ro_after_init;
+EXPORT_SYMBOL(__kaslr_offset);
 
 static void *detect_magic __initdata = detect_memory_region;
 
@@ -686,8 +688,6 @@ static void __init arch_mem_init(char **cmdline_p)
 	memblock_reserve(__pa_symbol(&__nosave_begin),
 		__pa_symbol(&__nosave_end) - __pa_symbol(&__nosave_begin));
 
-	fdt_init_reserved_mem();
-
 	early_memtest(PFN_PHYS(ARCH_PFN_OFFSET), PFN_PHYS(max_low_pfn));
 }
 
@@ -791,10 +791,6 @@ void __init setup_arch(char **cmdline_p)
 
 unsigned long kernelsp[NR_CPUS];
 unsigned long fw_arg0, fw_arg1, fw_arg2, fw_arg3;
-
-#ifdef CONFIG_USE_OF
-unsigned long fw_passed_dtb;
-#endif
 
 #ifdef CONFIG_DEBUG_FS
 struct dentry *mips_debugfs_dir;

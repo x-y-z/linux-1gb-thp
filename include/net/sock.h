@@ -1174,6 +1174,8 @@ struct proto {
 
 	int			(*backlog_rcv) (struct sock *sk,
 						struct sk_buff *skb);
+	bool			(*bpf_bypass_getsockopt)(int level,
+							 int optname);
 
 	void		(*release_cb)(struct sock *sk);
 
@@ -1350,14 +1352,18 @@ sk_memory_allocated_sub(struct sock *sk, int amt)
 	atomic_long_sub(amt, sk->sk_prot->memory_allocated);
 }
 
+#define SK_ALLOC_PERCPU_COUNTER_BATCH 16
+
 static inline void sk_sockets_allocated_dec(struct sock *sk)
 {
-	percpu_counter_dec(sk->sk_prot->sockets_allocated);
+	percpu_counter_add_batch(sk->sk_prot->sockets_allocated, -1,
+				 SK_ALLOC_PERCPU_COUNTER_BATCH);
 }
 
 static inline void sk_sockets_allocated_inc(struct sock *sk)
 {
-	percpu_counter_inc(sk->sk_prot->sockets_allocated);
+	percpu_counter_add_batch(sk->sk_prot->sockets_allocated, 1,
+				 SK_ALLOC_PERCPU_COUNTER_BATCH);
 }
 
 static inline u64

@@ -2432,9 +2432,6 @@ static int check_qp_type(struct mlx5_ib_dev *dev, struct ib_qp_init_attr *attr,
 	case MLX5_IB_QPT_HW_GSI:
 	case IB_QPT_DRIVER:
 	case IB_QPT_GSI:
-		if (dev->profile == &raw_eth_profile)
-			goto out;
-		fallthrough;
 	case IB_QPT_RAW_PACKET:
 	case IB_QPT_UD:
 	case MLX5_IB_QPT_REG_UMR:
@@ -2628,10 +2625,6 @@ static int process_create_flags(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	struct mlx5_core_dev *mdev = dev->mdev;
 	int create_flags = attr->create_flags;
 	bool cond;
-
-	if (qp->type == IB_QPT_UD && dev->profile == &raw_eth_profile)
-		if (create_flags & ~MLX5_IB_QP_CREATE_WC_TEST)
-			return -EINVAL;
 
 	if (qp_type == MLX5_IB_QPT_DCT)
 		return (create_flags) ? -EINVAL : 0;
@@ -3183,11 +3176,13 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 			 alt ? attr->alt_pkey_index : attr->pkey_index);
 
 	if (ah_flags & IB_AH_GRH) {
-		if (grh->sgid_index >=
-		    dev->mdev->port_caps[port - 1].gid_table_len) {
+		const struct ib_port_immutable *immutable;
+
+		immutable = ib_port_immutable_read(&dev->ib_dev, port);
+		if (grh->sgid_index >= immutable->gid_tbl_len) {
 			pr_err("sgid_index (%u) too large. max is %d\n",
 			       grh->sgid_index,
-			       dev->mdev->port_caps[port - 1].gid_table_len);
+			       immutable->gid_tbl_len);
 			return -EINVAL;
 		}
 	}
@@ -4211,6 +4206,23 @@ static int mlx5_ib_modify_dct(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	return 0;
 }
 
+static bool mlx5_ib_modify_qp_allowed(struct mlx5_ib_dev *dev,
+				      struct mlx5_ib_qp *qp,
+				      enum ib_qp_type qp_type)
+{
+	if (dev->profile != &raw_eth_profile)
+		return true;
+
+	if (qp_type == IB_QPT_RAW_PACKET || qp_type == MLX5_IB_QPT_REG_UMR)
+		return true;
+
+	/* Internal QP used for wc testing, with NOPs in wq */
+	if (qp->flags & MLX5_IB_QP_CREATE_WC_TEST)
+		return true;
+
+	return false;
+}
+
 int mlx5_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		      int attr_mask, struct ib_udata *udata)
 {
@@ -4221,7 +4233,9 @@ int mlx5_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	enum ib_qp_type qp_type;
 	enum ib_qp_state cur_state, new_state;
 	int err = -EINVAL;
-	int port;
+
+	if (!mlx5_ib_modify_qp_allowed(dev, qp, ibqp->qp_type))
+		return -EOPNOTSUPP;
 
 	if (attr_mask & ~(IB_QP_ATTR_STANDARD_BITS | IB_QP_RATE_LIMIT))
 		return -EOPNOTSUPP;
@@ -4263,10 +4277,6 @@ int mlx5_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	cur_state = attr_mask & IB_QP_CUR_STATE ? attr->cur_qp_state : qp->state;
 	new_state = attr_mask & IB_QP_STATE ? attr->qp_state : cur_state;
 
-	if (!(cur_state == new_state && cur_state == IB_QPS_RESET)) {
-		port = attr_mask & IB_QP_PORT ? attr->port_num : qp->port;
-	}
-
 	if (qp->flags & IB_QP_CREATE_SOURCE_QPN) {
 		if (attr_mask & ~(IB_QP_STATE | IB_QP_CUR_STATE)) {
 			mlx5_ib_dbg(dev, "invalid attr_mask 0x%x when underlay QP is used\n",
@@ -4295,14 +4305,10 @@ int mlx5_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		goto out;
 	}
 
-	if (attr_mask & IB_QP_PKEY_INDEX) {
-		port = attr_mask & IB_QP_PORT ? attr->port_num : qp->port;
-		if (attr->pkey_index >=
-		    dev->mdev->port_caps[port - 1].pkey_table_len) {
-			mlx5_ib_dbg(dev, "invalid pkey index %d\n",
-				    attr->pkey_index);
-			goto out;
-		}
+	if ((attr_mask & IB_QP_PKEY_INDEX) &&
+	    attr->pkey_index >= dev->pkey_table_len) {
+		mlx5_ib_dbg(dev, "invalid pkey index %d\n", attr->pkey_index);
+		goto out;
 	}
 
 	if (attr_mask & IB_QP_MAX_QP_RD_ATOMIC &&
@@ -5376,7 +5382,7 @@ void mlx5_ib_drain_rq(struct ib_qp *qp)
 	handle_drain_completion(cq, &rdrain, dev);
 }
 
-/**
+/*
  * Bind a qp to a counter. If @counter is NULL then bind the qp to
  * the default counter
  */

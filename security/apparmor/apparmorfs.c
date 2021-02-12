@@ -1358,7 +1358,7 @@ static int rawdata_open(struct inode *inode, struct file *file)
 	struct aa_loaddata *loaddata;
 	struct rawdata_f_data *private;
 
-	if (!policy_view_capable(NULL))
+	if (!aa_current_policy_view_capable(NULL))
 		return -EACCES;
 
 	loaddata = __aa_get_loaddata(inode->i_private);
@@ -1773,7 +1773,8 @@ fail2:
 	return error;
 }
 
-static int ns_mkdir_op(struct inode *dir, struct dentry *dentry, umode_t mode)
+static int ns_mkdir_op(struct user_namespace *mnt_userns, struct inode *dir,
+		       struct dentry *dentry, umode_t mode)
 {
 	struct aa_ns *ns, *parent;
 	/* TODO: improve permission check */
@@ -2264,7 +2265,7 @@ static const struct seq_operations aa_sfs_profiles_op = {
 
 static int profiles_open(struct inode *inode, struct file *file)
 {
-	if (!policy_view_capable(NULL))
+	if (!aa_current_policy_view_capable(NULL))
 		return -EACCES;
 
 	return seq_open(file, &aa_sfs_profiles_op);

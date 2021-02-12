@@ -29,6 +29,7 @@
 #include <asm/hmi.h>
 #include <asm/cpuidle.h>
 #include <asm/atomic.h>
+#include <asm/mce.h>
 
 #include <asm-generic/mmiowb_types.h>
 
@@ -273,6 +274,9 @@ struct paca_struct {
 #ifdef CONFIG_MMIOWB
 	struct mmiowb_state mmiowb_state;
 #endif
+#ifdef CONFIG_PPC_BOOK3S_64
+	struct mce_info *mce_info;
+#endif /* CONFIG_PPC_BOOK3S_64 */
 } ____cacheline_aligned;
 
 extern void copy_mm_to_paca(struct mm_struct *mm);
@@ -285,9 +289,9 @@ extern void free_unused_pacas(void);
 
 #else /* CONFIG_PPC64 */
 
-static inline void allocate_paca_ptrs(void) { };
-static inline void allocate_paca(int cpu) { };
-static inline void free_unused_pacas(void) { };
+static inline void allocate_paca_ptrs(void) { }
+static inline void allocate_paca(int cpu) { }
+static inline void free_unused_pacas(void) { }
 
 #endif /* CONFIG_PPC64 */
 

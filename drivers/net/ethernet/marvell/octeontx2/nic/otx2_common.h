@@ -51,13 +51,17 @@ enum arua_mapped_qtypes {
 #define NIX_LF_POISON_VEC			0x82
 
 /* RSS configuration */
+struct otx2_rss_ctx {
+	u8  ind_tbl[MAX_RSS_INDIR_TBL_SIZE];
+};
+
 struct otx2_rss_info {
 	u8 enable;
 	u32 flowkey_cfg;
 	u16 rss_size;
-	u8  ind_tbl[MAX_RSS_INDIR_TBL_SIZE];
 #define RSS_HASH_KEY_SIZE	44   /* 352 bit key */
 	u8  key[RSS_HASH_KEY_SIZE];
+	struct otx2_rss_ctx	*rss_ctx[MAX_RSS_GROUPS];
 };
 
 /* NIX (or NPC) RX errors */
@@ -200,6 +204,8 @@ struct otx2_hw {
 	struct otx2_drv_stats	drv_stats;
 	u64			cgx_rx_stats[CGX_RX_STATS_COUNT];
 	u64			cgx_tx_stats[CGX_TX_STATS_COUNT];
+	u64			cgx_fec_corr_blks;
+	u64			cgx_fec_uncorr_blks;
 	u8			cgx_links;  /* No. of CGX links present in HW */
 	u8			lbk_links;  /* No. of LBK links present in HW */
 };
@@ -481,9 +487,9 @@ static inline u64 otx2_aura_allocptr(struct otx2_nic *pfvf, int aura)
 
 /* Free pointer to a pool/aura */
 static inline void otx2_aura_freeptr(struct otx2_nic *pfvf,
-				     int aura, s64 buf)
+				     int aura, u64 buf)
 {
-	otx2_write128((u64)buf, (u64)aura | BIT_ULL(63),
+	otx2_write128(buf, (u64)aura | BIT_ULL(63),
 		      otx2_get_regaddr(pfvf, NPA_LF_AURA_OP_FREE0));
 }
 
@@ -632,7 +638,8 @@ int otx2_txschq_config(struct otx2_nic *pfvf, int lvl);
 int otx2_txsch_alloc(struct otx2_nic *pfvf);
 int otx2_txschq_stop(struct otx2_nic *pfvf);
 void otx2_sqb_flush(struct otx2_nic *pfvf);
-dma_addr_t __otx2_alloc_rbuf(struct otx2_nic *pfvf, struct otx2_pool *pool);
+int __otx2_alloc_rbuf(struct otx2_nic *pfvf, struct otx2_pool *pool,
+		      dma_addr_t *dma);
 int otx2_rxtx_enable(struct otx2_nic *pfvf, bool enable);
 void otx2_ctx_disable(struct mbox *mbox, int type, bool npa);
 int otx2_nix_config_bp(struct otx2_nic *pfvf, bool enable);
@@ -643,7 +650,7 @@ void otx2_cleanup_tx_cqes(struct otx2_nic *pfvf, struct otx2_cq_queue *cq);
 int otx2_rss_init(struct otx2_nic *pfvf);
 int otx2_set_flowkey_cfg(struct otx2_nic *pfvf);
 void otx2_set_rss_key(struct otx2_nic *pfvf);
-int otx2_set_rss_table(struct otx2_nic *pfvf);
+int otx2_set_rss_table(struct otx2_nic *pfvf, int ctx_id);
 
 /* Mbox handlers */
 void mbox_handler_msix_offset(struct otx2_nic *pfvf,
@@ -656,6 +663,9 @@ void mbox_handler_nix_txsch_alloc(struct otx2_nic *pf,
 				  struct nix_txsch_alloc_rsp *rsp);
 void mbox_handler_cgx_stats(struct otx2_nic *pfvf,
 			    struct cgx_stats_rsp *rsp);
+void mbox_handler_cgx_fec_stats(struct otx2_nic *pfvf,
+				struct cgx_fec_stats_rsp *rsp);
+void otx2_set_fec_stats_count(struct otx2_nic *pfvf);
 void mbox_handler_nix_bp_enable(struct otx2_nic *pfvf,
 				struct nix_bp_cfg_rsp *rsp);
 
@@ -664,6 +674,7 @@ void otx2_get_dev_stats(struct otx2_nic *pfvf);
 void otx2_get_stats64(struct net_device *netdev,
 		      struct rtnl_link_stats64 *stats);
 void otx2_update_lmac_stats(struct otx2_nic *pfvf);
+void otx2_update_lmac_fec_stats(struct otx2_nic *pfvf);
 int otx2_update_rq_stats(struct otx2_nic *pfvf, int qidx);
 int otx2_update_sq_stats(struct otx2_nic *pfvf, int qidx);
 void otx2_set_ethtool_ops(struct net_device *netdev);
@@ -684,10 +695,11 @@ int otx2_get_flow(struct otx2_nic *pfvf,
 int otx2_get_all_flows(struct otx2_nic *pfvf,
 		       struct ethtool_rxnfc *nfc, u32 *rule_locs);
 int otx2_add_flow(struct otx2_nic *pfvf,
-		  struct ethtool_rx_flow_spec *fsp);
+		  struct ethtool_rxnfc *nfc);
 int otx2_remove_flow(struct otx2_nic *pfvf, u32 location);
 int otx2_prepare_flow_request(struct ethtool_rx_flow_spec *fsp,
 			      struct npc_install_flow_req *req);
+void otx2_rss_ctx_flow_del(struct otx2_nic *pfvf, int ctx_id);
 int otx2_del_macfilter(struct net_device *netdev, const u8 *mac);
 int otx2_add_macfilter(struct net_device *netdev, const u8 *mac);
 int otx2_enable_rxvlan(struct otx2_nic *pf, bool enable);

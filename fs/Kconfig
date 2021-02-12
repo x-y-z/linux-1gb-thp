@@ -125,6 +125,7 @@ source "fs/overlayfs/Kconfig"
 
 menu "Caches"
 
+source "fs/netfs/Kconfig"
 source "fs/fscache/Kconfig"
 source "fs/cachefiles/Kconfig"
 
@@ -332,6 +333,10 @@ config NFS_COMMON
 	bool
 	depends on NFSD || NFS_FS || LOCKD
 	default y
+
+config NFS_V4_2_SSC_HELPER
+	tristate
+	default y if NFS_V4=y || NFS_FS=y
 
 source "net/sunrpc/Kconfig"
 source "fs/ceph/Kconfig"
