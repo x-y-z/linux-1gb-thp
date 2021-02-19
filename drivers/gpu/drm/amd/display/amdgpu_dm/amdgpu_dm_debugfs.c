@@ -25,8 +25,6 @@
 
 #include <linux/uaccess.h>
 
-#include <drm/drm_debugfs.h>
-
 #include "dc.h"
 #include "amdgpu.h"
 #include "amdgpu_dm.h"
@@ -691,7 +689,7 @@ static ssize_t dp_phy_test_pattern_debugfs_write(struct file *f, const char __us
 	return size;
 }
 
-/**
+/*
  * Returns the DMCUB tracebuffer contents.
  * Example usage: cat /sys/kernel/debug/dri/0/amdgpu_dm_dmub_tracebuffer
  */
@@ -735,7 +733,7 @@ static int dmub_tracebuffer_show(struct seq_file *m, void *data)
 	return 0;
 }
 
-/**
+/*
  * Returns the DMCUB firmware state contents.
  * Example usage: cat /sys/kernel/debug/dri/0/amdgpu_dm_dmub_fw_state
  */
@@ -1063,7 +1061,7 @@ static int dp_dsc_fec_support_show(struct seq_file *m, void *data)
  *	echo 0 > /sys/kernel/debug/dri/0/DP-X/trigger_hotplug
  *
  */
-static ssize_t dp_trigger_hotplug(struct file *f, const char __user *buf,
+static ssize_t trigger_hotplug(struct file *f, const char __user *buf,
 							size_t size, loff_t *pos)
 {
 	struct amdgpu_dm_connector *aconnector = file_inode(f)->i_private;
@@ -2214,9 +2212,9 @@ static const struct file_operations dp_dsc_slice_bpg_offset_debugfs_fops = {
 	.llseek = default_llseek
 };
 
-static const struct file_operations dp_trigger_hotplug_debugfs_fops = {
+static const struct file_operations trigger_hotplug_debugfs_fops = {
 	.owner = THIS_MODULE,
-	.write = dp_trigger_hotplug,
+	.write = trigger_hotplug,
 	.llseek = default_llseek
 };
 
@@ -2270,7 +2268,6 @@ static const struct {
 	const struct file_operations *fops;
 } dp_debugfs_entries[] = {
 		{"link_settings", &dp_link_settings_debugfs_fops},
-		{"trigger_hotplug", &dp_trigger_hotplug_debugfs_fops},
 		{"phy_settings", &dp_phy_settings_debugfs_fop},
 		{"test_pattern", &dp_phy_test_pattern_fops},
 #ifdef CONFIG_DRM_AMD_DC_HDCP
@@ -2367,6 +2364,9 @@ void connector_debugfs_init(struct amdgpu_dm_connector *connector)
 	debugfs_create_file("output_bpc", 0644, dir, connector,
 			    &output_bpc_fops);
 
+	debugfs_create_file("trigger_hotplug", 0644, dir, connector,
+			    &trigger_hotplug_debugfs_fops);
+
 	connector->debugfs_dpcd_address = 0;
 	connector->debugfs_dpcd_size = 0;
 
@@ -2448,11 +2448,9 @@ static ssize_t dtn_log_write(
  * As written to display, taking ABM and backlight lut into account.
  * Ranges from 0x0 to 0x10000 (= 100% PWM)
  */
-static int current_backlight_read(struct seq_file *m, void *data)
+static int current_backlight_show(struct seq_file *m, void *unused)
 {
-	struct drm_info_node *node = (struct drm_info_node *)m->private;
-	struct drm_device *dev = node->minor->dev;
-	struct amdgpu_device *adev = drm_to_adev(dev);
+	struct amdgpu_device *adev = (struct amdgpu_device *)m->private;
 	struct amdgpu_display_manager *dm = &adev->dm;
 
 	unsigned int backlight = dc_link_get_backlight_level(dm->backlight_link);
@@ -2466,11 +2464,9 @@ static int current_backlight_read(struct seq_file *m, void *data)
  * As written to display, taking ABM and backlight lut into account.
  * Ranges from 0x0 to 0x10000 (= 100% PWM)
  */
-static int target_backlight_read(struct seq_file *m, void *data)
+static int target_backlight_show(struct seq_file *m, void *unused)
 {
-	struct drm_info_node *node = (struct drm_info_node *)m->private;
-	struct drm_device *dev = node->minor->dev;
-	struct amdgpu_device *adev = drm_to_adev(dev);
+	struct amdgpu_device *adev = (struct amdgpu_device *)m->private;
 	struct amdgpu_display_manager *dm = &adev->dm;
 
 	unsigned int backlight = dc_link_get_target_backlight_pwm(dm->backlight_link);
@@ -2479,10 +2475,10 @@ static int target_backlight_read(struct seq_file *m, void *data)
 	return 0;
 }
 
-static int mst_topo(struct seq_file *m, void *unused)
+static int mst_topo_show(struct seq_file *m, void *unused)
 {
-	struct drm_info_node *node = (struct drm_info_node *)m->private;
-	struct drm_device *dev = node->minor->dev;
+	struct amdgpu_device *adev = (struct amdgpu_device *)m->private;
+	struct drm_device *dev = adev_to_drm(adev);
 	struct drm_connector *connector;
 	struct drm_connector_list_iter conn_iter;
 	struct amdgpu_dm_connector *aconnector;
@@ -2501,12 +2497,6 @@ static int mst_topo(struct seq_file *m, void *unused)
 
 	return 0;
 }
-
-static const struct drm_info_list amdgpu_dm_debugfs_list[] = {
-	{"amdgpu_current_backlight_pwm", &current_backlight_read},
-	{"amdgpu_target_backlight_pwm", &target_backlight_read},
-	{"amdgpu_mst_topology", &mst_topo},
-};
 
 /*
  * Sets the force_timing_sync debug optino from the given string.
@@ -2566,10 +2556,13 @@ static int visual_confirm_get(void *data, u64 *val)
 	return 0;
 }
 
+DEFINE_SHOW_ATTRIBUTE(current_backlight);
+DEFINE_SHOW_ATTRIBUTE(target_backlight);
+DEFINE_SHOW_ATTRIBUTE(mst_topo);
 DEFINE_DEBUGFS_ATTRIBUTE(visual_confirm_fops, visual_confirm_get,
 			 visual_confirm_set, "%llu\n");
 
-int dtn_debugfs_init(struct amdgpu_device *adev)
+void dtn_debugfs_init(struct amdgpu_device *adev)
 {
 	static const struct file_operations dtn_log_fops = {
 		.owner = THIS_MODULE,
@@ -2580,13 +2573,13 @@ int dtn_debugfs_init(struct amdgpu_device *adev)
 
 	struct drm_minor *minor = adev_to_drm(adev)->primary;
 	struct dentry *root = minor->debugfs_root;
-	int ret;
 
-	ret = amdgpu_debugfs_add_files(adev, amdgpu_dm_debugfs_list,
-				ARRAY_SIZE(amdgpu_dm_debugfs_list));
-	if (ret)
-		return ret;
-
+	debugfs_create_file("amdgpu_current_backlight_pwm", 0444,
+			    root, adev, &current_backlight_fops);
+	debugfs_create_file("amdgpu_target_backlight_pwm", 0444,
+			    root, adev, &target_backlight_fops);
+	debugfs_create_file("amdgpu_mst_topology", 0444, root,
+			    adev, &mst_topo_fops);
 	debugfs_create_file("amdgpu_dm_dtn_log", 0644, root, adev,
 			    &dtn_log_fops);
 
@@ -2601,6 +2594,4 @@ int dtn_debugfs_init(struct amdgpu_device *adev)
 
 	debugfs_create_file_unsafe("amdgpu_dm_force_timing_sync", 0644, root,
 				   adev, &force_timing_sync_ops);
-
-	return 0;
 }

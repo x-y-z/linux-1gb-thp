@@ -577,6 +577,7 @@ inc_rfc1001_len(void *buf, int count)
 struct TCP_Server_Info {
 	struct list_head tcp_ses_list;
 	struct list_head smb_ses_list;
+	__u64 conn_id; /* connection identifier (useful for debugging) */
 	int srv_count; /* reference counter */
 	/* 15 character server name + 0x20 16th byte indicating type = srv */
 	char server_RFC1001_name[RFC1001_NAME_LEN_WITH_NULL];
@@ -1704,7 +1705,9 @@ static inline bool is_retryable_error(int error)
 #define   CIFS_ECHO_OP      0x080    /* echo request */
 #define   CIFS_OBREAK_OP   0x0100    /* oplock break request */
 #define   CIFS_NEG_OP      0x0200    /* negotiate request */
-#define   CIFS_OP_MASK     0x0380    /* mask request type */
+/* Lower bitmask values are reserved by others below. */
+#define   CIFS_SESS_OP     0x2000    /* session setup request */
+#define   CIFS_OP_MASK     0x2380    /* mask request type */
 
 #define   CIFS_HAS_CREDITS 0x0400    /* already has credits */
 #define   CIFS_TRANSFORM_REQ 0x0800    /* transform request before sending */
@@ -1844,6 +1847,7 @@ GLOBAL_EXTERN spinlock_t GlobalMid_Lock;  /* protects above & list operations */
  */
 GLOBAL_EXTERN atomic_t sesInfoAllocCount;
 GLOBAL_EXTERN atomic_t tconInfoAllocCount;
+GLOBAL_EXTERN atomic_t tcpSesNextId;
 GLOBAL_EXTERN atomic_t tcpSesAllocCount;
 GLOBAL_EXTERN atomic_t tcpSesReconnectCount;
 GLOBAL_EXTERN atomic_t tconInfoReconnectCount;

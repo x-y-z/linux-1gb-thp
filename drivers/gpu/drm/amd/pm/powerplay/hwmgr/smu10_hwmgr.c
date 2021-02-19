@@ -1467,10 +1467,24 @@ static int smu10_set_power_profile_mode(struct pp_hwmgr *hwmgr, long *input, uin
 
 static int smu10_asic_reset(struct pp_hwmgr *hwmgr, enum SMU_ASIC_RESET_MODE mode)
 {
-	return smum_send_msg_to_smc_with_parameter(hwmgr,
-						   PPSMC_MSG_DeviceDriverReset,
-						   mode,
-						   NULL);
+	int ret;
+
+	smu10_powergate_vcn(hwmgr, true);
+	ret = smu10_powergate_sdma(hwmgr, true);
+	if (ret)
+		return ret;
+	ret = smum_send_msg_to_smc_with_parameter(hwmgr,
+						  PPSMC_MSG_DeviceDriverReset,
+						  mode,
+						  NULL);
+	if (ret)
+		return ret;
+	ret = smu10_powergate_sdma(hwmgr, false);
+	if (ret)
+		return ret;
+	smu10_powergate_vcn(hwmgr, false);
+
+	return ret;
 }
 
 static int smu10_set_fine_grain_clk_vol(struct pp_hwmgr *hwmgr,
@@ -1487,7 +1501,7 @@ static int smu10_set_fine_grain_clk_vol(struct pp_hwmgr *hwmgr,
 	}
 
 	if (!smu10_data->fine_grain_enabled) {
-		pr_err("Fine grain not started\n");
+		pr_err("pp_od_clk_voltage is not accessible if power_dpm_force_performance_level is not in manual mode!\n");
 		return -EINVAL;
 	}
 

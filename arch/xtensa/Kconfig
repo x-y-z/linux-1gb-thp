@@ -32,7 +32,6 @@ config XTENSA
 	select HAVE_FUTEX_CMPXCHG if !MMU
 	select HAVE_HW_BREAKPOINT if PERF_EVENTS
 	select HAVE_IRQ_TIME_ACCOUNTING
-	select HAVE_OPROFILE
 	select HAVE_PCI
 	select HAVE_PERF_EVENTS
 	select HAVE_STACKPROTECTOR
@@ -467,7 +466,7 @@ config INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 	  then enter your normal kernel breakpoints once the MMU was mapped
 	  to the kernel mappings (0XC0000000).
 
-	  This unfortunately won't work for U-Boot and likely also wont
+	  This unfortunately won't work for U-Boot and likely also won't
 	  work for using KEXEC to have a hot kernel ready for doing a
 	  KDUMP.
 

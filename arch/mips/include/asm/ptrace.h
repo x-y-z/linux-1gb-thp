@@ -53,7 +53,7 @@ struct pt_regs {
 
 static inline unsigned long kernel_stack_pointer(struct pt_regs *regs)
 {
-	return regs->regs[31];
+	return regs->regs[29];
 }
 
 static inline void instruction_pointer_set(struct pt_regs *regs,
@@ -185,5 +185,7 @@ static inline void user_stack_pointer_set(struct pt_regs *regs,
 {
 	regs->regs[29] = val;
 }
+
+#define arch_has_single_step()	(1)
 
 #endif /* _ASM_PTRACE_H */
