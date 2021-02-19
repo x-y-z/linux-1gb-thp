@@ -3634,7 +3634,18 @@ static ssize_t btrfs_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 			return ret;
 	}
 
-	return filemap_read(iocb, to, ret);
+	if (iocb->ki_flags & IOCB_NOWAIT)
+		iocb->ki_flags |= IOCB_NOIO;
+
+	ret = filemap_read(iocb, to, ret);
+
+	if (iocb->ki_flags & IOCB_NOWAIT) {
+		iocb->ki_flags &= ~IOCB_NOIO;
+		if (ret == 0)
+			ret = -EAGAIN;
+	}
+
+	return ret;
 }
 
 const struct file_operations btrfs_file_operations = {

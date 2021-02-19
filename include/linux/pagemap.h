@@ -762,6 +762,8 @@ void delete_from_page_cache_batch(struct address_space *mapping,
 				  struct pagevec *pvec);
 loff_t mapping_seek_hole_data(struct address_space *, loff_t start, loff_t end,
 		int whence);
+void readahead_expand(struct readahead_control *ractl,
+		      loff_t new_start, size_t new_len);
 
 /*
  * Like add_to_page_cache_locked, but used to add newly allocated pages:
