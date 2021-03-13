@@ -3076,24 +3076,25 @@ out_retry:
 }
 EXPORT_SYMBOL(filemap_fault);
 
-static bool filemap_map_pmd(struct vm_fault *vmf, struct page *page)
+static bool filemap_map_pmd(struct vm_fault *vmf, struct folio *folio)
 {
 	struct mm_struct *mm = vmf->vma->vm_mm;
 
 	/* Huge page is mapped? No need to proceed. */
 	if (pmd_trans_huge(*vmf->pmd)) {
-		unlock_page(page);
-		put_page(page);
+		folio_unlock(folio);
+		folio_put(folio);
 		return true;
 	}
 
-	if (pmd_none(*vmf->pmd) && PageTransHuge(page)) {
-	    vm_fault_t ret = do_set_pmd(vmf, page);
-	    if (!ret) {
-		    /* The page is mapped successfully, reference consumed. */
-		    unlock_page(page);
-		    return true;
-	    }
+	if (pmd_none(*vmf->pmd) && folio_test_transhuge(folio) &&
+			folio_order(folio) == HPAGE_PMD_ORDER) {
+		vm_fault_t ret = do_set_pmd(vmf, &folio->page);
+		if (!ret) {
+			/* Page is mapped successfully, reference consumed. */
+			folio_unlock(folio);
+			return true;
+		}
 	}
 
 	if (pmd_none(*vmf->pmd)) {
@@ -3108,8 +3109,8 @@ static bool filemap_map_pmd(struct vm_fault *vmf, struct page *page)
 
 	/* See comment in handle_pte_fault() */
 	if (pmd_devmap_trans_unstable(vmf->pmd)) {
-		unlock_page(page);
-		put_page(page);
+		folio_unlock(folio);
+		folio_put(folio);
 		return true;
 	}
 
@@ -3192,7 +3193,7 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
 	if (!folio)
 		goto out;
 
-	if (filemap_map_pmd(vmf, &folio->page)) {
+	if (filemap_map_pmd(vmf, folio)) {
 		ret = VM_FAULT_NOPAGE;
 		goto out;
 	}
