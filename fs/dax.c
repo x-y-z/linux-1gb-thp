@@ -709,8 +709,9 @@ int dax_invalidate_mapping_entry_sync(struct address_space *mapping,
 	return __dax_invalidate_entry(mapping, index, false);
 }
 
-static int copy_cow_page_dax(struct block_device *bdev, struct dax_device *dax_dev,
-			     sector_t sector, struct page *to, unsigned long vaddr)
+static int copy_cow_page_dax(struct block_device *bdev,
+		struct dax_device *dax_dev, sector_t sector, struct folio *to,
+		unsigned long vaddr)
 {
 	void *vto, *kaddr;
 	pgoff_t pgoff;
@@ -727,8 +728,8 @@ static int copy_cow_page_dax(struct block_device *bdev, struct dax_device *dax_d
 		dax_read_unlock(id);
 		return rc;
 	}
-	vto = kmap_atomic(to);
-	copy_user_page(vto, (void __force *)kaddr, vaddr, to);
+	vto = kmap_atomic(&to->page);
+	copy_user_page(vto, (void __force *)kaddr, vaddr, &to->page);
 	kunmap_atomic(vto);
 	dax_read_unlock(id);
 	return 0;
@@ -1329,7 +1330,7 @@ static vm_fault_t dax_iomap_pte_fault(struct vm_fault *vmf, pfn_t *pfnp,
 		switch (iomap.type) {
 		case IOMAP_HOLE:
 		case IOMAP_UNWRITTEN:
-			clear_user_highpage(vmf->cow_page, vaddr);
+			clear_user_highpage(&vmf->cow_page->page, vaddr);
 			break;
 		case IOMAP_MAPPED:
 			error = copy_cow_page_dax(iomap.bdev, iomap.dax_dev,
@@ -1344,7 +1345,7 @@ static vm_fault_t dax_iomap_pte_fault(struct vm_fault *vmf, pfn_t *pfnp,
 		if (error)
 			goto error_finish_iomap;
 
-		__SetPageUptodate(vmf->cow_page);
+		__folio_mark_uptodate(vmf->cow_page);
 		ret = finish_fault(vmf);
 		if (!ret)
 			ret = VM_FAULT_DONE_COW;

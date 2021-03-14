@@ -4006,7 +4006,7 @@ vm_fault_t finish_fault(struct vm_fault *vmf)
 
 	/* Did we COW the page? */
 	if ((vmf->flags & FAULT_FLAG_WRITE) && !(vma->vm_flags & VM_SHARED))
-		page = vmf->cow_page;
+		page = &vmf->cow_page->page;
 	else
 		page = vmf->page;
 
@@ -4189,16 +4189,16 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 	if (unlikely(anon_vma_prepare(vma)))
 		return VM_FAULT_OOM;
 
-	vmf->cow_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+	vmf->cow_page = vma_alloc_folio(GFP_HIGHUSER_MOVABLE, 0, vma,
+					numa_node_id(), vmf->address, false);
 	if (!vmf->cow_page)
 		return VM_FAULT_OOM;
 
-	if (mem_cgroup_charge(page_folio(vmf->cow_page), vma->vm_mm,
-				GFP_KERNEL)) {
-		put_page(vmf->cow_page);
+	if (mem_cgroup_charge(vmf->cow_page, vma->vm_mm, GFP_KERNEL)) {
+		folio_put(vmf->cow_page);
 		return VM_FAULT_OOM;
 	}
-	cgroup_throttle_swaprate(vmf->cow_page, GFP_KERNEL);
+	cgroup_throttle_swaprate(&vmf->cow_page->page, GFP_KERNEL);
 
 	ret = __do_fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
@@ -4206,8 +4206,8 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 	if (ret & VM_FAULT_DONE_COW)
 		return ret;
 
-	copy_user_highpage(vmf->cow_page, vmf->page, vmf->address, vma);
-	__SetPageUptodate(vmf->cow_page);
+	copy_user_highpage(&vmf->cow_page->page, vmf->page, vmf->address, vma);
+	__folio_mark_uptodate(vmf->cow_page);
 
 	ret |= finish_fault(vmf);
 	unlock_page(vmf->page);
@@ -4216,7 +4216,7 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 		goto uncharge_out;
 	return ret;
 uncharge_out:
-	put_page(vmf->cow_page);
+	folio_put(vmf->cow_page);
 	return ret;
 }
 
