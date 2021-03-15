@@ -883,9 +883,9 @@ copy_nonpresent_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 static inline int
 copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
 		  pte_t *dst_pte, pte_t *src_pte, unsigned long addr, int *rss,
-		  struct page **prealloc, pte_t pte, struct page *page)
+		  struct folio **prealloc, pte_t pte, struct page *page)
 {
-	struct page *new_page;
+	struct folio *new_page;
 
 	/*
 	 * What we want to do is to check whether this page may
@@ -912,14 +912,14 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 	 * over and copy the page & arm it.
 	 */
 	*prealloc = NULL;
-	copy_user_highpage(new_page, page, addr, src_vma);
-	__SetPageUptodate(new_page);
-	page_add_new_anon_rmap(new_page, dst_vma, addr, false);
-	lru_cache_add_inactive_or_unevictable(new_page, dst_vma);
-	rss[mm_counter(new_page)]++;
+	copy_user_highpage(&new_page->page, page, addr, src_vma);
+	__folio_mark_uptodate(new_page);
+	page_add_new_anon_rmap(&new_page->page, dst_vma, addr, false);
+	lru_cache_add_inactive_or_unevictable(&new_page->page, dst_vma);
+	rss[mm_counter(&new_page->page)]++;
 
 	/* All done, just insert the new page copy in the child */
-	pte = mk_pte(new_page, dst_vma->vm_page_prot);
+	pte = mk_pte(&new_page->page, dst_vma->vm_page_prot);
 	pte = maybe_mkwrite(pte_mkdirty(pte), dst_vma);
 	if (userfaultfd_pte_wp(dst_vma, *src_pte))
 		/* Uffd-wp needs to be delivered to dest pte as well */
@@ -935,7 +935,7 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 static inline int
 copy_present_pte(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
 		 pte_t *dst_pte, pte_t *src_pte, unsigned long addr, int *rss,
-		 struct page **prealloc)
+		 struct folio **prealloc)
 {
 	struct mm_struct *src_mm = src_vma->vm_mm;
 	unsigned long vm_flags = src_vma->vm_flags;
@@ -980,21 +980,22 @@ copy_present_pte(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
 	return 0;
 }
 
-static inline struct page *
+static inline struct folio *
 page_copy_prealloc(struct mm_struct *src_mm, struct vm_area_struct *vma,
 		   unsigned long addr)
 {
-	struct page *new_page;
+	struct folio *new_page;
 
-	new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
+	new_page = vma_alloc_folio(GFP_HIGHUSER_MOVABLE, 0, vma,
+					numa_node_id(), addr, false);
 	if (!new_page)
 		return NULL;
 
-	if (mem_cgroup_charge(page_folio(new_page), src_mm, GFP_KERNEL)) {
-		put_page(new_page);
+	if (mem_cgroup_charge(new_page, src_mm, GFP_KERNEL)) {
+		folio_put(new_page);
 		return NULL;
 	}
-	cgroup_throttle_swaprate(new_page, GFP_KERNEL);
+	cgroup_throttle_swaprate(&new_page->page, GFP_KERNEL);
 
 	return new_page;
 }
@@ -1012,7 +1013,7 @@ copy_pte_range(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
 	int progress, ret = 0;
 	int rss[NR_MM_COUNTERS];
 	swp_entry_t entry = (swp_entry_t){0};
-	struct page *prealloc = NULL;
+	struct folio *prealloc = NULL;
 
 again:
 	progress = 0;
@@ -1082,7 +1083,7 @@ again:
 			 * will allocate page according to address).  This
 			 * could only happen if one pinned pte changed.
 			 */
-			put_page(prealloc);
+			folio_put(prealloc);
 			prealloc = NULL;
 		}
 		progress += 8;
@@ -1119,7 +1120,7 @@ again:
 		goto again;
 out:
 	if (unlikely(prealloc))
-		put_page(prealloc);
+		folio_put(prealloc);
 	return ret;
 }
 
