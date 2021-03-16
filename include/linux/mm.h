@@ -918,7 +918,7 @@ static inline struct page *virt_to_head_page(const void *x)
 	return compound_head(page);
 }
 
-void __put_page(struct page *page);
+void __folio_put(struct folio *folio);
 
 void put_pages_list(struct list_head *pages);
 
@@ -1184,7 +1184,7 @@ static inline bool page_is_devmap_managed(struct page *page)
 	return false;
 }
 
-void put_devmap_managed_page(struct page *page);
+void put_devmap_managed_page(struct folio *folio);
 
 #else /* CONFIG_DEV_PAGEMAP_OPS */
 static inline bool page_is_devmap_managed(struct page *page)
@@ -1192,7 +1192,7 @@ static inline bool page_is_devmap_managed(struct page *page)
 	return false;
 }
 
-static inline void put_devmap_managed_page(struct page *page)
+static inline void put_devmap_managed_page(struct folio *folio)
 {
 }
 #endif /* CONFIG_DEV_PAGEMAP_OPS */
@@ -1266,7 +1266,7 @@ static inline __must_check bool try_get_page(struct page *page)
 static inline void folio_put(struct folio *folio)
 {
 	if (folio_put_testzero(folio))
-		__put_page(&folio->page);
+		__folio_put(folio);
 }
 
 static inline void put_page(struct page *page)
@@ -1280,7 +1280,7 @@ static inline void put_page(struct page *page)
 	 * include/linux/memremap.h and HMM for details.
 	 */
 	if (page_is_devmap_managed(&folio->page)) {
-		put_devmap_managed_page(&folio->page);
+		put_devmap_managed_page(folio);
 		return;
 	}
 

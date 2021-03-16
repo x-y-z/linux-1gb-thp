@@ -77,29 +77,28 @@ static DEFINE_PER_CPU(struct lru_pvecs, lru_pvecs) = {
  * This path almost never happens for VM activity - pages are normally
  * freed via pagevecs.  But it gets used by networking.
  */
-static void __page_cache_release(struct page *page)
+static void __page_cache_release(struct folio *folio)
 {
-	if (PageLRU(page)) {
-		struct folio *folio = page_folio(page);
+	if (folio_test_lru(folio)) {
 		struct lruvec *lruvec;
 		unsigned long flags;
 
 		lruvec = folio_lruvec_lock_irqsave(folio, &flags);
-		del_page_from_lru_list(page, lruvec);
-		__clear_page_lru_flags(page);
+		lruvec_del_folio(lruvec, folio);
+		__folio_clear_lru_flags(folio);
 		unlock_page_lruvec_irqrestore(lruvec, flags);
 	}
-	__ClearPageWaiters(page);
+	__folio_clear_waiters(folio);
 }
 
-static void __put_single_page(struct page *page)
+static void __put_single_folio(struct folio *folio)
 {
-	__page_cache_release(page);
-	mem_cgroup_uncharge(page_folio(page));
-	free_unref_page(page, 0);
+	__page_cache_release(folio);
+	mem_cgroup_uncharge(folio);
+	free_unref_page(&folio->page, 0);
 }
 
-static void __put_compound_page(struct page *page)
+static void __put_compound_page(struct folio *folio)
 {
 	/*
 	 * __page_cache_release() is supposed to be called for thp, not for
@@ -107,15 +106,15 @@ static void __put_compound_page(struct page *page)
 	 * (it's never listed to any LRU lists) and no memcg routines should
 	 * be called for hugetlb (it has a separate hugetlb_cgroup.)
 	 */
-	if (!PageHuge(page))
-		__page_cache_release(page);
-	destroy_compound_page(page);
+	if (!folio_test_hugetlb(folio))
+		__page_cache_release(folio);
+	destroy_compound_page(&folio->page);
 }
 
-void __put_page(struct page *page)
+void __folio_put(struct folio *folio)
 {
-	if (is_zone_device_page(page)) {
-		put_dev_pagemap(page->pgmap);
+	if (is_zone_device_page(&folio->page)) {
+		put_dev_pagemap(folio->page.pgmap);
 
 		/*
 		 * The page belongs to the device that created pgmap. Do
@@ -124,12 +123,12 @@ void __put_page(struct page *page)
 		return;
 	}
 
-	if (unlikely(PageCompound(page)))
-		__put_compound_page(page);
+	if (unlikely(folio_test_multi(folio)))
+		__put_compound_page(folio);
 	else
-		__put_single_page(page);
+		__put_single_folio(folio);
 }
-EXPORT_SYMBOL(__put_page);
+EXPORT_SYMBOL(__folio_put);
 
 /**
  * put_pages_list() - release a list of pages
@@ -923,7 +922,7 @@ void release_pages(struct page **pages, int nr)
 			 * put_page_testzero().
 			 */
 			if (page_is_devmap_managed(&folio->page)) {
-				put_devmap_managed_page(&folio->page);
+				put_devmap_managed_page(folio);
 				continue;
 			}
 			if (folio_put_testzero(folio))
@@ -939,7 +938,7 @@ void release_pages(struct page **pages, int nr)
 				unlock_page_lruvec_irqrestore(lruvec, flags);
 				lruvec = NULL;
 			}
-			__put_compound_page(&folio->page);
+			__put_compound_page(folio);
 			continue;
 		}
 
@@ -1140,14 +1139,14 @@ void __init swap_setup(void)
 }
 
 #ifdef CONFIG_DEV_PAGEMAP_OPS
-void put_devmap_managed_page(struct page *page)
+void put_devmap_managed_page(struct folio *folio)
 {
 	int count;
 
-	if (WARN_ON_ONCE(!page_is_devmap_managed(page)))
+	if (WARN_ON_ONCE(!page_is_devmap_managed(&folio->page)))
 		return;
 
-	count = page_ref_dec_return(page);
+	count = page_ref_dec_return(&folio->page);
 
 	/*
 	 * devmap page refcounts are 1-based, rather than 0-based: if
@@ -1155,9 +1154,9 @@ void put_devmap_managed_page(struct page *page)
 	 * stable because nobody holds a reference on the page.
 	 */
 	if (count == 1)
-		free_devmap_managed_page(page);
+		free_devmap_managed_page(&folio->page);
 	else if (!count)
-		__put_page(page);
+		__folio_put(folio);
 }
 EXPORT_SYMBOL(put_devmap_managed_page);
 #endif
