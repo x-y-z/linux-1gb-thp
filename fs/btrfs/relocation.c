@@ -2955,7 +2955,8 @@ static int relocate_file_extent_cluster(struct inode *inode,
 
 		if (PageReadahead(page)) {
 			page_cache_async_readahead(inode->i_mapping,
-						   ra, NULL, page, index,
+						   ra, NULL, page_folio(page),
+						   index,
 						   last_index + 1 - index);
 		}
 
