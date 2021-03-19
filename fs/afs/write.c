@@ -846,14 +846,14 @@ int afs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 vm_fault_t afs_page_mkwrite(struct vm_fault *vmf)
 {
 	struct folio *folio = page_folio(vmf->page);
-	struct page *page = &folio->page;
 	struct file *file = vmf->vma->vm_file;
 	struct inode *inode = file_inode(file);
 	struct afs_vnode *vnode = AFS_FS_I(inode);
 	unsigned long priv;
 	vm_fault_t ret = VM_FAULT_RETRY;
 
-	_enter("{{%llx:%llu}},{%lx}", vnode->fid.vid, vnode->fid.vnode, page->index);
+	_enter("{{%llx:%llu}},{%lx}", vnode->fid.vid, vnode->fid.vnode,
+		folio->index);
 
 	sb_start_pagefault(inode->i_sb);
 
@@ -861,15 +861,15 @@ vm_fault_t afs_page_mkwrite(struct vm_fault *vmf)
 	 * be modified.  We then assume the entire page will need writing back.
 	 */
 #ifdef CONFIG_AFS_FSCACHE
-	if (PageFsCache(page) &&
-	    wait_on_page_fscache_killable(page) < 0)
+	if (folio_test_fscache(folio) &&
+	    folio_wait_fscache_killable(folio) < 0)
 		goto out;
 #endif
 
 	if (folio_wait_writeback_killable(folio))
 		goto out;
 
-	if (lock_page_killable(page) < 0)
+	if (folio_lock_killable(folio) < 0)
 		goto out;
 
 	/* We mustn't change page->private until writeback is complete as that
@@ -881,14 +881,16 @@ vm_fault_t afs_page_mkwrite(struct vm_fault *vmf)
 		goto out;
 	}
 
-	priv = afs_page_dirty(page, 0, thp_size(page));
+	priv = afs_page_dirty(&folio->page, 0, folio_size(folio));
 	priv = afs_page_dirty_mmapped(priv);
-	if (PagePrivate(page)) {
-		set_page_private(page, priv);
-		trace_afs_page_dirty(vnode, tracepoint_string("mkwrite+"), page);
+	if (folio_test_private(folio)) {
+		folio->private = priv;
+		trace_afs_page_dirty(vnode, tracepoint_string("mkwrite+"),
+					&folio->page);
 	} else {
-		attach_page_private(page, (void *)priv);
-		trace_afs_page_dirty(vnode, tracepoint_string("mkwrite"), page);
+		folio_attach_private(folio, (void *)priv);
+		trace_afs_page_dirty(vnode, tracepoint_string("mkwrite"),
+					&folio->page);
 	}
 	file_update_time(file);
 
