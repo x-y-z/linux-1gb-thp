@@ -141,11 +141,11 @@ EXPORT_SYMBOL(__put_page);
 void put_pages_list(struct list_head *pages)
 {
 	while (!list_empty(pages)) {
-		struct page *victim;
+		struct folio *victim;
 
-		victim = lru_to_page(pages);
+		victim = lru_to_folio(pages);
 		list_del(&victim->lru);
-		put_page(victim);
+		folio_put(victim);
 	}
 }
 EXPORT_SYMBOL(put_pages_list);
