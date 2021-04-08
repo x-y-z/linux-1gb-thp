@@ -144,6 +144,8 @@ BUFFER_FNS(Defer_Completion, defer_completion)
 		((struct buffer_head *)page_private(page));	\
 	})
 #define page_has_buffers(page)	PagePrivate(page)
+#define folio_has_buffers(folio) folio_test_private(folio)
+#define folio_buffers(folio)	page_buffers(&(folio)->page)
 
 void buffer_check_dirty_writeback(struct page *page,
 				     bool *dirty, bool *writeback);
