@@ -2638,11 +2638,12 @@ EXPORT_SYMBOL(folio_mark_dirty);
  */
 int set_page_dirty_lock(struct page *page)
 {
+	struct folio *folio = page_folio(page);
 	int ret;
 
-	lock_page(page);
-	ret = set_page_dirty(page);
-	unlock_page(page);
+	folio_lock(folio);
+	ret = folio_mark_dirty(folio);
+	folio_unlock(folio);
 	return ret;
 }
 EXPORT_SYMBOL(set_page_dirty_lock);
