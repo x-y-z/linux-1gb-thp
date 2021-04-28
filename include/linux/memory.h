@@ -21,10 +21,15 @@
 #include <linux/mutex.h>
 #include <linux/notifier.h>
 
+#if SECTION_SIZE_BITS > 27  /* 128MB */
+#define MIN_MEMORY_BLOCK_SIZE     (1UL << 27)
+#else
 #define MIN_MEMORY_BLOCK_SIZE     (1UL << SECTION_SIZE_BITS)
+#endif
 
 struct memory_block {
-	unsigned long start_section_nr;
+	unsigned long start_pfn;
+	unsigned long nr_pages;
 	unsigned long state;		/* serialized by the dev->lock */
 	int online_type;		/* for passing data to online routine */
 	int nid;			/* NID for this memory block */
@@ -90,7 +95,6 @@ int create_memory_block_devices(unsigned long start, unsigned long size,
 void remove_memory_block_devices(unsigned long start, unsigned long size);
 extern void memory_dev_init(void);
 extern int memory_notify(unsigned long val, void *v);
-extern struct memory_block *find_memory_block(struct mem_section *);
 typedef int (*walk_memory_blocks_func_t)(struct memory_block *, void *);
 extern int walk_memory_blocks(unsigned long start, unsigned long size,
 			      void *arg, walk_memory_blocks_func_t func);

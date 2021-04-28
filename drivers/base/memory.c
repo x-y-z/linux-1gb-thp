@@ -50,19 +50,15 @@ int mhp_online_type_from_str(const char *str)
 
 static int sections_per_block;
 
-static inline unsigned long memory_block_id(unsigned long section_nr)
+static inline unsigned long phys_to_block_id(unsigned long phys)
 {
-	return section_nr / sections_per_block;
+	return phys / memory_block_size_bytes();
 }
 
 static inline unsigned long pfn_to_block_id(unsigned long pfn)
 {
-	return memory_block_id(pfn_to_section_nr(pfn));
-}
-
-static inline unsigned long phys_to_block_id(unsigned long phys)
-{
-	return pfn_to_block_id(PFN_DOWN(phys));
+	/* calculate using memory_block_size_bytes() */
+	return phys_to_block_id(PFN_PHYS(pfn));
 }
 
 static int memory_subsys_online(struct device *dev);
@@ -118,7 +114,7 @@ static ssize_t phys_index_show(struct device *dev,
 	struct memory_block *mem = to_memory_block(dev);
 	unsigned long phys_index;
 
-	phys_index = mem->start_section_nr / sections_per_block;
+	phys_index = pfn_to_section_nr(mem->start_pfn);
 
 	return sysfs_emit(buf, "%08lx\n", phys_index);
 }
@@ -171,8 +167,8 @@ int memory_notify(unsigned long val, void *v)
 
 static int memory_block_online(struct memory_block *mem)
 {
-	unsigned long start_pfn = section_nr_to_pfn(mem->start_section_nr);
-	unsigned long nr_pages = PAGES_PER_SECTION * sections_per_block;
+	unsigned long start_pfn = mem->start_pfn;
+	unsigned long nr_pages = mem->nr_pages;
 	unsigned long nr_vmemmap_pages = mem->nr_vmemmap_pages;
 	struct zone *zone;
 	int ret;
@@ -212,8 +208,8 @@ static int memory_block_online(struct memory_block *mem)
 
 static int memory_block_offline(struct memory_block *mem)
 {
-	unsigned long start_pfn = section_nr_to_pfn(mem->start_section_nr);
-	unsigned long nr_pages = PAGES_PER_SECTION * sections_per_block;
+	unsigned long start_pfn = mem->start_pfn;
+	unsigned long nr_pages = mem->nr_pages;
 	unsigned long nr_vmemmap_pages = mem->nr_vmemmap_pages;
 	struct zone *zone;
 	int ret;
@@ -260,7 +256,7 @@ memory_block_action(struct memory_block *mem, unsigned long action)
 		break;
 	default:
 		WARN(1, KERN_WARNING "%s(%ld, %ld) unknown action: "
-		     "%ld\n", __func__, mem->start_section_nr, action, action);
+		     "%ld\n", __func__, mem->start_pfn, mem->nr_pages, action);
 		ret = -EINVAL;
 	}
 
@@ -366,7 +362,7 @@ static ssize_t phys_device_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct memory_block *mem = to_memory_block(dev);
-	unsigned long start_pfn = section_nr_to_pfn(mem->start_section_nr);
+	unsigned long start_pfn = mem->start_pfn;
 
 	return sysfs_emit(buf, "%d\n",
 			  arch_get_memory_phys_device(start_pfn));
@@ -390,8 +386,8 @@ static ssize_t valid_zones_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct memory_block *mem = to_memory_block(dev);
-	unsigned long start_pfn = section_nr_to_pfn(mem->start_section_nr);
-	unsigned long nr_pages = PAGES_PER_SECTION * sections_per_block;
+	unsigned long start_pfn = mem->start_pfn;
+	unsigned long nr_pages = mem->nr_pages;
 	struct zone *default_zone;
 	int len = 0;
 	int nid;
@@ -575,16 +571,6 @@ static struct memory_block *find_memory_block_by_id(unsigned long block_id)
 	return mem;
 }
 
-/*
- * Called under device_hotplug_lock.
- */
-struct memory_block *find_memory_block(struct mem_section *section)
-{
-	unsigned long block_id = memory_block_id(__section_nr(section));
-
-	return find_memory_block_by_id(block_id);
-}
-
 static struct attribute *memory_memblk_attrs[] = {
 	&dev_attr_phys_index.attr,
 	&dev_attr_state.attr,
@@ -614,7 +600,7 @@ int register_memory(struct memory_block *memory)
 	int ret;
 
 	memory->dev.bus = &memory_subsys;
-	memory->dev.id = memory->start_section_nr / sections_per_block;
+	memory->dev.id = memory->start_pfn / (memory_block_size_bytes() >> PAGE_SHIFT);
 	memory->dev.release = memory_block_release;
 	memory->dev.groups = memory_memblk_attr_groups;
 	memory->dev.offline = memory->state == MEM_OFFLINE;
@@ -633,47 +619,6 @@ int register_memory(struct memory_block *memory)
 	return ret;
 }
 
-static int init_memory_block(unsigned long block_id, unsigned long state,
-			     unsigned long nr_vmemmap_pages)
-{
-	struct memory_block *mem;
-	int ret = 0;
-
-	mem = find_memory_block_by_id(block_id);
-	if (mem) {
-		put_device(&mem->dev);
-		return -EEXIST;
-	}
-	mem = kzalloc(sizeof(*mem), GFP_KERNEL);
-	if (!mem)
-		return -ENOMEM;
-
-	mem->start_section_nr = block_id * sections_per_block;
-	mem->state = state;
-	mem->nid = NUMA_NO_NODE;
-	mem->nr_vmemmap_pages = nr_vmemmap_pages;
-
-	ret = register_memory(mem);
-
-	return ret;
-}
-
-static int add_memory_block(unsigned long base_section_nr)
-{
-	int section_count = 0;
-	unsigned long nr;
-
-	for (nr = base_section_nr; nr < base_section_nr + sections_per_block;
-	     nr++)
-		if (present_section_nr(nr))
-			section_count++;
-
-	if (section_count == 0)
-		return 0;
-	return init_memory_block(memory_block_id(base_section_nr),
-				 MEM_ONLINE, 0);
-}
-
 static void unregister_memory(struct memory_block *memory)
 {
 	if (WARN_ON_ONCE(memory->dev.bus != &memory_subsys))
@@ -686,6 +631,75 @@ static void unregister_memory(struct memory_block *memory)
 	device_unregister(&memory->dev);
 }
 
+static int init_memory_blocks(unsigned long start_pfn, unsigned long num_pages, unsigned long state,
+			     unsigned long nr_vmemmap_pages)
+{
+	struct memory_block *mem;
+	int ret = 0;
+	unsigned long block_nr_pages = memory_block_size_bytes() / PAGE_SIZE;
+	unsigned long block_start_pfn;
+
+	for (block_start_pfn = start_pfn; num_pages != 0; block_start_pfn += block_nr_pages) {
+		unsigned long block_id = pfn_to_block_id(block_start_pfn);
+
+		mem = find_memory_block_by_id(block_id);
+		if (mem) {
+			put_device(&mem->dev);
+			return -EEXIST;
+		}
+		mem = kzalloc(sizeof(*mem), GFP_KERNEL);
+		if (!mem)
+			return -ENOMEM;
+
+		mem->start_pfn = block_start_pfn;
+		mem->nr_pages = min(num_pages, block_nr_pages);
+		mem->state = state;
+		mem->nid = NUMA_NO_NODE;
+		mem->nr_vmemmap_pages = nr_vmemmap_pages;
+
+		ret = register_memory(mem);
+
+		if (ret) {
+			unsigned long unregister_block_pfn;
+			for (unregister_block_pfn = start_pfn; unregister_block_pfn < block_start_pfn; unregister_block_pfn -= block_nr_pages) {
+				block_id = pfn_to_block_id(unregister_block_pfn);
+				mem = find_memory_block_by_id(block_id);
+				if (WARN_ON_ONCE(!mem))
+					continue;
+				unregister_memory(mem);
+			}
+			return -EINVAL;
+		}
+		if (num_pages > block_nr_pages)
+			num_pages -= block_nr_pages;
+		else
+			num_pages = 0;
+	}
+	return 0;
+}
+
+static void add_whole_section_memory_block(unsigned long base_section_nr)
+{
+	int ret;
+	unsigned long start_pfn = section_nr_to_pfn(base_section_nr);
+	unsigned long nr_pages = 0;
+	struct mem_section *ms = __nr_to_section(base_section_nr);
+
+	if (bitmap_full(ms->usage->subsection_map, SUBSECTIONS_PER_SECTION))
+		nr_pages = PAGES_PER_SECTION;
+	else
+		nr_pages = PAGES_PER_SUBSECTION * bitmap_weight(ms->usage->subsection_map, SUBSECTIONS_PER_SECTION);
+
+
+	if (!nr_pages)
+		return;
+
+	ret = init_memory_blocks(start_pfn, nr_pages, MEM_ONLINE, 0);
+	if (ret)
+		panic("%s() failed to add memory block: %d\n", __func__,
+		      ret);
+}
+
 /*
  * Create memory block devices for the given memory area. Start and size
  * have to be aligned to memory block granularity. Memory block devices
@@ -696,31 +710,16 @@ static void unregister_memory(struct memory_block *memory)
 int create_memory_block_devices(unsigned long start, unsigned long size,
 				unsigned long vmemmap_pages)
 {
-	const unsigned long start_block_id = pfn_to_block_id(PFN_DOWN(start));
-	unsigned long end_block_id = pfn_to_block_id(PFN_DOWN(start + size));
-	struct memory_block *mem;
-	unsigned long block_id;
+	unsigned long start_pfn = PFN_DOWN(start);
+	unsigned long end_pfn = PFN_DOWN(start + size);
 	int ret = 0;
 
 	if (WARN_ON_ONCE(!IS_ALIGNED(start, memory_block_size_bytes()) ||
 			 !IS_ALIGNED(size, memory_block_size_bytes())))
 		return -EINVAL;
 
-	for (block_id = start_block_id; block_id != end_block_id; block_id++) {
-		ret = init_memory_block(block_id, MEM_OFFLINE, vmemmap_pages);
-		if (ret)
-			break;
-	}
-	if (ret) {
-		end_block_id = block_id;
-		for (block_id = start_block_id; block_id != end_block_id;
-		     block_id++) {
-			mem = find_memory_block_by_id(block_id);
-			if (WARN_ON_ONCE(!mem))
-				continue;
-			unregister_memory(mem);
-		}
-	}
+	ret = init_memory_blocks(start_pfn, end_pfn - start_pfn, MEM_OFFLINE, vmemmap_pages);
+
 	return ret;
 }
 
@@ -807,10 +806,7 @@ void __init memory_dev_init(void)
 	 */
 	for (nr = 0; nr <= __highest_present_section_nr;
 	     nr += sections_per_block) {
-		ret = add_memory_block(nr);
-		if (ret)
-			panic("%s() failed to add memory block: %d\n", __func__,
-			      ret);
+		add_whole_section_memory_block(nr);
 	}
 }
 

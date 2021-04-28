@@ -1872,8 +1872,8 @@ static int check_memblock_offlined_cb(struct memory_block *mem, void *arg)
 	if (unlikely(ret)) {
 		phys_addr_t beginpa, endpa;
 
-		beginpa = PFN_PHYS(section_nr_to_pfn(mem->start_section_nr));
-		endpa = beginpa + memory_block_size_bytes() - 1;
+		beginpa = PFN_PHYS(mem->start_pfn);
+		endpa = beginpa + mem->nr_pages * PAGE_SIZE - 1;
 		pr_warn("removing memory fails, because memory [%pa-%pa] is onlined\n",
 			&beginpa, &endpa);
 
@@ -2079,7 +2079,7 @@ static int try_offline_memory_block(struct memory_block *mem, void *arg)
 	 * with multiple zones within one memory block will be rejected
 	 * by offlining code ... so we don't care about that.
 	 */
-	page = pfn_to_online_page(section_nr_to_pfn(mem->start_section_nr));
+	page = pfn_to_online_page(mem->start_pfn);
 	if (page && zone_idx(page_zone(page)) == ZONE_MOVABLE)
 		online_type = MMOP_ONLINE_MOVABLE;
 
