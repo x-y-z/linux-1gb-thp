@@ -809,7 +809,7 @@ static int register_mem_block_under_node_early(struct memory_block *mem_blk,
 					       void *arg)
 {
 	unsigned long memory_block_pfns = memory_block_size_bytes() / PAGE_SIZE;
-	unsigned long start_pfn = section_nr_to_pfn(mem_blk->start_section_nr);
+	unsigned long start_pfn = mem_blk->start_pfn;
 	unsigned long end_pfn = start_pfn + memory_block_pfns - 1;
 	int nid = *(int *)arg;
 	unsigned long pfn;
