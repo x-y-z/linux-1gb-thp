@@ -258,6 +258,7 @@ bool pm_suspended_storage(void)
 
 #ifdef CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
 unsigned int pageblock_order __read_mostly;
+EXPORT_SYMBOL_GPL(pageblock_order);
 #endif
 
 static void __free_pages_ok(struct page *page, unsigned int order,
@@ -7071,6 +7072,9 @@ void __init set_pageblock_order(void)
 	if (HPAGE_SHIFT > PAGE_SHIFT)
 		order = HUGETLB_PAGE_ORDER;
 	else
+		order = MAX_ORDER - 1;
+
+	if (MAX_ORDER - 1 > order)
 		order = MAX_ORDER - 1;
 
 	/*
