@@ -919,9 +919,9 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages, struct zone *z
 	 * aligned.
 	 */
 	if (WARN_ON_ONCE(!nr_pages ||
-			 !IS_ALIGNED(pfn, pageblock_nr_pages) ||
-			 !IS_ALIGNED(pfn + nr_pages, PAGES_PER_SECTION)))
+			 !IS_ALIGNED(pfn + nr_pages, PAGES_PER_SUBSECTION))) {
 		return -EINVAL;
+	}
 
 	mem_hotplug_begin();
 

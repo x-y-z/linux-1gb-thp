@@ -680,18 +680,18 @@ static int init_memory_blocks(unsigned long start_pfn, unsigned long num_pages, 
 
 static void add_whole_section_memory_block(unsigned long base_section_nr)
 {
-	int section_count = 0;
 	int ret;
-	unsigned long nr;
 	unsigned long start_pfn = section_nr_to_pfn(base_section_nr);
-	unsigned long nr_pages = PAGES_PER_SECTION * sections_per_block;
+	unsigned long nr_pages = 0;
+	struct mem_section *ms = __nr_to_section(base_section_nr);
 
-	for (nr = base_section_nr; nr < base_section_nr + sections_per_block;
-	     nr++)
-		if (present_section_nr(nr))
-			section_count++;
+	if (bitmap_full(ms->usage->subsection_map, SUBSECTIONS_PER_SECTION))
+		nr_pages = PAGES_PER_SECTION;
+	else
+		nr_pages = PAGES_PER_SUBSECTION * bitmap_weight(ms->usage->subsection_map, SUBSECTIONS_PER_SECTION);
 
-	if (section_count == 0)
+
+	if (!nr_pages)
 		return;
 
 	ret = init_memory_blocks(start_pfn, nr_pages, MEM_ONLINE, 0);

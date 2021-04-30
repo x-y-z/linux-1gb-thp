@@ -251,7 +251,8 @@ void __init subsection_map_init(unsigned long pfn, unsigned long nr_pages)
 /* Record a memory area against a node. */
 static void __init memory_present(int nid, unsigned long start, unsigned long end)
 {
-	unsigned long pfn;
+	unsigned long pfn, nr_pages;
+	unsigned long section, end_sec, start_sec;
 
 #ifdef CONFIG_SPARSEMEM_EXTREME
 	if (unlikely(!mem_section)) {
@@ -268,9 +269,17 @@ static void __init memory_present(int nid, unsigned long start, unsigned long en
 
 	start &= PAGE_SECTION_MASK;
 	mminit_validate_memmodel_limits(&start, &end);
-	for (pfn = start; pfn < end; pfn += PAGES_PER_SECTION) {
-		unsigned long section = pfn_to_section_nr(pfn);
+	start_sec = pfn_to_section_nr(start);
+	end_sec = pfn_to_section_nr(end - 1);
+	pfn = start;
+	nr_pages = end - start;
+
+	for (section = start_sec; section <= end_sec; section++) {
 		struct mem_section *ms;
+		unsigned long pfns;
+
+		pfns = min(nr_pages, PAGES_PER_SECTION
+				- (pfn & ~PAGE_SECTION_MASK));
 
 		sparse_index_init(section, nid);
 		set_section_nid(section, nid);
@@ -281,6 +290,8 @@ static void __init memory_present(int nid, unsigned long start, unsigned long en
 							SECTION_IS_ONLINE;
 			section_mark_present(ms);
 		}
+		pfn += pfns;
+		nr_pages -= pfns;
 	}
 }
 
