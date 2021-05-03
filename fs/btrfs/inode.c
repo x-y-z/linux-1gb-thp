@@ -1441,6 +1441,7 @@ static noinline int run_delalloc_zoned(struct btrfs_inode *inode,
 				       u64 end, int *page_started,
 				       unsigned long *nr_written)
 {
+	struct folio *folio = page_folio(locked_page);
 	int ret;
 
 	ret = cow_file_range(inode, locked_page, start, end, page_started,
@@ -1451,8 +1452,8 @@ static noinline int run_delalloc_zoned(struct btrfs_inode *inode,
 	if (*page_started)
 		return 0;
 
-	__set_page_dirty_nobuffers(locked_page);
-	account_page_redirty(locked_page);
+	filemap_dirty_folio(inode->vfs_inode.i_mapping, folio);
+	folio_account_redirty(folio);
 	extent_write_locked_range(&inode->vfs_inode, start, end, WB_SYNC_ALL);
 	*page_started = 1;
 
