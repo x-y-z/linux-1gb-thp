@@ -635,12 +635,14 @@ void online_mem_sections(unsigned long start_pfn, unsigned long end_pfn)
 	}
 }
 
+static int clear_subsection_map(unsigned long pfn, unsigned long nr_pages);
+static bool is_subsection_map_empty(struct mem_section *ms);
 /* Mark all memory sections within the pfn range as offline */
 void offline_mem_sections(unsigned long start_pfn, unsigned long end_pfn)
 {
 	unsigned long pfn;
 
-	for (pfn = start_pfn; pfn < end_pfn; pfn += PAGES_PER_SECTION) {
+	for (pfn = start_pfn; pfn < end_pfn; pfn += PAGES_PER_SUBSECTION) {
 		unsigned long section_nr = pfn_to_section_nr(pfn);
 		struct mem_section *ms;
 
@@ -652,7 +654,9 @@ void offline_mem_sections(unsigned long start_pfn, unsigned long end_pfn)
 			continue;
 
 		ms = __nr_to_section(section_nr);
-		ms->section_mem_map &= ~SECTION_IS_ONLINE;
+		clear_subsection_map(pfn, PAGES_PER_SUBSECTION);
+		if (is_subsection_map_empty(ms))
+			ms->section_mem_map &= ~SECTION_IS_ONLINE;
 	}
 }
 
