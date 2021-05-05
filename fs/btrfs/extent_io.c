@@ -1505,17 +1505,17 @@ void extent_range_clear_dirty_for_io(struct inode *inode, u64 start, u64 end)
 
 void extent_range_redirty_for_io(struct inode *inode, u64 start, u64 end)
 {
+	struct address_space *mapping = inode->i_mapping;
 	unsigned long index = start >> PAGE_SHIFT;
 	unsigned long end_index = end >> PAGE_SHIFT;
-	struct page *page;
 
 	while (index <= end_index) {
-		page = find_get_page(inode->i_mapping, index);
-		BUG_ON(!page); /* Pages should be in the extent_io_tree */
-		__set_page_dirty_nobuffers(page);
-		account_page_redirty(page);
-		put_page(page);
-		index++;
+		struct folio *folio = filemap_get_folio(mapping, index);
+		BUG_ON(!folio); /* Pages should be in the extent_io_tree */
+		filemap_dirty_folio(mapping, folio);
+		folio_account_redirty(folio);
+		folio_put(folio);
+		index = folio_next_index(folio);
 	}
 }
 
