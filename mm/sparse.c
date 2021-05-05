@@ -583,7 +583,7 @@ void __init sparse_init(void)
 	pnum_begin = first_present_section_nr();
 	nid_begin = sparse_early_nid(__nr_to_section(pnum_begin));
 
-	/* Setup pageblock_order for HUGETLB_PAGE_SIZE_VARIABLE */
+	/* Setup pageblock_order for HUGETLB_PAGE */
 	set_pageblock_order();
 
 	for_each_present_section_nr(pnum_begin + 1, pnum_end) {

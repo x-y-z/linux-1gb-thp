@@ -30,17 +30,8 @@ enum pageblock_bits {
 
 #ifdef CONFIG_HUGETLB_PAGE
 
-#ifdef CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
-
 /* Huge page sizes are variable */
 extern unsigned int pageblock_order;
-
-#else /* CONFIG_HUGETLB_PAGE_SIZE_VARIABLE */
-
-/* Huge pages are a constant size */
-#define pageblock_order		HUGETLB_PAGE_ORDER
-
-#endif /* CONFIG_HUGETLB_PAGE_SIZE_VARIABLE */
 
 #else /* CONFIG_HUGETLB_PAGE */
 

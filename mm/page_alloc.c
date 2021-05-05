@@ -256,8 +256,10 @@ bool pm_suspended_storage(void)
 }
 #endif /* CONFIG_PM_SLEEP */
 
-#ifdef CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
+#ifdef CONFIG_HUGETLB_PAGE
 unsigned int pageblock_order __read_mostly;
+
+EXPORT_SYMBOL_GPL(pageblock_order);
 #endif
 
 static void __free_pages_ok(struct page *page, unsigned int order,
@@ -7057,7 +7059,7 @@ static void __ref setup_usemap(struct zone *zone)
 static inline void setup_usemap(struct zone *zone) {}
 #endif /* CONFIG_SPARSEMEM */
 
-#ifdef CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
+#ifdef CONFIG_HUGETLB_PAGE
 
 /* Initialise the number of pages represented by NR_PAGEBLOCK_BITS */
 void __init set_pageblock_order(void)
@@ -7068,7 +7070,7 @@ void __init set_pageblock_order(void)
 	if (pageblock_order)
 		return;
 
-	if (HPAGE_SHIFT > PAGE_SHIFT)
+	if ((HPAGE_SHIFT > PAGE_SHIFT) && (HUGETLB_PAGE_ORDER > MAX_ORDER - 1))
 		order = HUGETLB_PAGE_ORDER;
 	else
 		order = MAX_ORDER - 1;
@@ -7080,10 +7082,10 @@ void __init set_pageblock_order(void)
 	 */
 	pageblock_order = order;
 }
-#else /* CONFIG_HUGETLB_PAGE_SIZE_VARIABLE */
+#else /* CONFIG_HUGETLB_PAGE */
 
 /*
- * When CONFIG_HUGETLB_PAGE_SIZE_VARIABLE is not set, set_pageblock_order()
+ * When CONFIG_HUGETLB_PAGE is not set, set_pageblock_order()
  * is unused as pageblock_order is set at compile-time. See
  * include/linux/pageblock-flags.h for the values of pageblock_order based on
  * the kernel config
@@ -7092,7 +7094,7 @@ void __init set_pageblock_order(void)
 {
 }
 
-#endif /* CONFIG_HUGETLB_PAGE_SIZE_VARIABLE */
+#endif /* CONFIG_HUGETLB_PAGE */
 
 static unsigned long __init calc_memmap_size(unsigned long spanned_pages,
 						unsigned long present_pages)
