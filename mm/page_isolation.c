@@ -15,8 +15,10 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/page_isolation.h>
 
-static int set_migratetype_isolate(struct page *page, int migratetype, int isol_flags)
+static int set_migratetype_isolate(unsigned long start_pfn, unsigned long end_pfn,
+				   int migratetype, int isol_flags)
 {
+	struct page *page = pfn_to_page(start_pfn);
 	struct zone *zone = page_zone(page);
 	struct page *unmovable;
 	unsigned long flags;
@@ -37,15 +39,14 @@ static int set_migratetype_isolate(struct page *page, int migratetype, int isol_
 	 * FIXME: Now, memory hotplug doesn't call shrink_slab() by itself.
 	 * We just check MOVABLE pages.
 	 */
-	unmovable = has_unmovable_pages(zone, page, migratetype, isol_flags);
+	unmovable = has_unmovable_pages(zone, start_pfn, end_pfn, migratetype, isol_flags);
 	if (!unmovable) {
 		unsigned long nr_pages;
 		int mt = get_pageblock_migratetype(page);
 
 		set_pageblock_migratetype(page, MIGRATE_ISOLATE);
 		zone->nr_isolate_pageblock++;
-		nr_pages = move_freepages_block(zone, page, MIGRATE_ISOLATE,
-									NULL);
+		nr_pages = move_freepages(zone, start_pfn, end_pfn, MIGRATE_ISOLATE, NULL);
 
 		__mod_zone_freepage_state(zone, -nr_pages, mt);
 		spin_unlock_irqrestore(&zone->lock, flags);
@@ -64,7 +65,7 @@ static int set_migratetype_isolate(struct page *page, int migratetype, int isol_
 	return -EBUSY;
 }
 
-static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
+static void unset_migratetype_isolate(unsigned long start_pfn, unsigned long end_pfn, unsigned migratetype)
 {
 	struct zone *zone;
 	unsigned long flags, nr_pages;
@@ -72,6 +73,7 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 	unsigned int order;
 	unsigned long pfn, buddy_pfn;
 	struct page *buddy;
+	struct page *page = pfn_to_page(start_pfn);
 
 	zone = page_zone(page);
 	spin_lock_irqsave(&zone->lock, flags);
@@ -112,7 +114,7 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 	 * allocation.
 	 */
 	if (!isolated_page) {
-		nr_pages = move_freepages_block(zone, page, migratetype, NULL);
+		nr_pages = move_freepages(zone, start_pfn, end_pfn, migratetype, NULL);
 		__mod_zone_freepage_state(zone, nr_pages, migratetype);
 	}
 	set_pageblock_migratetype(page, migratetype);
@@ -195,7 +197,8 @@ int start_isolate_page_range(unsigned long start_pfn, unsigned long end_pfn,
 	     pfn += pageblock_nr_pages) {
 		page = __first_valid_page(pfn, pageblock_nr_pages);
 		if (page) {
-			if (set_migratetype_isolate(page, migratetype, flags)) {
+			if (set_migratetype_isolate(pfn, min(end_pfn, pfn + pageblock_nr_pages),
+				migratetype, flags)) {
 				undo_pfn = pfn;
 				goto undo;
 			}
@@ -209,7 +212,7 @@ undo:
 		struct page *page = pfn_to_online_page(pfn);
 		if (!page)
 			continue;
-		unset_migratetype_isolate(page, migratetype);
+		unset_migratetype_isolate(pfn, min(pfn + pageblock_nr_pages, undo_pfn), migratetype);
 	}
 
 	return -EBUSY;
@@ -224,16 +227,13 @@ void undo_isolate_page_range(unsigned long start_pfn, unsigned long end_pfn,
 	unsigned long pfn;
 	struct page *page;
 
-	BUG_ON(!IS_ALIGNED(start_pfn, pageblock_nr_pages));
-	BUG_ON(!IS_ALIGNED(end_pfn, pageblock_nr_pages));
-
 	for (pfn = start_pfn;
 	     pfn < end_pfn;
 	     pfn += pageblock_nr_pages) {
 		page = __first_valid_page(pfn, pageblock_nr_pages);
 		if (!page || !is_migrate_isolate_page(page))
 			continue;
-		unset_migratetype_isolate(page, migratetype);
+		unset_migratetype_isolate(pfn, min(pfn + pageblock_nr_pages, end_pfn), migratetype);
 	}
 }
 /*

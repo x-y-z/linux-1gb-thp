@@ -2434,7 +2434,7 @@ static inline struct page *__rmqueue_cma_fallback(struct zone *zone,
  * Note that start_page and end_pages are not aligned on a pageblock
  * boundary. If alignment is required, use move_freepages_block()
  */
-static int move_freepages(struct zone *zone,
+int move_freepages(struct zone *zone,
 			  unsigned long start_pfn, unsigned long end_pfn,
 			  int migratetype, int *num_movable)
 {
@@ -6329,6 +6329,7 @@ void __meminit memmap_init_range(unsigned long size, int nid, unsigned long zone
 {
 	unsigned long pfn, end_pfn = start_pfn + size;
 	struct page *page;
+	bool set_migratetype = false;
 
 	if (highest_memmap_pfn < end_pfn - 1)
 		highest_memmap_pfn = end_pfn - 1;
@@ -6375,9 +6376,16 @@ void __meminit memmap_init_range(unsigned long size, int nid, unsigned long zone
 		 */
 		if (IS_ALIGNED(pfn, pageblock_nr_pages)) {
 			set_pageblock_migratetype(page, migratetype);
+			set_migratetype = true;
 			cond_resched();
 		}
 		pfn++;
+	}
+	/* in case the range is smaller than a pageblock
+	 * TODO: merge it with the loop above */
+	if (!set_migratetype && context == MEMINIT_HOTPLUG) {
+		page = pfn_to_page(start_pfn);
+		set_pageblock_migratetype(page, migratetype);
 	}
 }
 
@@ -8525,12 +8533,14 @@ void *__init alloc_large_system_hash(const char *tablename,
  * cannot get removed (e.g., via memory unplug) concurrently.
  *
  */
-struct page *has_unmovable_pages(struct zone *zone, struct page *page,
-				 int migratetype, int flags)
+struct page *has_unmovable_pages(struct zone *zone, unsigned long start_pfn,
+				 unsigned long end_pfn, int migratetype,
+				 int flags)
 {
 	unsigned long iter = 0;
-	unsigned long pfn = page_to_pfn(page);
-	unsigned long offset = pfn % pageblock_nr_pages;
+	unsigned long pfn = start_pfn;
+	struct page *page = pfn_to_page(pfn);
+
 
 	if (is_migrate_cma_page(page)) {
 		/*
@@ -8544,11 +8554,11 @@ struct page *has_unmovable_pages(struct zone *zone, struct page *page,
 		return page;
 	}
 
-	for (; iter < pageblock_nr_pages - offset; iter++) {
-		if (!pfn_valid_within(pfn + iter))
+	for (pfn = start_pfn; pfn < end_pfn; pfn++) {
+		if (!pfn_valid_within(pfn))
 			continue;
 
-		page = pfn_to_page(pfn + iter);
+		page = pfn_to_page(pfn);
 
 		/*
 		 * Both, bootmem allocations and memory holes are marked
@@ -8597,7 +8607,7 @@ struct page *has_unmovable_pages(struct zone *zone, struct page *page,
 		 */
 		if (!page_ref_count(page)) {
 			if (PageBuddy(page))
-				iter += (1 << buddy_order(page)) - 1;
+				pfn += (1 << buddy_order(page)) - 1;
 			continue;
 		}
 
