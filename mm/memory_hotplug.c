@@ -663,10 +663,11 @@ static void online_pages_range(unsigned long start_pfn, unsigned long nr_pages)
 	 * this and the first chunk to online will be pageblock_nr_pages.
 	 */
 	for (pfn = start_pfn; pfn < end_pfn;) {
-		int order = min(MAX_ORDER - 1UL, __ffs(pfn));
+		int order = min3(MAX_ORDER - 1UL, __ffs(pfn), __ffs(nr_pages));
 
 		(*online_page_callback)(pfn_to_page(pfn), order);
 		pfn += (1UL << order);
+		nr_pages -= (1UL << order);
 	}
 
 	/* mark all involved sections as online */
@@ -919,9 +920,9 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages, struct zone *z
 	 * aligned.
 	 */
 	if (WARN_ON_ONCE(!nr_pages ||
-			 !IS_ALIGNED(pfn, pageblock_nr_pages) ||
-			 !IS_ALIGNED(pfn + nr_pages, PAGES_PER_SECTION)))
+			 !IS_ALIGNED(pfn + nr_pages, PAGES_PER_SUBSECTION))) {
 		return -EINVAL;
+	}
 
 	mem_hotplug_begin();
 
@@ -1709,8 +1710,7 @@ int __ref offline_pages(unsigned long start_pfn, unsigned long nr_pages)
 	 * aligned.
 	 */
 	if (WARN_ON_ONCE(!nr_pages ||
-			 !IS_ALIGNED(start_pfn, pageblock_nr_pages) ||
-			 !IS_ALIGNED(start_pfn + nr_pages, PAGES_PER_SECTION)))
+			 !IS_ALIGNED(start_pfn + nr_pages, PAGES_PER_SUBSECTION)))
 		return -EINVAL;
 
 	mem_hotplug_begin();
