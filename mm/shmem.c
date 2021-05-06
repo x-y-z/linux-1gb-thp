@@ -665,36 +665,35 @@ static inline bool is_huge_enabled(struct shmem_sb_info *sbinfo)
 /*
  * Like add_to_page_cache_locked, but error if expected item has gone.
  */
-static int shmem_add_to_page_cache(struct page *page,
+static int shmem_add_to_page_cache(struct folio *folio,
 				   struct address_space *mapping,
 				   pgoff_t index, void *expected, gfp_t gfp,
 				   struct mm_struct *charge_mm)
 {
-	XA_STATE_ORDER(xas, &mapping->i_pages, index, compound_order(page));
-	unsigned long nr = compound_nr(page);
+	XA_STATE_ORDER(xas, &mapping->i_pages, index, folio_order(folio));
+	long nr = folio_nr_pages(folio);
 	int error;
 
-	VM_BUG_ON_PAGE(PageTail(page), page);
-	VM_BUG_ON_PAGE(index != round_down(index, nr), page);
-	VM_BUG_ON_PAGE(!PageLocked(page), page);
-	VM_BUG_ON_PAGE(!PageSwapBacked(page), page);
-	VM_BUG_ON(expected && PageTransHuge(page));
+	VM_BUG_ON_FOLIO(index != round_down(index, nr), folio);
+	VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
+	VM_BUG_ON_FOLIO(!folio_test_swapbacked(folio), folio);
+	VM_BUG_ON(expected && folio_test_multi(folio));
 
-	page_ref_add(page, nr);
-	page->mapping = mapping;
-	page->index = index;
+	folio_ref_add(folio, nr);
+	folio->mapping = mapping;
+	folio->index = index;
 
-	if (!PageSwapCache(page)) {
-		error = mem_cgroup_charge(page_folio(page), charge_mm, gfp);
+	if (!folio_test_swapcache(folio)) {
+		error = mem_cgroup_charge(folio, charge_mm, gfp);
 		if (error) {
-			if (PageTransHuge(page)) {
+			if (folio_test_multi(folio)) {
 				count_vm_event(THP_FILE_FALLBACK);
 				count_vm_event(THP_FILE_FALLBACK_CHARGE);
 			}
 			goto error;
 		}
 	}
-	cgroup_throttle_swaprate(page, gfp);
+	folio_throttle_swaprate(folio, gfp);
 
 	do {
 		void *entry;
@@ -704,14 +703,14 @@ static int shmem_add_to_page_cache(struct page *page,
 			xas_set_err(&xas, -EEXIST);
 			goto unlock;
 		}
-		xas_store(&xas, page);
-		if (PageTransHuge(page)) {
+		xas_store(&xas, folio);
+		if (folio_test_multi(folio)) {
 			count_vm_event(THP_FILE_ALLOC);
-			__mod_lruvec_page_state(page, NR_SHMEM_THPS, nr);
+			__lruvec_stat_mod_folio(folio, NR_SHMEM_THPS, nr);
 		}
 		mapping->nrpages += nr;
-		__mod_lruvec_page_state(page, NR_FILE_PAGES, nr);
-		__mod_lruvec_page_state(page, NR_SHMEM, nr);
+		__lruvec_stat_mod_folio(folio, NR_FILE_PAGES, nr);
+		__lruvec_stat_mod_folio(folio, NR_SHMEM, nr);
 unlock:
 		xas_unlock_irq(&xas);
 	} while (xas_nomem(&xas, gfp));
@@ -723,8 +722,8 @@ unlock:
 
 	return 0;
 error:
-	page->mapping = NULL;
-	page_ref_sub(page, nr);
+	folio->mapping = NULL;
+	folio_ref_sub(folio, nr);
 	return error;
 }
 
@@ -1662,6 +1661,7 @@ static int shmem_swapin_page(struct inode *inode, pgoff_t index,
 	struct mm_struct *charge_mm = vma ? vma->vm_mm : NULL;
 	struct swap_info_struct *si;
 	struct page *page = NULL;
+	struct folio *folio;
 	swp_entry_t swap;
 	int error;
 
@@ -1717,7 +1717,8 @@ static int shmem_swapin_page(struct inode *inode, pgoff_t index,
 			goto failed;
 	}
 
-	error = shmem_add_to_page_cache(page, mapping, index,
+	folio = page_folio(page);
+	error = shmem_add_to_page_cache(folio, mapping, index,
 					swp_to_radix_entry(swap), gfp,
 					charge_mm);
 	if (error)
@@ -1773,6 +1774,7 @@ static int shmem_getpage_gfp(struct inode *inode, pgoff_t index,
 	struct shmem_inode_info *info = SHMEM_I(inode);
 	struct shmem_sb_info *sbinfo;
 	struct mm_struct *charge_mm;
+	struct folio *folio;
 	struct page *page;
 	enum sgp_type sgp_huge = sgp;
 	pgoff_t hindex = index;
@@ -1912,7 +1914,8 @@ alloc_nohuge:
 	if (sgp == SGP_WRITE)
 		__SetPageReferenced(page);
 
-	error = shmem_add_to_page_cache(page, mapping, hindex,
+	folio = page_folio(page);
+	error = shmem_add_to_page_cache(folio, mapping, hindex,
 					NULL, gfp & GFP_RECLAIM_MASK,
 					charge_mm);
 	if (error)
@@ -2341,6 +2344,7 @@ int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	gfp_t gfp = mapping_gfp_mask(mapping);
 	pgoff_t pgoff = linear_page_index(dst_vma, dst_addr);
 	void *page_kaddr;
+	struct folio *folio;
 	struct page *page;
 	int ret;
 	pgoff_t max_off;
@@ -2397,7 +2401,8 @@ int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	if (unlikely(pgoff >= max_off))
 		goto out_release;
 
-	ret = shmem_add_to_page_cache(page, mapping, pgoff, NULL,
+	folio = page_folio(page);
+	ret = shmem_add_to_page_cache(folio, mapping, pgoff, NULL,
 				      gfp & GFP_RECLAIM_MASK, dst_mm);
 	if (ret)
 		goto out_release;
