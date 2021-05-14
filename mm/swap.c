@@ -237,16 +237,16 @@ static void pagevec_move_tail_fn(struct folio *folio, struct lruvec *lruvec)
 	}
 }
 
-/* return true if pagevec needs to drain */
-static bool pagevec_add_and_need_flush(struct pagevec *pvec, struct page *page)
+static void pagevec_add_and_move(struct pagevec *pvec, struct folio *folio,
+		void (*move_fn)(struct folio *folio, struct lruvec *lruvec))
 {
-	bool ret = false;
-
-	if (!pagevec_add(pvec, page) || PageCompound(page) ||
-			lru_cache_disabled())
-		ret = true;
-
-	return ret;
+	if (pagevec_add(pvec, &folio->page) && !folio_test_multi(folio) &&
+	    !lru_cache_disabled())
+		return;
+	if (move_fn)
+		pagevec_lru_move_fn(pvec, move_fn);
+	else
+		__pagevec_lru_add(pvec);
 }
 
 /*
@@ -266,8 +266,7 @@ void folio_rotate_reclaimable(struct folio *folio)
 		folio_get(folio);
 		local_lock_irqsave(&lru_rotate.lock, flags);
 		pvec = this_cpu_ptr(&lru_rotate.pvec);
-		if (pagevec_add_and_need_flush(pvec, &folio->page))
-			pagevec_lru_move_fn(pvec, pagevec_move_tail_fn);
+		pagevec_add_and_move(pvec, folio, pagevec_move_tail_fn);
 		local_unlock_irqrestore(&lru_rotate.lock, flags);
 	}
 }
@@ -357,8 +356,7 @@ static void folio_activate(struct folio *folio)
 		folio_get(folio);
 		local_lock(&lru_pvecs.lock);
 		pvec = this_cpu_ptr(&lru_pvecs.activate_page);
-		if (pagevec_add_and_need_flush(pvec, &folio->page))
-			pagevec_lru_move_fn(pvec, __folio_activate);
+		pagevec_add_and_move(pvec, folio, __folio_activate);
 		local_unlock(&lru_pvecs.lock);
 	}
 }
@@ -469,8 +467,7 @@ void folio_add_lru(struct folio *folio)
 	folio_get(folio);
 	local_lock(&lru_pvecs.lock);
 	pvec = this_cpu_ptr(&lru_pvecs.lru_add);
-	if (pagevec_add_and_need_flush(pvec, &folio->page))
-		__pagevec_lru_add(pvec);
+	pagevec_add_and_move(pvec, folio, NULL);
 	local_unlock(&lru_pvecs.lock);
 }
 EXPORT_SYMBOL(folio_add_lru);
@@ -665,9 +662,7 @@ void folio_deactivate_file(struct folio *folio)
 	folio_get(folio);
 	local_lock(&lru_pvecs.lock);
 	pvec = this_cpu_ptr(&lru_pvecs.lru_deactivate_file);
-
-	if (pagevec_add_and_need_flush(pvec, &folio->page))
-		pagevec_lru_move_fn(pvec, lru_deactivate_file_fn);
+	pagevec_add_and_move(pvec, folio, lru_deactivate_file_fn);
 	local_unlock(&lru_pvecs.lock);
 }
 
@@ -690,8 +685,7 @@ void deactivate_page(struct page *page)
 		folio_get(folio);
 		local_lock(&lru_pvecs.lock);
 		pvec = this_cpu_ptr(&lru_pvecs.lru_deactivate);
-		if (pagevec_add_and_need_flush(pvec, &folio->page))
-			pagevec_lru_move_fn(pvec, lru_deactivate_fn);
+		pagevec_add_and_move(pvec, folio, lru_deactivate_fn);
 		local_unlock(&lru_pvecs.lock);
 	}
 }
@@ -714,8 +708,7 @@ void mark_page_lazyfree(struct page *page)
 		folio_get(folio);
 		local_lock(&lru_pvecs.lock);
 		pvec = this_cpu_ptr(&lru_pvecs.lru_lazyfree);
-		if (pagevec_add_and_need_flush(pvec, &folio->page))
-			pagevec_lru_move_fn(pvec, lru_lazyfree_fn);
+		pagevec_add_and_move(pvec, folio, lru_lazyfree_fn);
 		local_unlock(&lru_pvecs.lock);
 	}
 }
