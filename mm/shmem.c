@@ -140,7 +140,7 @@ static unsigned long shmem_default_max_inodes(void)
 static int shmem_replace_page(struct page **pagep, gfp_t gfp,
 				struct shmem_inode_info *info, pgoff_t index);
 static int shmem_swapin_page(struct inode *inode, pgoff_t index,
-			     struct page **pagep, enum sgp_type sgp,
+			     struct folio **foliop, enum sgp_type sgp,
 			     gfp_t gfp, struct vm_area_struct *vma,
 			     vm_fault_t *fault_type);
 static int shmem_getpage_gfp(struct inode *inode, pgoff_t index,
@@ -1175,17 +1175,17 @@ static int shmem_unuse_swap_entries(struct inode *inode, struct pagevec pvec,
 	struct address_space *mapping = inode->i_mapping;
 
 	for (i = 0; i < pvec.nr; i++) {
-		struct page *page = pvec.pages[i];
+		struct folio *folio = pvec.folios[i];
 
-		if (!xa_is_value(page))
+		if (!xa_is_value(folio))
 			continue;
 		error = shmem_swapin_page(inode, indices[i],
-					  &page, SGP_CACHE,
+					  &folio, SGP_CACHE,
 					  mapping_gfp_mask(mapping),
 					  NULL, NULL);
 		if (error == 0) {
-			unlock_page(page);
-			put_page(page);
+			folio_unlock(folio);
+			folio_put(folio);
 			ret++;
 		}
 		if (error == -ENOMEM)
@@ -1650,7 +1650,7 @@ static int shmem_replace_page(struct page **pagep, gfp_t gfp,
  * error code and NULL in *pagep.
  */
 static int shmem_swapin_page(struct inode *inode, pgoff_t index,
-			     struct page **pagep, enum sgp_type sgp,
+			     struct folio **foliop, enum sgp_type sgp,
 			     gfp_t gfp, struct vm_area_struct *vma,
 			     vm_fault_t *fault_type)
 {
@@ -1658,14 +1658,14 @@ static int shmem_swapin_page(struct inode *inode, pgoff_t index,
 	struct shmem_inode_info *info = SHMEM_I(inode);
 	struct mm_struct *charge_mm = vma ? vma->vm_mm : NULL;
 	struct swap_info_struct *si;
-	struct page *page = NULL;
+	struct page *page;
 	struct folio *folio;
 	swp_entry_t swap;
 	int error;
 
-	VM_BUG_ON(!*pagep || !xa_is_value(*pagep));
-	swap = radix_to_swp_entry(*pagep);
-	*pagep = NULL;
+	VM_BUG_ON(!*foliop || !xa_is_value(*foliop));
+	swap = radix_to_swp_entry(*foliop);
+	*foliop = NULL;
 
 	/* Prevent swapoff from happening to us. */
 	si = get_swap_device(swap);
@@ -1689,27 +1689,28 @@ static int shmem_swapin_page(struct inode *inode, pgoff_t index,
 			goto failed;
 		}
 	}
+	folio = page_folio(page);
 
 	/* We have to do this with page locked to prevent races */
-	lock_page(page);
-	if (!PageSwapCache(page) || page_private(page) != swap.val ||
+	folio_lock(folio);
+	if (!folio_test_swapcache(folio) ||
+	    folio_swap_entry(folio).val != swap.val ||
 	    !shmem_confirm_swap(mapping, index, swap)) {
 		error = -EEXIST;
 		goto unlock;
 	}
-	if (!PageUptodate(page)) {
+	if (!folio_test_uptodate(folio)) {
 		error = -EIO;
 		goto failed;
 	}
-	wait_on_page_writeback(page);
+	folio_wait_writeback(folio);
 
 	/*
 	 * Some architectures may have to restore extra metadata to the
 	 * physical page after reading from swap.
 	 */
-	arch_swap_restore(swap, page);
+	arch_swap_restore(swap, &folio->page);
 
-	folio = page_folio(page);
 	if (shmem_should_replace_folio(folio, gfp)) {
 		error = shmem_replace_page(&page, gfp, info, index);
 		if (error)
@@ -1728,13 +1729,13 @@ static int shmem_swapin_page(struct inode *inode, pgoff_t index,
 	spin_unlock_irq(&info->lock);
 
 	if (sgp == SGP_WRITE)
-		mark_page_accessed(page);
+		folio_mark_accessed(folio);
 
-	delete_from_swap_cache(page);
-	set_page_dirty(page);
+	delete_from_swap_cache(&folio->page);
+	folio_mark_dirty(folio);
 	swap_free(swap);
 
-	*pagep = page;
+	*foliop = folio;
 	if (si)
 		put_swap_device(si);
 	return 0;
@@ -1742,9 +1743,9 @@ failed:
 	if (!shmem_confirm_swap(mapping, index, swap))
 		error = -EEXIST;
 unlock:
-	if (page) {
-		unlock_page(page);
-		put_page(page);
+	if (folio) {
+		folio_unlock(folio);
+		folio_put(folio);
 	}
 
 	if (si)
@@ -1804,13 +1805,12 @@ repeat:
 	}
 
 	if (xa_is_value(folio)) {
-		struct page *page = &folio->page;
-		error = shmem_swapin_page(inode, index, &page,
+		error = shmem_swapin_page(inode, index, &folio,
 					  sgp, gfp, vma, fault_type);
 		if (error == -EEXIST)
 			goto repeat;
 
-		*pagep = page;
+		*pagep = &folio->page;
 		return error;
 	}
 
