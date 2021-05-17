@@ -20,7 +20,10 @@ struct address_space;
 struct pagevec {
 	unsigned char nr;
 	bool percpu_pvec_drained;
-	struct page *pages[PAGEVEC_SIZE];
+	union {
+		struct page *pages[PAGEVEC_SIZE];
+		struct folio *folios[PAGEVEC_SIZE];
+	};
 };
 
 void __pagevec_release(struct pagevec *pvec);
@@ -69,11 +72,22 @@ static inline unsigned pagevec_space(struct pagevec *pvec)
 /*
  * Add a page to a pagevec.  Returns the number of slots still available.
  */
-static inline unsigned pagevec_add(struct pagevec *pvec, struct page *page)
+static inline unsigned pagevec_add_page(struct pagevec *pvec, struct page *page)
 {
 	pvec->pages[pvec->nr++] = page;
 	return pagevec_space(pvec);
 }
+
+static inline
+unsigned pagevec_add_folio(struct pagevec *pvec, struct folio *folio)
+{
+	pvec->folios[pvec->nr++] = folio;
+	return pagevec_space(pvec);
+}
+
+#define pagevec_add(pvec, x)	_Generic((x),				\
+	struct page *:		pagevec_add_page,			\
+	struct folio *:		pagevec_add_folio)(pvec, x)
 
 static inline void pagevec_release(struct pagevec *pvec)
 {
