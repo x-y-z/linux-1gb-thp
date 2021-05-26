@@ -577,6 +577,8 @@ void clear_inode(struct inode *inode)
 	 * and we must not free the mapping under it.
 	 */
 	xa_lock_irq(&inode->i_data.i_pages);
+	if (inode->i_data.nrpages)
+		dump_mapping(&inode->i_data);
 	BUG_ON(inode->i_data.nrpages);
 	/*
 	 * Almost always, mapping_empty(&inode->i_data) here; but there are
