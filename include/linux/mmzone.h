@@ -1221,12 +1221,14 @@ static inline struct zoneref *first_zones_zonelist(struct zonelist *zonelist,
 #define SECTION_BLOCKFLAGS_BITS \
 	((1UL << (PFN_SECTION_SHIFT - pageblock_order)) * NR_PAGEBLOCK_BITS)
 
+#ifndef CONFIG_SPARSEMEM_VMEMMAP
 /* NO_MAX_ORDER_CHECK when compiling x64 32bit VDSO for 64bit system */
 #ifndef NO_MAX_ORDER_CHECK
 #if (MAX_ORDER - 1 + PAGE_SHIFT) > SECTION_SIZE_BITS
 #error Allocator MAX_ORDER exceeds SECTION_SIZE
 #endif
 #endif
+#endif /* CONFIG_SPARSEMEM_VMEMMAP */
 
 static inline unsigned long pfn_to_section_nr(unsigned long pfn)
 {
