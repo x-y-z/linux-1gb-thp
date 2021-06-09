@@ -24,11 +24,14 @@
 #include <asm/page.h>
 
 /* Free memory management - zoned buddy allocator.  */
-#ifndef CONFIG_ARCH_FORCE_MAX_ORDER
-#define MAX_ORDER 10
-#else
+#ifdef CONFIG_SET_MAX_ORDER
+#define MAX_ORDER CONFIG_SET_MAX_ORDER
+#elif CONFIG_ARCH_FORCE_MAX_ORDER != 0
 #define MAX_ORDER CONFIG_ARCH_FORCE_MAX_ORDER
+#else
+#define MAX_ORDER 10
 #endif
+
 #define MAX_ORDER_NR_PAGES (1 << MAX_ORDER)
 
 /*
@@ -1297,12 +1300,20 @@ static inline bool movable_only_nodes(nodemask_t *nodes)
 #define SECTION_BLOCKFLAGS_BITS \
 	((1UL << (PFN_SECTION_SHIFT - pageblock_order)) * NR_PAGEBLOCK_BITS)
 
+/*
+ * The MAX_ORDER check is not necessary when CONFIG_SET_MAX_ORDER is set, since
+ * it depends on CONFIG_SPARSEMEM_VMEMMAP, where all struct page are virtually
+ * contiguous, thus > section size pages can be allocated and manipulated
+ * without worrying about non-contiguous struct page.
+ */
+#ifndef CONFIG_SET_MAX_ORDER
 /* NO_MAX_ORDER_CHECK when compiling x64 32bit VDSO for 64bit system */
 #ifndef NO_MAX_ORDER_CHECK
 #if (MAX_ORDER + PAGE_SHIFT) > SECTION_SIZE_BITS
 #error Allocator MAX_ORDER exceeds SECTION_SIZE
 #endif
 #endif /* NO_MAX_ORDER_CHECK */
+#endif /* CONFIG_SET_MAX_ORDER*/
 
 static inline unsigned long pfn_to_section_nr(unsigned long pfn)
 {
