@@ -11,6 +11,10 @@ source "arch/$(SRCARCH)/Kconfig"
 
 menu "General architecture-dependent options"
 
+config ARCH_FORCE_MAX_ORDER
+    int
+    default "0"
+
 config CRASH_CORE
 	bool
 
