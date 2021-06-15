@@ -1520,7 +1520,7 @@ void sparse_init(void);
  * pfn_valid_within() should be used in this case; we optimise this away
  * when we have no holes within a MAX_ORDER_NR_PAGES block.
  */
-#ifdef CONFIG_HOLES_IN_ZONE
+#if defined(CONFIG_HOLES_IN_ZONE) || ((MAX_ORDER - 1 + PAGE_SHIFT) > SECTION_SIZE_BITS)
 #define pfn_valid_within(pfn) pfn_valid(pfn)
 #else
 #define pfn_valid_within(pfn) (1)
