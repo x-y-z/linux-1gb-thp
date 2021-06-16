@@ -2139,12 +2139,7 @@ static void __split_huge_pud_locked(struct vm_area_struct *vma, pud_t *pud,
 		if (freeze) {
 			swp_entry_t swp_entry;
 
-			if (write)
-				swp_entry = make_writable_migration_entry(
-							page_to_pfn(page + i));
-			else
-				swp_entry = make_readable_migration_entry(
-							page_to_pfn(page + i));
+			swp_entry = make_migration_entry(page + i, write);
 			entry = swp_entry_to_pmd(swp_entry);
 			if (soft_dirty)
 				entry = pmd_swp_mksoft_dirty(entry);
