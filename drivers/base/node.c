@@ -523,8 +523,7 @@ static ssize_t node_read_vmstat(struct device *dev,
 	for (i = 0; i < NR_VM_NODE_STAT_ITEMS; i++) {
 		unsigned long pages = node_page_state_pages(pgdat, i);
 
-		if (vmstat_item_print_in_thp(i))
-			pages /= HPAGE_PMD_NR;
+		pages /= vmstat_item_print_scale(i);
 		len += sysfs_emit_at(buf, len, "%s %lu\n", node_stat_name(i),
 				     pages);
 	}
