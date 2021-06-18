@@ -1602,8 +1602,7 @@ static void zoneinfo_show_print(struct seq_file *m, pg_data_t *pgdat,
 		for (i = 0; i < NR_VM_NODE_STAT_ITEMS; i++) {
 			unsigned long pages = node_page_state_pages(pgdat, i);
 
-			if (vmstat_item_print_in_thp(i))
-				pages /= HPAGE_PMD_NR;
+			pages /= vmstat_item_print_scale(i);
 			seq_printf(m, "\n      %-12s %lu", node_stat_name(i),
 				   pages);
 		}
@@ -1732,8 +1731,7 @@ static void *vmstat_start(struct seq_file *m, loff_t *pos)
 
 	for (i = 0; i < NR_VM_NODE_STAT_ITEMS; i++) {
 		v[i] = global_node_page_state_pages(i);
-		if (vmstat_item_print_in_thp(i))
-			v[i] /= HPAGE_PMD_NR;
+		v[i] /= vmstat_item_print_scale(i);
 	}
 	v += NR_VM_NODE_STAT_ITEMS;
 
