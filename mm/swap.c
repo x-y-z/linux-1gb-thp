@@ -203,24 +203,23 @@ int get_kernel_page(unsigned long start, int write, struct page **pages)
 EXPORT_SYMBOL_GPL(get_kernel_page);
 
 static void pagevec_lru_move_fn(struct pagevec *pvec,
-	void (*move_fn)(struct page *page, struct lruvec *lruvec))
+		void (*move_fn)(struct folio *folio, struct lruvec *lruvec))
 {
 	int i;
 	struct lruvec *lruvec = NULL;
 	unsigned long flags = 0;
 
 	for (i = 0; i < pagevec_count(pvec); i++) {
-		struct page *page = pvec->pages[i];
-		struct folio *folio = page_folio(page);
+		struct folio *folio = page_folio(pvec->pages[i]);
 
 		/* block memcg migration during page moving between lru */
-		if (!TestClearPageLRU(page))
+		if (!folio_test_clear_lru(folio))
 			continue;
 
 		lruvec = folio_lruvec_relock_irqsave(folio, lruvec, &flags);
-		(*move_fn)(page, lruvec);
+		move_fn(folio, lruvec);
 
-		SetPageLRU(page);
+		folio_set_lru(folio);
 	}
 	if (lruvec)
 		unlock_page_lruvec_irqrestore(lruvec, flags);
@@ -228,10 +227,8 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
 	pagevec_reinit(pvec);
 }
 
-static void pagevec_move_tail_fn(struct page *page, struct lruvec *lruvec)
+static void pagevec_move_tail_fn(struct folio *folio, struct lruvec *lruvec)
 {
-	struct folio *folio = page_folio(page);
-
 	if (!folio_test_unevictable(folio)) {
 		lruvec_del_folio(lruvec, folio);
 		folio_clear_active(folio);
@@ -338,17 +335,12 @@ static void __folio_activate(struct folio *folio, struct lruvec *lruvec)
 }
 
 #ifdef CONFIG_SMP
-static void __activate_page(struct page *page, struct lruvec *lruvec)
-{
-	return __folio_activate(page_folio(page), lruvec);
-}
-
 static void activate_page_drain(int cpu)
 {
 	struct pagevec *pvec = &per_cpu(lru_pvecs.activate_page, cpu);
 
 	if (pagevec_count(pvec))
-		pagevec_lru_move_fn(pvec, __activate_page);
+		pagevec_lru_move_fn(pvec, __folio_activate);
 }
 
 static bool need_activate_page_drain(int cpu)
@@ -366,7 +358,7 @@ static void folio_activate(struct folio *folio)
 		local_lock(&lru_pvecs.lock);
 		pvec = this_cpu_ptr(&lru_pvecs.activate_page);
 		if (pagevec_add_and_need_flush(pvec, &folio->page))
-			pagevec_lru_move_fn(pvec, __activate_page);
+			pagevec_lru_move_fn(pvec, __folio_activate);
 		local_unlock(&lru_pvecs.lock);
 	}
 }
@@ -533,9 +525,8 @@ void lru_cache_add_inactive_or_unevictable(struct page *page,
  * written out by flusher threads as this is much more effective
  * than the single-page writeout from reclaim.
  */
-static void lru_deactivate_file_fn(struct page *page, struct lruvec *lruvec)
+static void lru_deactivate_file_fn(struct folio *folio, struct lruvec *lruvec)
 {
-	struct folio *folio = page_folio(page);
 	bool active = folio_test_active(folio);
 	long nr_pages = folio_nr_pages(folio);
 
@@ -574,10 +565,8 @@ static void lru_deactivate_file_fn(struct page *page, struct lruvec *lruvec)
 	}
 }
 
-static void lru_deactivate_fn(struct page *page, struct lruvec *lruvec)
+static void lru_deactivate_fn(struct folio *folio, struct lruvec *lruvec)
 {
-	struct folio *folio = page_folio(page);
-
 	if (folio_test_active(folio) && !folio_test_unevictable(folio)) {
 		long nr_pages = folio_nr_pages(folio);
 
@@ -592,10 +581,8 @@ static void lru_deactivate_fn(struct page *page, struct lruvec *lruvec)
 	}
 }
 
-static void lru_lazyfree_fn(struct page *page, struct lruvec *lruvec)
+static void lru_lazyfree_fn(struct folio *folio, struct lruvec *lruvec)
 {
-	struct folio *folio = page_folio(page);
-
 	if (folio_test_anon(folio) && folio_test_swapbacked(folio) &&
 	    !folio_test_swapcache(folio) && !folio_test_unevictable(folio)) {
 		long nr_pages = folio_nr_pages(folio);
