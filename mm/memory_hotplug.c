@@ -543,7 +543,7 @@ static void online_pages_range(unsigned long start_pfn, unsigned long nr_pages)
 	 * this and the first chunk to online will be pageblock_nr_pages.
 	 */
 	for (pfn = start_pfn; pfn < end_pfn;) {
-		int order = min(MAX_ORDER - 1UL, __ffs(pfn));
+		int order = min3((unsigned long)pageblock_order, MAX_ORDER - 1UL, __ffs(pfn));
 
 		(*online_page_callback)(pfn_to_page(pfn), order);
 		pfn += (1UL << order);
