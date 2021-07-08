@@ -485,7 +485,7 @@ static inline void vunmap_range_noflush(unsigned long start, unsigned long end)
  */
 static inline struct page *mem_map_offset(struct page *base, int offset)
 {
-	if (unlikely(offset >= MAX_ORDER_NR_PAGES))
+	if (unlikely(offset >= PAGES_PER_SECTION))
 		return nth_page(base, offset);
 	return base + offset;
 }
@@ -497,7 +497,7 @@ static inline struct page *mem_map_offset(struct page *base, int offset)
 static inline struct page *mem_map_next(struct page *iter,
 						struct page *base, int offset)
 {
-	if (unlikely((offset & (MAX_ORDER_NR_PAGES - 1)) == 0)) {
+	if (unlikely((offset & (PAGES_PER_SECTION - 1)) == 0)) {
 		unsigned long pfn = page_to_pfn(base) + offset;
 		if (!pfn_valid(pfn))
 			return NULL;
