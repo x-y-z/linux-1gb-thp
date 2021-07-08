@@ -1105,11 +1105,11 @@ static void virtio_mem_clear_fake_offline(unsigned long pfn,
  */
 static void virtio_mem_fake_online(unsigned long pfn, unsigned long nr_pages)
 {
-	const unsigned long max_nr_pages = MAX_ORDER_NR_PAGES;
+	const unsigned long max_nr_pages = PAGES_PER_SECTION;
 	unsigned long i;
 
 	/*
-	 * We are always called at least with MAX_ORDER_NR_PAGES
+	 * We are always called at least with PAGES_PER_SECTION
 	 * granularity/alignment (e.g., the way subblocks work). All pages
 	 * inside such a block are alike.
 	 */
@@ -1125,7 +1125,7 @@ static void virtio_mem_fake_online(unsigned long pfn, unsigned long nr_pages)
 		if (PageDirty(page)) {
 			virtio_mem_clear_fake_offline(pfn + i, max_nr_pages,
 						      false);
-			generic_online_page(page, MAX_ORDER);
+			generic_online_page(page, PFN_SECTION_SHIFT);
 		} else {
 			virtio_mem_clear_fake_offline(pfn + i, max_nr_pages,
 						      true);
@@ -1228,7 +1228,7 @@ static void virtio_mem_online_page_cb(struct page *page, unsigned int order)
 		if (vm->in_sbm) {
 			/*
 			 * We exploit here that subblocks have at least
-			 * MAX_ORDER_NR_PAGES size/alignment - so we cannot
+			 * PAGES_PER_SECTION size/alignment - so we cannot
 			 * cross subblocks within one call.
 			 */
 			id = virtio_mem_phys_to_mb_id(addr);
@@ -2438,14 +2438,14 @@ static int virtio_mem_init(struct virtio_mem *vm)
 				      VIRTIO_MEM_DEFAULT_OFFLINE_THRESHOLD);
 
 	/*
-	 * We want subblocks to span at least MAX_ORDER_NR_PAGES and
+	 * We want subblocks to span at least PAGES_PER_SECTION and
 	 * pageblock_nr_pages pages. This:
 	 * - Simplifies our page onlining code (virtio_mem_online_page_cb)
 	 *   and fake page onlining code (virtio_mem_fake_online).
 	 * - Is required for now for alloc_contig_range() to work reliably -
 	 *   it doesn't properly handle smaller granularity on ZONE_NORMAL.
 	 */
-	sb_size = max_t(uint64_t, MAX_ORDER_NR_PAGES,
+	sb_size = max_t(uint64_t, PAGES_PER_SECTION,
 			pageblock_nr_pages) * PAGE_SIZE;
 	sb_size = max_t(uint64_t, vm->device_block_size, sb_size);
 
