@@ -486,7 +486,7 @@ read_kcore(struct file *file, char __user *buffer, size_t buflen, loff_t *fpos)
 			}
 		}
 
-		if (page_offline_frozen++ % MAX_ORDER_NR_PAGES == 0) {
+		if (page_offline_frozen++ % PAGES_PER_SECTION == 0) {
 			page_offline_thaw();
 			cond_resched();
 			page_offline_freeze();
