@@ -3736,7 +3736,7 @@ static void shmem_destroy_inodecache(void)
 
 const struct address_space_operations shmem_aops = {
 	.writepage	= shmem_writepage,
-	.set_page_dirty	= __set_page_dirty_no_writeback,
+	.dirty_folio	= dirty_folio_no_writeback,
 #ifdef CONFIG_TMPFS
 	.write_begin	= shmem_write_begin,
 	.write_end	= shmem_write_end,

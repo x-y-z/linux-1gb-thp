@@ -450,7 +450,7 @@ out:
 #endif
 
 static const struct address_space_operations aio_ctx_aops = {
-	.set_page_dirty = __set_page_dirty_no_writeback,
+	.dirty_folio = dirty_folio_no_writeback,
 #if IS_ENABLED(CONFIG_MIGRATION)
 	.migratepage	= aio_migratepage,
 #endif

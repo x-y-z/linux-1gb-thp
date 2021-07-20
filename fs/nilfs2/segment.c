@@ -1701,15 +1701,17 @@ static int nilfs_segctor_write(struct nilfs_sc_info *sci,
 
 static void nilfs_end_page_io(struct page *page, int err)
 {
+	struct folio *folio;
 	if (!page)
 		return;
+	folio = page_folio(page);
 
-	if (buffer_nilfs_node(page_buffers(page)) && !PageWriteback(page)) {
+	if (buffer_nilfs_node(page_buffers(page)) && !folio_test_writeback(folio)) {
 		/*
 		 * For b-tree node pages, this function may be called twice
 		 * or more because they might be split in a segment.
 		 */
-		if (PageDirty(page)) {
+		if (folio_test_dirty(folio)) {
 			/*
 			 * For pages holding split b-tree node buffers, dirty
 			 * flag on the buffers may be cleared discretely.
@@ -1717,24 +1719,24 @@ static void nilfs_end_page_io(struct page *page, int err)
 			 * remaining buffers, and it must be cancelled if
 			 * all the buffers get cleaned later.
 			 */
-			lock_page(page);
+			folio_lock(folio);
 			if (nilfs_page_buffers_clean(page))
 				__nilfs_clear_page_dirty(page);
-			unlock_page(page);
+			folio_unlock(folio);
 		}
 		return;
 	}
 
 	if (!err) {
 		if (!nilfs_page_buffers_clean(page))
-			__set_page_dirty_nobuffers(page);
-		ClearPageError(page);
+			filemap_dirty_folio(page->mapping, folio);
+		folio_clear_error(folio);
 	} else {
-		__set_page_dirty_nobuffers(page);
-		SetPageError(page);
+		filemap_dirty_folio(page->mapping, folio);
+		folio_set_error(folio);
 	}
 
-	end_page_writeback(page);
+	folio_end_writeback(folio);
 }
 
 static void nilfs_abort_logs(struct list_head *logs, int err)

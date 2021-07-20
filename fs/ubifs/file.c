@@ -572,7 +572,7 @@ static int ubifs_write_end(struct file *file, struct address_space *mapping,
 	if (!PagePrivate(page)) {
 		SetPagePrivate(page);
 		atomic_long_inc(&c->dirty_pg_cnt);
-		__set_page_dirty_nobuffers(page);
+		filemap_dirty_folio(mapping, page_folio(page));
 	}
 
 	if (appending) {
@@ -581,7 +581,7 @@ static int ubifs_write_end(struct file *file, struct address_space *mapping,
 		/*
 		 * Note, we do not set @I_DIRTY_PAGES (which means that the
 		 * inode has dirty pages), this has been done in
-		 * '__set_page_dirty_nobuffers()'.
+		 * 'filemap_dirty_folio()'.
 		 */
 		__mark_inode_dirty(inode, I_DIRTY_DATASYNC);
 		ubifs_assert(c, mutex_is_locked(&ui->ui_mutex));
@@ -1445,13 +1445,14 @@ static ssize_t ubifs_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	return generic_file_write_iter(iocb, from);
 }
 
-static int ubifs_set_page_dirty(struct page *page)
+static bool ubifs_dirty_folio(struct address_space *mapping,
+		struct folio *folio)
 {
-	int ret;
-	struct inode *inode = page->mapping->host;
+	bool ret;
+	struct inode *inode = mapping->host;
 	struct ubifs_info *c = inode->i_sb->s_fs_info;
 
-	ret = __set_page_dirty_nobuffers(page);
+	ret = filemap_dirty_folio(mapping, folio);
 	/*
 	 * An attempt to dirty a page without budgeting for it - should not
 	 * happen.
@@ -1569,7 +1570,7 @@ static vm_fault_t ubifs_vm_page_mkwrite(struct vm_fault *vmf)
 			ubifs_convert_page_budget(c);
 		SetPagePrivate(page);
 		atomic_long_inc(&c->dirty_pg_cnt);
-		__set_page_dirty_nobuffers(page);
+		filemap_dirty_folio(inode->i_mapping, page_folio(page));
 	}
 
 	if (update_time) {
@@ -1636,7 +1637,7 @@ const struct address_space_operations ubifs_file_address_operations = {
 	.write_begin    = ubifs_write_begin,
 	.write_end      = ubifs_write_end,
 	.invalidate_folio = ubifs_invalidate_folio,
-	.set_page_dirty = ubifs_set_page_dirty,
+	.dirty_folio	= ubifs_dirty_folio,
 #ifdef CONFIG_MIGRATION
 	.migratepage	= ubifs_migrate_page,
 #endif

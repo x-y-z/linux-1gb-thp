@@ -199,12 +199,13 @@ static int nilfs_writepage(struct page *page, struct writeback_control *wbc)
 	return 0;
 }
 
-static int nilfs_set_page_dirty(struct page *page)
+static bool nilfs_dirty_folio(struct address_space *mapping,
+		struct folio *folio)
 {
-	struct inode *inode = page->mapping->host;
-	int ret = __set_page_dirty_nobuffers(page);
+	struct inode *inode = mapping->host;
+	bool ret = filemap_dirty_folio(mapping, folio);
 
-	if (page_has_buffers(page)) {
+	if (folio_has_buffers(folio)) {
 		unsigned int nr_dirty = 0;
 		struct buffer_head *bh, *head;
 
@@ -215,7 +216,7 @@ static int nilfs_set_page_dirty(struct page *page)
 		 * which call sites of mark_buffer_dirty are protected
 		 * by page lock.
 		 */
-		bh = head = page_buffers(page);
+		bh = head = page_buffers(&folio->page);
 		do {
 			/* Do not mark hole blocks dirty */
 			if (buffer_dirty(bh) || !buffer_mapped(bh))
@@ -299,7 +300,7 @@ const struct address_space_operations nilfs_aops = {
 	.writepage		= nilfs_writepage,
 	.readpage		= nilfs_readpage,
 	.writepages		= nilfs_writepages,
-	.set_page_dirty		= nilfs_set_page_dirty,
+	.dirty_folio		= nilfs_dirty_folio,
 	.readahead		= nilfs_readahead,
 	.write_begin		= nilfs_write_begin,
 	.write_end		= nilfs_write_end,

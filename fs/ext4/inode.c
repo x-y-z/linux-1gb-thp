@@ -3616,7 +3616,7 @@ const struct iomap_ops ext4_iomap_report_ops = {
 /*
  * Pages can be marked dirty completely asynchronously from ext4's journalling
  * activity.  By filemap_sync_pte(), try_to_unmap_one(), etc.  We cannot do
- * much here because ->set_page_dirty is called under VFS locks.  The page is
+ * much here because ->dirty_folio is called under VFS locks.  The page is
  * not necessarily locked.
  *
  * We cannot just dirty the page and leave attached buffers clean, because the
@@ -3626,17 +3626,18 @@ const struct iomap_ops ext4_iomap_report_ops = {
  * So what we do is to mark the page "pending dirty" and next time writepage
  * is called, propagate that into the buffers appropriately.
  */
-static int ext4_journalled_set_page_dirty(struct page *page)
+static bool ext4_journalled_dirty_folio(struct address_space *mapping,
+		struct folio *folio)
 {
-	SetPageChecked(page);
-	return __set_page_dirty_nobuffers(page);
+	folio_set_checked(folio);
+	return filemap_dirty_folio(mapping, folio);
 }
 
-static int ext4_set_page_dirty(struct page *page)
+static bool ext4_dirty_folio(struct address_space *mapping, struct folio *folio)
 {
-	WARN_ON_ONCE(!PageLocked(page) && !PageDirty(page));
-	WARN_ON_ONCE(!page_has_buffers(page));
-	return __set_page_dirty_buffers(page);
+	WARN_ON_ONCE(!folio_test_locked(folio) && !folio_test_dirty(folio));
+	WARN_ON_ONCE(!folio_has_buffers(folio));
+	return block_dirty_folio(mapping, folio);
 }
 
 static int ext4_iomap_swap_activate(struct swap_info_struct *sis,
@@ -3653,7 +3654,7 @@ static const struct address_space_operations ext4_aops = {
 	.writepages		= ext4_writepages,
 	.write_begin		= ext4_write_begin,
 	.write_end		= ext4_write_end,
-	.set_page_dirty		= ext4_set_page_dirty,
+	.dirty_folio		= ext4_dirty_folio,
 	.bmap			= ext4_bmap,
 	.invalidate_folio	= ext4_invalidate_folio,
 	.releasepage		= ext4_releasepage,
@@ -3671,7 +3672,7 @@ static const struct address_space_operations ext4_journalled_aops = {
 	.writepages		= ext4_writepages,
 	.write_begin		= ext4_write_begin,
 	.write_end		= ext4_journalled_write_end,
-	.set_page_dirty		= ext4_journalled_set_page_dirty,
+	.dirty_folio		= ext4_journalled_dirty_folio,
 	.bmap			= ext4_bmap,
 	.invalidate_folio	= ext4_journalled_invalidate_folio,
 	.releasepage		= ext4_releasepage,
@@ -3688,7 +3689,7 @@ static const struct address_space_operations ext4_da_aops = {
 	.writepages		= ext4_writepages,
 	.write_begin		= ext4_da_write_begin,
 	.write_end		= ext4_da_write_end,
-	.set_page_dirty		= ext4_set_page_dirty,
+	.dirty_folio		= ext4_dirty_folio,
 	.bmap			= ext4_bmap,
 	.invalidate_folio	= ext4_invalidate_folio,
 	.releasepage		= ext4_releasepage,
@@ -3702,7 +3703,7 @@ static const struct address_space_operations ext4_da_aops = {
 static const struct address_space_operations ext4_dax_aops = {
 	.writepages		= ext4_dax_writepages,
 	.direct_IO		= noop_direct_IO,
-	.set_page_dirty		= __set_page_dirty_no_writeback,
+	.dirty_folio		= dirty_folio_no_writeback,
 	.bmap			= ext4_bmap,
 	.invalidate_folio	= noop_invalidate_folio,
 	.swap_activate		= ext4_iomap_swap_activate,

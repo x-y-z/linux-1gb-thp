@@ -804,7 +804,8 @@ cleanup_and_bail_uncompressed:
 	if (async_chunk->locked_page &&
 	    (page_offset(async_chunk->locked_page) >= start &&
 	     page_offset(async_chunk->locked_page)) <= end) {
-		__set_page_dirty_nobuffers(async_chunk->locked_page);
+		filemap_dirty_folio(inode->i_mapping,
+					page_folio(async_chunk->locked_page));
 		/* unlocked later on in the async handlers */
 	}
 
@@ -10252,11 +10253,6 @@ int btrfs_prealloc_file_range_trans(struct inode *inode,
 					   min_size, actual_len, alloc_hint, trans);
 }
 
-static int btrfs_set_page_dirty(struct page *page)
-{
-	return __set_page_dirty_nobuffers(page);
-}
-
 static int btrfs_permission(struct user_namespace *mnt_userns,
 			    struct inode *inode, int mask)
 {
@@ -10808,7 +10804,7 @@ static const struct address_space_operations btrfs_aops = {
 #ifdef CONFIG_MIGRATION
 	.migratepage	= btrfs_migratepage,
 #endif
-	.set_page_dirty	= btrfs_set_page_dirty,
+	.dirty_folio	= filemap_dirty_folio,
 	.error_remove_page = generic_error_remove_page,
 	.swap_activate	= btrfs_swap_activate,
 	.swap_deactivate = btrfs_swap_deactivate,

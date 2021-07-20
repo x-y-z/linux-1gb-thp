@@ -151,15 +151,8 @@ static const struct vm_operations_struct fb_deferred_io_vm_ops = {
 	.page_mkwrite	= fb_deferred_io_mkwrite,
 };
 
-static int fb_deferred_io_set_page_dirty(struct page *page)
-{
-	if (!PageDirty(page))
-		SetPageDirty(page);
-	return 0;
-}
-
 static const struct address_space_operations fb_deferred_io_aops = {
-	.set_page_dirty = fb_deferred_io_set_page_dirty,
+	.dirty_folio = dirty_folio_no_writeback,
 };
 
 int fb_deferred_io_mmap(struct fb_info *info, struct vm_area_struct *vma)

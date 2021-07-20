@@ -325,7 +325,7 @@ out:
 const struct address_space_operations v9fs_addr_operations = {
 	.readpage = v9fs_vfs_readpage,
 	.readpages = v9fs_vfs_readpages,
-	.set_page_dirty = __set_page_dirty_nobuffers,
+	.dirty_folio = filemap_dirty_folio,
 	.writepage = v9fs_vfs_writepage,
 	.write_begin = v9fs_write_begin,
 	.write_end = v9fs_write_end,

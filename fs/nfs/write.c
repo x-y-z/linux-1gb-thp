@@ -811,7 +811,8 @@ static void
 nfs_mark_request_dirty(struct nfs_page *req)
 {
 	if (req->wb_page)
-		__set_page_dirty_nobuffers(req->wb_page);
+		filemap_dirty_folio(page_file_mapping(req->wb_page),
+					page_folio(req->wb_page));
 }
 
 /*
@@ -1383,7 +1384,7 @@ int nfs_updatepage(struct file *file, struct page *page,
 	if (status < 0)
 		nfs_set_pageerror(mapping);
 	else
-		__set_page_dirty_nobuffers(page);
+		filemap_dirty_folio(mapping, page_folio(page));
 out:
 	dprintk("NFS:       nfs_updatepage returns %d (isize %lld)\n",
 			status, (long long)i_size_read(inode));
@@ -1799,7 +1800,8 @@ static void
 nfs_commit_resched_write(struct nfs_commit_info *cinfo,
 		struct nfs_page *req)
 {
-	__set_page_dirty_nobuffers(req->wb_page);
+	filemap_dirty_folio(page_file_mapping(req->wb_page),
+					page_folio(req->wb_page));
 }
 
 /*

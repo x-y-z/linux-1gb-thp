@@ -18,10 +18,10 @@
 /*
  * mark a page as having been made dirty and thus needing writeback
  */
-int afs_set_page_dirty(struct page *page)
+bool afs_dirty_folio(struct address_space *mapping, struct folio *folio)
 {
 	_enter("");
-	return __set_page_dirty_nobuffers(page);
+	return filemap_dirty_folio(mapping, folio);
 }
 
 /*

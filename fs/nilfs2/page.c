@@ -269,7 +269,7 @@ repeat:
 				       "found empty page in dat page cache");
 
 		nilfs_copy_page(dpage, page, 1);
-		__set_page_dirty_nobuffers(dpage);
+		filemap_dirty_folio(dmap, page_folio(dpage));
 
 		unlock_page(dpage);
 		put_page(dpage);

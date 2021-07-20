@@ -439,16 +439,16 @@ out:
 	return ret;
 }
 
-int swap_set_page_dirty(struct page *page)
+bool swap_dirty_folio(struct address_space *mapping, struct folio *folio)
 {
-	struct swap_info_struct *sis = page_swap_info(page);
+	struct swap_info_struct *sis = page_swap_info(&folio->page);
 
 	if (data_race(sis->flags & SWP_FS_OPS)) {
 		struct address_space *mapping = sis->swap_file->f_mapping;
 
-		VM_BUG_ON_PAGE(!PageSwapCache(page), page);
-		return mapping->a_ops->set_page_dirty(page);
+		VM_BUG_ON_FOLIO(!folio_test_swapcache(folio), folio);
+		return mapping->a_ops->dirty_folio(mapping, folio);
 	} else {
-		return __set_page_dirty_no_writeback(page);
+		return dirty_folio_no_writeback(mapping, folio);
 	}
 }

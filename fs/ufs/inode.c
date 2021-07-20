@@ -526,7 +526,7 @@ static sector_t ufs_bmap(struct address_space *mapping, sector_t block)
 }
 
 const struct address_space_operations ufs_aops = {
-	.set_page_dirty = __set_page_dirty_buffers,
+	.dirty_folio	= block_dirty_folio,
 	.readpage = ufs_readpage,
 	.writepage = ufs_writepage,
 	.write_begin = ufs_write_begin,

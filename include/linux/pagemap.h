@@ -784,11 +784,6 @@ void folio_end_writeback(struct folio *folio);
 void wait_for_stable_page(struct page *page);
 void folio_wait_stable(struct folio *folio);
 void __folio_mark_dirty(struct folio *folio, struct address_space *, int warn);
-static inline void __set_page_dirty(struct page *page,
-		struct address_space *mapping, int warn)
-{
-	__folio_mark_dirty(page_folio(page), mapping, warn);
-}
 void folio_account_cleaned(struct folio *folio, struct address_space *mapping,
 			  struct bdi_writeback *wb);
 void __folio_cancel_dirty(struct folio *folio);
@@ -810,8 +805,8 @@ static inline int __must_check write_one_page(struct page *page)
 	return folio_write_one(page_folio(page));
 }
 
-int __set_page_dirty_nobuffers(struct page *page);
-int __set_page_dirty_no_writeback(struct page *page);
+bool filemap_dirty_folio(struct address_space *, struct folio *);
+bool dirty_folio_no_writeback(struct address_space *, struct folio *);
 
 void page_endio(struct page *page, bool is_write, int err);
 

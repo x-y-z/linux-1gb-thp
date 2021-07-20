@@ -225,6 +225,7 @@ int __block_write_full_page(struct inode *inode, struct page *page,
 			get_block_t *get_block, struct writeback_control *wbc,
 			bh_end_io_t *handler);
 int block_read_full_page(struct folio *, get_block_t *);
+bool block_dirty_folio(struct address_space *, struct folio *);
 bool block_is_partially_uptodate(struct folio *, size_t from, size_t count);
 int block_write_begin(struct address_space *mapping, loff_t pos, unsigned len,
 		unsigned flags, struct page **pagep, get_block_t *get_block);
@@ -397,8 +398,6 @@ __bread(struct block_device *bdev, sector_t block, unsigned size)
 {
 	return __bread_gfp(bdev, block, size, __GFP_MOVABLE);
 }
-
-extern int __set_page_dirty_buffers(struct page *page);
 
 #else /* CONFIG_BLOCK */
 

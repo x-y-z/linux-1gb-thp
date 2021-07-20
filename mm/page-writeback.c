@@ -2406,16 +2406,17 @@ EXPORT_SYMBOL(folio_write_one);
 /*
  * For address_spaces which do not use buffers nor write back.
  */
-int __set_page_dirty_no_writeback(struct page *page)
+bool dirty_folio_no_writeback(struct address_space *mapping,
+		struct folio *folio)
 {
-	if (!PageDirty(page))
-		return !TestSetPageDirty(page);
-	return 0;
+	if (!folio_test_dirty(folio))
+		return !folio_test_set_dirty(folio);
+	return false;
 }
-EXPORT_SYMBOL(__set_page_dirty_no_writeback);
+EXPORT_SYMBOL(dirty_folio_no_writeback);
 
 /*
- * Helper function for set_page_dirty family.
+ * Helper function for dirty_folio family.
  *
  * Caller must hold lock_page_memcg().
  *
@@ -2499,14 +2500,14 @@ void __folio_mark_dirty(struct folio *folio, struct address_space *mapping,
  * @folio: Folio to be marked as dirty.
  *
  * Filesystems which do not use buffer heads should call this function
- * from their set_page_dirty address space operation.  It ignores the
+ * from their dirty_folio address space operation.  It ignores the
  * contents of folio_get_private(), so if the filesystem marks individual
  * blocks as dirty, the filesystem should handle that itself.
  *
  * This is also sometimes used by filesystems which use buffer_heads when
  * a single buffer is being dirtied: we want to set the folio dirty in
  * that case, but not all the buffers.  This is a "bottom-up" dirtying,
- * whereas __set_page_dirty_buffers() is a "top-down" dirtying.
+ * whereas block_dirty_folio() is a "top-down" dirtying.
  *
  * The caller must ensure this doesn't race with truncation.  Most will
  * simply hold the folio lock, but e.g. zap_pte_range() calls with the
@@ -2616,7 +2617,7 @@ bool folio_mark_dirty(struct folio *folio)
 		 */
 		if (folio_test_reclaim(folio))
 			folio_clear_reclaim(folio);
-		return mapping->a_ops->set_page_dirty(&folio->page);
+		return mapping->a_ops->dirty_folio(mapping, folio);
 	}
 	if (!folio_test_dirty(folio)) {
 		if (!folio_test_set_dirty(folio))
@@ -2627,7 +2628,7 @@ bool folio_mark_dirty(struct folio *folio)
 EXPORT_SYMBOL(folio_mark_dirty);
 
 /*
- * set_page_dirty() is racy if the caller has no reference against
+ * folio_mark_dirty() is racy if the caller has no reference against
  * page->mapping->host, and if the page is unlocked.  This is because another
  * CPU could truncate the page off the mapping and then free the mapping.
  *

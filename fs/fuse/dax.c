@@ -8,6 +8,7 @@
 
 #include <linux/delay.h>
 #include <linux/dax.h>
+#include <linux/pagemap.h>
 #include <linux/uio.h>
 #include <linux/pagemap.h>
 #include <linux/pfn_t.h>
@@ -1330,7 +1331,7 @@ bool fuse_dax_inode_alloc(struct super_block *sb, struct fuse_inode *fi)
 static const struct address_space_operations fuse_dax_file_aops  = {
 	.writepages	= fuse_dax_writepages,
 	.direct_IO	= noop_direct_IO,
-	.set_page_dirty	= __set_page_dirty_no_writeback,
+	.dirty_folio	= dirty_folio_no_writeback,
 	.invalidate_folio	= noop_invalidate_folio,
 };
 

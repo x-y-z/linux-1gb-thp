@@ -588,8 +588,15 @@ void mark_buffer_dirty_inode(struct buffer_head *bh, struct inode *inode)
 }
 EXPORT_SYMBOL(mark_buffer_dirty_inode);
 
-/*
- * Add a page to the dirty page list.
+/**
+ * block_dirty_folio - Mark a folio as dirty for filesystems which use buffer_heads.
+ * @mapping: Address space this folio belongs to.
+ * @folio: Folio to be marked as dirty.
+ *
+ * Filesystems which use buffer heads should call this function from their
+ * dirty_folio address space operation, if they define one.  This function
+ * is also the default implementation, so filesystems do not have to
+ * define it unless they need to do something special (eg journalling).
  *
  * It is a sad fact of life that this function is called from several places
  * deeply under spinlocking.  It may not sleep.
@@ -612,18 +619,17 @@ EXPORT_SYMBOL(mark_buffer_dirty_inode);
  *
  * FIXME: may need to call ->reservepage here as well.  That's rather up to the
  * address_space though.
+ *
+ * Return: true if the folio was previously clean, false if it was
+ * already dirty.
  */
-int __set_page_dirty_buffers(struct page *page)
+bool block_dirty_folio(struct address_space *mapping, struct folio *folio)
 {
 	int newly_dirty;
-	struct address_space *mapping = page_mapping(page);
-
-	if (unlikely(!mapping))
-		return !TestSetPageDirty(page);
 
 	spin_lock(&mapping->private_lock);
-	if (page_has_buffers(page)) {
-		struct buffer_head *head = page_buffers(page);
+	if (folio_has_buffers(folio)) {
+		struct buffer_head *head = folio_buffers(folio);
 		struct buffer_head *bh = head;
 
 		do {
@@ -635,21 +641,21 @@ int __set_page_dirty_buffers(struct page *page)
 	 * Lock out page's memcg migration to keep PageDirty
 	 * synchronized with per-memcg dirty page counters.
 	 */
-	lock_page_memcg(page);
-	newly_dirty = !TestSetPageDirty(page);
+	folio_memcg_lock(folio);
+	newly_dirty = !folio_test_set_dirty(folio);
 	spin_unlock(&mapping->private_lock);
 
 	if (newly_dirty)
-		__set_page_dirty(page, mapping, 1);
+		__folio_mark_dirty(folio, mapping, 1);
 
-	unlock_page_memcg(page);
+	folio_memcg_unlock(folio);
 
 	if (newly_dirty)
 		__mark_inode_dirty(mapping->host, I_DIRTY_PAGES);
 
 	return newly_dirty;
 }
-EXPORT_SYMBOL(__set_page_dirty_buffers);
+EXPORT_SYMBOL(block_dirty_folio);
 
 /*
  * Write out and wait upon a list of buffers.
@@ -1098,16 +1104,16 @@ void mark_buffer_dirty(struct buffer_head *bh)
 	}
 
 	if (!test_set_buffer_dirty(bh)) {
-		struct page *page = bh->b_page;
+		struct folio *folio = page_folio(bh->b_page);
 		struct address_space *mapping = NULL;
 
-		lock_page_memcg(page);
-		if (!TestSetPageDirty(page)) {
-			mapping = page_mapping(page);
+		folio_memcg_lock(folio);
+		if (!folio_test_set_dirty(folio)) {
+			mapping = folio_mapping(folio);
 			if (mapping)
-				__set_page_dirty(page, mapping, 0);
+				__folio_mark_dirty(folio, mapping, 0);
 		}
-		unlock_page_memcg(page);
+		folio_memcg_unlock(folio);
 		if (mapping)
 			__mark_inode_dirty(mapping->host, I_DIRTY_PAGES);
 	}
@@ -1543,7 +1549,7 @@ EXPORT_SYMBOL(block_invalidate_folio);
 
 /*
  * We attach and possibly dirty the buffers atomically wrt
- * __set_page_dirty_buffers() via private_lock.  try_to_free_buffers
+ * block_dirty_folio() via private_lock.  try_to_free_buffers
  * is already excluded via the page lock.
  */
 void create_empty_buffers(struct page *page,
@@ -1718,12 +1724,12 @@ int __block_write_full_page(struct inode *inode, struct page *page,
 					(1 << BH_Dirty)|(1 << BH_Uptodate));
 
 	/*
-	 * Be very careful.  We have no exclusion from __set_page_dirty_buffers
+	 * Be very careful.  We have no exclusion from block_dirty_folio
 	 * here, and the (potentially unmapped) buffers may become dirty at
 	 * any time.  If a buffer becomes dirty here after we've inspected it
 	 * then we just miss that fact, and the page stays dirty.
 	 *
-	 * Buffers outside i_size may be dirtied by __set_page_dirty_buffers;
+	 * Buffers outside i_size may be dirtied by block_dirty_folio;
 	 * handle that here by just cleaning them.
 	 */
 
@@ -3180,7 +3186,7 @@ EXPORT_SYMBOL(sync_dirty_buffer);
  *
  * The same applies to regular filesystem pages: if all the buffers are
  * clean then we set the page clean and proceed.  To do that, we require
- * total exclusion from __set_page_dirty_buffers().  That is obtained with
+ * total exclusion from block_dirty_folio().  That is obtained with
  * private_lock.
  *
  * try_to_free_buffers() is non-blocking.
@@ -3247,7 +3253,7 @@ int try_to_free_buffers(struct page *page)
 	 * the page also.
 	 *
 	 * private_lock must be held over this entire operation in order
-	 * to synchronise against __set_page_dirty_buffers and prevent the
+	 * to synchronise against block_dirty_folio and prevent the
 	 * dirty bit from being lost.
 	 */
 	if (ret)

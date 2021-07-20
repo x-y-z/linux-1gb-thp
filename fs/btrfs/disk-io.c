@@ -1021,26 +1021,27 @@ static void btree_invalidate_folio(struct folio *folio, size_t offset,
 	}
 }
 
-static int btree_set_page_dirty(struct page *page)
+static bool btree_dirty_folio(struct address_space *mapping,
+		struct folio *folio)
 {
 #ifdef DEBUG
-	struct btrfs_fs_info *fs_info = btrfs_sb(page->mapping->host->i_sb);
+	struct btrfs_fs_info *fs_info = btrfs_sb(folio->mapping->host->i_sb);
 	struct btrfs_subpage *subpage;
 	struct extent_buffer *eb;
 	int cur_bit = 0;
-	u64 page_start = page_offset(page);
+	u64 page_start = folio_pos(folio);
 
 	if (fs_info->sectorsize == PAGE_SIZE) {
-		BUG_ON(!PagePrivate(page));
-		eb = (struct extent_buffer *)page->private;
+		BUG_ON(!folio_test_private(folio));
+		eb = (struct extent_buffer *)folio->private;
 		BUG_ON(!eb);
 		BUG_ON(!test_bit(EXTENT_BUFFER_DIRTY, &eb->bflags));
 		BUG_ON(!atomic_read(&eb->refs));
 		btrfs_assert_tree_locked(eb);
-		return __set_page_dirty_nobuffers(page);
+		return filemap_dirty_folio(folio->mapping, folio);
 	}
-	ASSERT(PagePrivate(page) && page->private);
-	subpage = (struct btrfs_subpage *)page->private;
+	ASSERT(folio_test_private(folio) && folio->private);
+	subpage = (struct btrfs_subpage *)folio->private;
 
 	ASSERT(subpage->dirty_bitmap);
 	while (cur_bit < BTRFS_SUBPAGE_BITMAP_SIZE) {
@@ -1067,7 +1068,7 @@ static int btree_set_page_dirty(struct page *page)
 		cur_bit += (fs_info->nodesize >> fs_info->sectorsize_bits);
 	}
 #endif
-	return __set_page_dirty_nobuffers(page);
+	return filemap_dirty_folio(mapping, folio);
 }
 
 static const struct address_space_operations btree_aops = {
@@ -1077,7 +1078,7 @@ static const struct address_space_operations btree_aops = {
 #ifdef CONFIG_MIGRATION
 	.migratepage	= btree_migratepage,
 #endif
-	.set_page_dirty = btree_set_page_dirty,
+	.dirty_folio = btree_dirty_folio,
 };
 
 struct extent_buffer *btrfs_find_create_tree_block(

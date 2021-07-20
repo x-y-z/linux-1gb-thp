@@ -1657,7 +1657,7 @@ err_out:
 			 * Put the page on mapping->dirty_pages, but leave its
 			 * buffers' dirty state as-is.
 			 */
-			__set_page_dirty_nobuffers(page);
+			filemap_dirty_folio(page->mapping, page_folio(page));
 			err = 0;
 		} else
 			ntfs_error(vi->i_sb, "Page is not uptodate.  Written "

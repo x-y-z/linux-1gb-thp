@@ -2095,13 +2095,13 @@ cifs_writev_complete(struct work_struct *work)
 		return cifs_writev_requeue(wdata);
 
 	for (i = 0; i < wdata->nr_pages; i++) {
-		struct page *page = wdata->pages[i];
+		struct folio *folio = page_folio(wdata->pages[i]);
 		if (wdata->result == -EAGAIN)
-			__set_page_dirty_nobuffers(page);
+			filemap_dirty_folio(inode->i_mapping, folio);
 		else if (wdata->result < 0)
-			SetPageError(page);
-		end_page_writeback(page);
-		put_page(page);
+			folio_set_error(folio);
+		folio_end_writeback(folio);
+		folio_put(folio);
 	}
 	if (wdata->result != -EAGAIN)
 		mapping_set_error(inode->i_mapping, wdata->result);
