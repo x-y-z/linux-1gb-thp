@@ -194,17 +194,16 @@ struct iomap_readpage_ctx {
 	struct readahead_control *rac;
 };
 
-static int iomap_read_inline_data(struct inode *inode, struct page *page,
+static int iomap_read_inline_data(struct inode *inode, struct folio *folio,
 		struct iomap *iomap)
 {
-	struct folio *folio = page_folio(page);
 	struct iomap_page *iop;
 	size_t size = i_size_read(inode) - iomap->offset;
 	size_t poff = offset_in_page(iomap->offset);
 	size_t offset = offset_in_folio(folio, iomap->offset);
 	void *addr;
 
-	if (PageUptodate(page))
+	if (folio_test_uptodate(folio))
 		return PAGE_SIZE - poff;
 
 	if (WARN_ON_ONCE(size > PAGE_SIZE - poff))
@@ -219,7 +218,7 @@ static int iomap_read_inline_data(struct inode *inode, struct page *page,
 	else
 		iop = to_iomap_page(folio);
 
-	addr = kmap_local_page(page) + poff;
+	addr = kmap_local_folio(folio, offset);
 	memcpy(addr, iomap->inline_data, size);
 	memset(addr + size, 0, PAGE_SIZE - poff - size);
 	kunmap_local(addr);
@@ -248,7 +247,7 @@ iomap_readpage_actor(struct inode *inode, loff_t pos, loff_t length, void *data,
 	sector_t sector;
 
 	if (iomap->type == IOMAP_INLINE)
-		return iomap_read_inline_data(inode, page, iomap);
+		return iomap_read_inline_data(inode, folio, iomap);
 
 	/* zero post-eof blocks as the page may be mapped */
 	iop = iomap_page_create(inode, folio);
@@ -595,12 +594,13 @@ __iomap_write_begin(struct inode *inode, loff_t pos, unsigned len, int flags,
 static int iomap_write_begin_inline(struct inode *inode,
 		struct page *page, struct iomap *srcmap)
 {
+	struct folio *folio = page_folio(page);
 	int ret;
 
 	/* needs more work for the tailpacking case; disable for now */
 	if (WARN_ON_ONCE(srcmap->offset != 0))
 		return -EIO;
-	ret = iomap_read_inline_data(inode, page, srcmap);
+	ret = iomap_read_inline_data(inode, folio, srcmap);
 	if (ret < 0)
 		return ret;
 	return 0;
