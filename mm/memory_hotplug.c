@@ -1239,6 +1239,7 @@ static void rollback_node_hotadd(int nid)
 
 	arch_refresh_nodedata(nid, NULL);
 	free_percpu(pgdat->per_cpu_nodestats);
+	free_area_deinit_core_hotplug(nid);
 	arch_free_nodedata(pgdat);
 }
 
