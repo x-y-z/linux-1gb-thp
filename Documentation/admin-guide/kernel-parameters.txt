@@ -488,6 +488,11 @@
 	bttv.pll=	See Documentation/admin-guide/media/bttv.rst
 	bttv.tuner=
 
+	buddy_alloc_max_order=	[KNL] This parameter adjusts the size of largest
+			pages that can be allocated from kernel buddy allocator. The largest
+			page size is 2^buddy_alloc_max_order * PAGE_SIZE.
+            Format: integer
+
 	bulk_remove=off	[PPC]  This parameter disables the use of the pSeries
 			firmware feature for flushing multiple hpte entries
 			at a time.
