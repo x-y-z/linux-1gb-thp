@@ -925,7 +925,7 @@ struct zone {
 	CACHELINE_PADDING(_pad1_);
 
 	/* free areas of different sizes */
-	struct free_area	free_area[MAX_ORDER + 1];
+	struct free_area	*free_area;
 
 	/* zone flags, see below */
 	unsigned long		flags;

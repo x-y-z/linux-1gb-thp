@@ -6237,13 +6237,23 @@ void __show_free_areas(unsigned int filter, nodemask_t *nodemask, int max_zone_i
 
 	for_each_populated_zone(zone) {
 		unsigned int order;
-		unsigned long nr[MAX_ORDER + 1], flags, total = 0;
-		unsigned char types[MAX_ORDER + 1];
+		unsigned long *nr, flags, total = 0;
+		unsigned char *types;
 
 		if (zone_idx(zone) > max_zone_idx)
 			continue;
 		if (show_mem_node_skip(filter, zone_to_nid(zone), nodemask))
 			continue;
+
+		nr = kmalloc_array(MAX_ORDER + 1, sizeof(unsigned long), GFP_KERNEL);
+		if (!nr)
+			break;
+		types = kmalloc_array(MAX_ORDER + 1, sizeof(unsigned char), GFP_KERNEL);
+		if (!types) {
+			kfree(nr);
+			break;
+		}
+
 		show_node(zone);
 		printk(KERN_CONT "%s: ", zone->name);
 
@@ -7706,8 +7716,8 @@ static void __meminit pgdat_init_internals(struct pglist_data *pgdat)
 	lruvec_init(&pgdat->__lruvec);
 }
 
-static void __meminit zone_init_internals(struct zone *zone, enum zone_type idx, int nid,
-							unsigned long remaining_pages)
+static void __init zone_init_internals(struct zone *zone, enum zone_type idx, int nid,
+					unsigned long remaining_pages, bool hotplug)
 {
 	atomic_long_set(&zone->managed_pages, remaining_pages);
 	zone_set_nid(zone, nid);
@@ -7716,6 +7726,16 @@ static void __meminit zone_init_internals(struct zone *zone, enum zone_type idx,
 	spin_lock_init(&zone->lock);
 	zone_seqlock_init(zone);
 	zone_pcp_init(zone);
+	if (hotplug)
+		zone->free_area =
+			kcalloc_node(MAX_ORDER + 1, sizeof(struct free_area),
+				     GFP_KERNEL, nid);
+	else
+		zone->free_area =
+			memblock_alloc_node(sizeof(struct free_area) * (MAX_ORDER + 1),
+					    sizeof(struct free_area), nid);
+	BUG_ON(!zone->free_area);
+
 }
 
 /*
@@ -7754,7 +7774,7 @@ void __ref free_area_init_core_hotplug(struct pglist_data *pgdat)
 	}
 
 	for (z = 0; z < MAX_NR_ZONES; z++)
-		zone_init_internals(&pgdat->node_zones[z], z, nid, 0);
+		zone_init_internals(&pgdat->node_zones[z], z, nid, 0, true);
 }
 #endif
 
@@ -7817,7 +7837,7 @@ static void __init free_area_init_core(struct pglist_data *pgdat)
 		 * when the bootmem allocator frees pages into the buddy system.
 		 * And all highmem pages will be managed by the buddy system.
 		 */
-		zone_init_internals(zone, j, nid, freesize);
+		zone_init_internals(zone, j, nid, freesize, false);
 
 		if (!size)
 			continue;

@@ -96,7 +96,7 @@ void __init kmsan_init_shadow(void)
 struct metadata_page_pair {
 	struct page *shadow, *origin;
 };
-static struct metadata_page_pair held_back[MAX_ORDER + 1] __initdata;
+static struct metadata_page_pair *held_back __initdata;
 
 /*
  * Eager metadata allocation. When the memblock allocator is freeing pages to
@@ -114,6 +114,16 @@ static struct metadata_page_pair held_back[MAX_ORDER + 1] __initdata;
 bool kmsan_memblock_free_pages(struct page *page, unsigned int order)
 {
 	struct page *shadow, *origin;
+
+	if (!held_back) {
+		held_back = memblock_alloc((MAX_ORDER + 1) * sizeof(struct metadata_page_pair),
+				sizeof(struct metadata_page_pair));
+		/* held_back cannot be allocated, kmsan will not take the page */
+		if (!held_back) {
+			WARN_ONCE(1, "held_back array cannot be allocated, kmsan will not work");
+			return true;
+		}
+	}
 
 	if (!held_back[order].shadow) {
 		held_back[order].shadow = page;
