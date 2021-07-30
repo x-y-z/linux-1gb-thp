@@ -26,14 +26,25 @@
 /* Free memory management - zoned buddy allocator.  */
 #ifndef CONFIG_ARCH_FORCE_MAX_ORDER
 #ifdef CONFIG_SET_MAX_ORDER
-#define MAX_ORDER CONFIG_SET_MAX_ORDER
+/* Defined in mm/page_alloc.c */
+extern int buddy_alloc_max_order;
+
+#define MAX_ORDER buddy_alloc_max_order
 #define MIN_MAX_ORDER CONFIG_SET_MAX_ORDER
 #else
 #define MAX_ORDER 10
 #define MIN_MAX_ORDER MAX_ORDER
 #endif /* CONFIG_SET_MAX_ORDER */
 #else
+
+#ifdef CONFIG_SPARSEMEM_VMEMMAP
+/* Defined in mm/page_alloc.c */
+extern int buddy_alloc_max_order;
+
+#define MAX_ORDER buddy_alloc_max_order
+#else
 #define MAX_ORDER CONFIG_ARCH_FORCE_MAX_ORDER
+#endif /* CONFIG_SPARSEMEM_VMEMMAP */
 #define MIN_MAX_ORDER CONFIG_ARCH_FORCE_MAX_ORDER
 #endif /* CONFIG_ARCH_FORCE_MAX_ORDER */
 #define MAX_ORDER_NR_PAGES (1 << MAX_ORDER)
@@ -1557,8 +1568,14 @@ void sparse_init(void);
  * pfn_valid_within() should be used in this case; we optimise this away
  * when we have no holes within a MAX_ORDER_NR_PAGES block.
  */
-#if ((MAX_ORDER + PAGE_SHIFT) > SECTION_SIZE_BITS)
-#define pfn_valid_within(pfn) pfn_valid(pfn)
+#if defined(CONFIG_ARCH_FORCE_MAX_ORDER) || defined(CONFIG_SET_MAX_ORDER)
+static inline bool pfn_valid_within(unsigned long pfn)
+{
+	if ((MAX_ORDER + PAGE_SHIFT) > SECTION_SIZE_BITS)
+		return pfn_valid(pfn);
+
+	return 1;
+}
 #else
 #define pfn_valid_within(pfn) (1)
 #endif
