@@ -1482,7 +1482,7 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 
 		order = pindex_to_order(pindex);
 		nr_pages = 1 << order;
-		BUILD_BUG_ON(MAX_ORDER >= (1<<NR_PCP_ORDER_WIDTH));
+		BUILD_BUG_ON(MIN_MAX_ORDER >= (1<<NR_PCP_ORDER_WIDTH));
 		do {
 			int mt;
 
@@ -9509,3 +9509,36 @@ bool has_managed_dma(void)
 	return false;
 }
 #endif /* CONFIG_ZONE_DMA */
+
+#if (CONFIG_ARCH_FORCE_MAX_ORDER != 0 && defined(CONFIG_SPARSEMEM_VMEMMAP)) \
+	|| defined(CONFIG_SET_MAX_ORDER)
+int buddy_alloc_max_order = MIN_MAX_ORDER;
+EXPORT_SYMBOL(buddy_alloc_max_order);
+
+static int __init buddy_alloc_set(char *val)
+{
+	int ret;
+	unsigned long max_order;
+
+	ret = kstrtoul(val, 10, &max_order);
+
+	if (ret < 0)
+		return -EINVAL;
+
+	/*
+	 * max_order is also limited at below locations:
+	 * 1. scan_control in mm/vmscan.c uses s8 field for order, max_order cannot
+	 * be bigger than S8_MAX before the field is changed.
+	 * 2. free_pcppages_bulk has max_order upper limit.
+	 */
+	if (max_order > MIN_MAX_ORDER && max_order <= S8_MAX &&
+	    max_order <= (1<<NR_PCP_ORDER_WIDTH))
+		buddy_alloc_max_order = max_order;
+	else
+		buddy_alloc_max_order = MIN_MAX_ORDER;
+
+	return 0;
+}
+
+early_param("buddy_alloc_max_order", buddy_alloc_set);
+#endif
