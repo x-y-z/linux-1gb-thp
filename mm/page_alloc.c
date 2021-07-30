@@ -1506,7 +1506,6 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 			batch_free = count;
 
 		order = pindex_to_order(pindex);
-		BUILD_BUG_ON(MAX_ORDER >= (1<<NR_PCP_ORDER_WIDTH));
 		do {
 			page = list_last_entry(list, struct page, lru);
 			/* must delete to avoid corrupting pcp list */
@@ -9529,3 +9528,34 @@ bool take_page_off_buddy(struct page *page)
 	return ret;
 }
 #endif
+
+#ifdef CONFIG_FORCE_MAX_ZONEORDER
+int buddy_alloc_max_order = CONFIG_FORCE_MAX_ZONEORDER;
+EXPORT_SYMBOL(buddy_alloc_max_order);
+#endif
+
+static int __init buddy_alloc_set(char *val)
+{
+	int ret;
+	unsigned long max_order;
+
+	ret = kstrtoul(val, 10, &max_order);
+
+	if (ret < 0)
+		return -EINVAL;
+
+#ifdef CONFIG_FORCE_MAX_ZONEORDER
+	/* 1. scan_control in mm/vmscan.c uses s8 field for order, max_order cannot
+	 * be bigger than S8_MAX before the field is changed. 
+	 * 2. free_pcppages_bulk has max_order upper limit. */
+	if (max_order > CONFIG_FORCE_MAX_ZONEORDER && max_order < S8_MAX &&
+	    max_order < (1<<NR_PCP_ORDER_WIDTH))
+		buddy_alloc_max_order = max_order;
+	else
+		buddy_alloc_max_order = CONFIG_FORCE_MAX_ZONEORDER;
+#endif
+
+	return 0;
+}
+
+early_param("buddy_alloc_max_order", buddy_alloc_set);

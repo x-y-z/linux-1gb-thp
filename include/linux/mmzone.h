@@ -27,7 +27,10 @@
 #ifndef CONFIG_FORCE_MAX_ZONEORDER
 #define MAX_ORDER 11
 #else
-#define MAX_ORDER CONFIG_FORCE_MAX_ZONEORDER
+/* Defined in mm/page_alloc.c */
+extern int buddy_alloc_max_order;
+
+#define MAX_ORDER buddy_alloc_max_order
 #endif
 #define MAX_ORDER_NR_PAGES (1 << (MAX_ORDER - 1))
 
@@ -1526,8 +1529,14 @@ void sparse_init(void);
  * pfn_valid_within() should be used in this case; we optimise this away
  * when we have no holes within a MAX_ORDER_NR_PAGES block.
  */
-#if ((MAX_ORDER - 1 + PAGE_SHIFT) > SECTION_SIZE_BITS)
-#define pfn_valid_within(pfn) pfn_valid(pfn)
+#ifdef CONFIG_FORCE_MAX_ZONEORDER
+static inline bool pfn_valid_within(unsigned long pfn)
+{
+	if ((MAX_ORDER - 1 + PAGE_SHIFT) > SECTION_SIZE_BITS)
+		return pfn_valid(pfn);
+
+	return 1;
+}
 #else
 #define pfn_valid_within(pfn) (1)
 #endif
