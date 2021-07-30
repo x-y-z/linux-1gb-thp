@@ -35,6 +35,15 @@
 #define MIN_MAX_ORDER MAX_ORDER
 #endif
 
+/* remap MAX_ORDER to buddy_alloc_max_order for boot time adjustment */
+#if ((CONFIG_ARCH_FORCE_MAX_ORDER !=0) && defined(CONFIG_SPARSEMEM_VMEMMAP)) \
+	|| defined(CONFIG_SET_MAX_ORDER)
+/* Defined in mm/page_alloc.c */
+extern int buddy_alloc_max_order;
+#undef MAX_ORDER
+#define MAX_ORDER buddy_alloc_max_order
+#endif
+
 #define MAX_ORDER_NR_PAGES (1 << MAX_ORDER)
 
 /*
