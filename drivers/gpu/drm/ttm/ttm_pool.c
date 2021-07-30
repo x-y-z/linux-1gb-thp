@@ -64,11 +64,11 @@ module_param(page_pool_size, ulong, 0644);
 
 static atomic_long_t allocated_pages;
 
-static struct ttm_pool_type global_write_combined[MAX_ORDER + 1];
-static struct ttm_pool_type global_uncached[MAX_ORDER + 1];
+static struct ttm_pool_type *global_write_combined;
+static struct ttm_pool_type *global_uncached;
 
-static struct ttm_pool_type global_dma32_write_combined[MAX_ORDER + 1];
-static struct ttm_pool_type global_dma32_uncached[MAX_ORDER + 1];
+static struct ttm_pool_type *global_dma32_write_combined;
+static struct ttm_pool_type *global_dma32_uncached;
 
 static spinlock_t shrinker_lock;
 static struct list_head shrinker_list;
@@ -493,8 +493,10 @@ EXPORT_SYMBOL(ttm_pool_free);
  * @use_dma32: true if GFP_DMA32 should be used
  *
  * Initialize the pool and its pool types.
+ *
+ * Returns: 0 on successe, negative error code otherwise
  */
-void ttm_pool_init(struct ttm_pool *pool, struct device *dev,
+int ttm_pool_init(struct ttm_pool *pool, struct device *dev,
 		   bool use_dma_alloc, bool use_dma32)
 {
 	unsigned int i, j;
@@ -506,11 +508,30 @@ void ttm_pool_init(struct ttm_pool *pool, struct device *dev,
 	pool->use_dma32 = use_dma32;
 
 	if (use_dma_alloc) {
-		for (i = 0; i < TTM_NUM_CACHING_TYPES; ++i)
+		for (i = 0; i < TTM_NUM_CACHING_TYPES; ++i) {
+			pool->caching[i].orders =
+				kvcalloc(MAX_ORDER + 1, sizeof(struct ttm_pool_type),
+					GFP_KERNEL);
+			if (!pool->caching[i].orders) {
+				i--;
+				goto failed;
+			}
 			for (j = 0; j <= MAX_ORDER; ++j)
 				ttm_pool_type_init(&pool->caching[i].orders[j],
 						   pool, i, j);
+
+		}
+		return 0;
+
+failed:
+		for (; i >= 0; i--) {
+			for (j = 0; j <= MAX_ORDER; ++j)
+				ttm_pool_type_fini(&pool->caching[i].orders[j]);
+			kfree(pool->caching[i].orders);
+		}
+		return -ENOMEM;
 	}
+	return 0;
 }
 
 /**
@@ -700,6 +721,31 @@ int ttm_pool_mgr_init(unsigned long num_pages)
 
 	spin_lock_init(&shrinker_lock);
 	INIT_LIST_HEAD(&shrinker_list);
+
+	if (!global_write_combined) {
+		global_write_combined = kvcalloc(MAX_ORDER + 1, sizeof(struct ttm_pool_type),
+						GFP_KERNEL);
+		if (!global_write_combined)
+			return -ENOMEM;
+	}
+	if (!global_uncached) {
+		global_uncached = kvcalloc(MAX_ORDER + 1, sizeof(struct ttm_pool_type),
+					  GFP_KERNEL);
+		if (!global_uncached)
+			return -ENOMEM;
+	}
+	if (!global_dma32_write_combined) {
+		global_dma32_write_combined = kvcalloc(MAX_ORDER + 1, sizeof(struct ttm_pool_type),
+						      GFP_KERNEL);
+		if (!global_dma32_write_combined)
+			return -ENOMEM;
+	}
+	if (!global_dma32_uncached) {
+		global_dma32_uncached = kvcalloc(MAX_ORDER + 1, sizeof(struct ttm_pool_type),
+						GFP_KERNEL);
+		if (!global_dma32_uncached)
+			return -ENOMEM;
+	}
 
 	for (i = 0; i <= MAX_ORDER; ++i) {
 		ttm_pool_type_init(&global_write_combined[i], NULL,
