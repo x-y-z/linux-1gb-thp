@@ -36,6 +36,14 @@
 #define MIN_MAX_ORDER MAX_ORDER
 #endif
 
+/* remap MAX_ORDER to buddy_alloc_max_order for boot time adjustment */
+#ifdef CONFIG_BOOT_TIME_MAX_ORDER
+/* Defined in mm/page_alloc.c */
+extern int buddy_alloc_max_order;
+#undef MAX_ORDER
+#define MAX_ORDER buddy_alloc_max_order
+#endif /* CONFIG_BOOT_TIME_MAX_ORDER */
+
 #define MAX_ORDER_NR_PAGES (1 << MAX_ORDER)
 
 /*
@@ -1757,7 +1765,7 @@ static inline bool movable_only_nodes(nodemask_t *nodes)
  * contiguous, thus > section size pages can be allocated and manipulated
  * without worrying about non-contiguous struct page.
  */
-#ifndef CONFIG_SET_MAX_ORDER
+#if !defined(CONFIG_SET_MAX_ORDER) && !defined(CONFIG_BOOT_TIME_MAX_ORDER)
 #if (MAX_ORDER + PAGE_SHIFT) > SECTION_SIZE_BITS
 #error Allocator MAX_ORDER exceeds SECTION_SIZE
 #endif
