@@ -455,6 +455,13 @@ config SET_MAX_ORDER
 	  increase this value. A value of 10 means that the largest free memory
 	  block is 2^10 pages.
 
+config BOOT_TIME_MAX_ORDER
+	bool "Set maximum order of buddy allocator at boot time"
+	depends on SPARSEMEM_VMEMMAP && (ARCH_FORCE_MAX_ORDER != 0 || SET_MAX_ORDER != 0)
+	help
+	  It enables to set maximum order of buddy allocator at system boot
+	  time instead of a static MACRO.
+
 config HAVE_MEMBLOCK_PHYS_MAP
 	bool
 

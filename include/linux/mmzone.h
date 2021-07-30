@@ -35,6 +35,14 @@
 #define MIN_MAX_ORDER MAX_ORDER
 #endif
 
+/* remap MAX_ORDER to buddy_alloc_max_order for boot time adjustment */
+#ifdef CONFIG_BOOT_TIME_MAX_ORDER
+/* Defined in mm/page_alloc.c */
+extern int buddy_alloc_max_order;
+#undef MAX_ORDER
+#define MAX_ORDER buddy_alloc_max_order
+#endif /* CONFIG_BOOT_TIME_MAX_ORDER */
+
 #define MAX_ORDER_NR_PAGES (1 << MAX_ORDER)
 
 /*
