@@ -328,8 +328,9 @@ enum kmalloc_cache_type {
 };
 
 #ifndef CONFIG_SLOB
-extern struct kmem_cache *
-kmalloc_caches[NR_KMALLOC_TYPES][KMALLOC_SHIFT_HIGH + 1];
+/* kmalloc_caches[NR_KMALLOC_TYPES] has size KMALLOC_SHIFT_HIGH + 1*/
+extern struct kmem_cache **
+kmalloc_caches[NR_KMALLOC_TYPES];
 
 /*
  * Define gfp bits that should not be set for KMALLOC_NORMAL.

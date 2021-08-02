@@ -110,6 +110,7 @@
 #include	<linux/nodemask.h>
 #include	<linux/kmemleak.h>
 #include	<linux/mempolicy.h>
+#include	<linux/memblock.h>
 #include	<linux/mutex.h>
 #include	<linux/fault-inject.h>
 #include	<linux/rtmutex.h>
@@ -1203,6 +1204,7 @@ static void __init set_up_node(struct kmem_cache *cachep, int index)
 void __init kmem_cache_init(void)
 {
 	int i;
+	void *kmalloc_caches_array = NULL;
 
 	kmem_cache = &kmem_cache_boot;
 
@@ -1256,6 +1258,12 @@ void __init kmem_cache_init(void)
 	 * Initialize the caches that provide memory for the  kmem_cache_node
 	 * structures first.  Without this, further allocations will bug.
 	 */
+	kmalloc_caches_array = memblock_alloc(sizeof(struct kmem_cache*) * (KMALLOC_SHIFT_HIGH + 1) * NR_KMALLOC_TYPES, sizeof(struct kmem_cache));
+	BUG_ON(!kmalloc_caches_array);
+
+	for (i = 0; i < NR_KMALLOC_TYPES; i++)
+		kmalloc_caches[i] = (struct kmem_cache**)(kmalloc_caches_array + sizeof(struct kmem_cache*) * i * (KMALLOC_SHIFT_HIGH + 1));
+
 	kmalloc_caches[KMALLOC_NORMAL][INDEX_NODE] = create_kmalloc_cache(
 				kmalloc_info[INDEX_NODE].name[KMALLOC_NORMAL],
 				kmalloc_info[INDEX_NODE].size,
