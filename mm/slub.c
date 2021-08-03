@@ -3872,8 +3872,8 @@ static inline int calculate_order(unsigned int size)
 	/*
 	 * Doh this slab cannot be placed using slub_max_order.
 	 */
-	order = calc_slab_order(size, 1, MAX_ORDER, 1);
-	if (order <= MAX_ORDER)
+	order = calc_slab_order(size, 1, MIN_MAX_ORDER, 1);
+	if (order <= MIN_MAX_ORDER)
 		return order;
 	return -ENOSYS;
 }
@@ -4378,7 +4378,7 @@ __setup("slub_min_order=", setup_slub_min_order);
 static int __init setup_slub_max_order(char *str)
 {
 	get_option(&str, (int *)&slub_max_order);
-	slub_max_order = min(slub_max_order, (unsigned int)MAX_ORDER);
+	slub_max_order = min(slub_max_order, (unsigned int)MIN_MAX_ORDER);
 
 	return 1;
 }
