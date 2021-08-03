@@ -26,10 +26,13 @@
 /* Free memory management - zoned buddy allocator.  */
 #ifdef CONFIG_SET_MAX_ORDER
 #define MAX_ORDER CONFIG_SET_MAX_ORDER
+#define MIN_MAX_ORDER CONFIG_SET_MAX_ORDER
 #elif CONFIG_ARCH_FORCE_MAX_ORDER != 0
 #define MAX_ORDER CONFIG_ARCH_FORCE_MAX_ORDER
+#define MIN_MAX_ORDER CONFIG_ARCH_FORCE_MAX_ORDER
 #else
 #define MAX_ORDER 10
+#define MIN_MAX_ORDER MAX_ORDER
 #endif
 
 #define MAX_ORDER_NR_PAGES (1 << MAX_ORDER)
