@@ -41,7 +41,7 @@ extern unsigned int pageblock_order;
  * Huge pages are a constant size, but don't exceed the maximum allocation
  * granularity.
  */
-#define pageblock_order		min_t(unsigned int, HUGETLB_PAGE_ORDER, MAX_ORDER)
+#define pageblock_order		min_t(unsigned int, HUGETLB_PAGE_ORDER, MIN_MAX_ORDER)
 
 #endif /* CONFIG_HUGETLB_PAGE_SIZE_VARIABLE */
 
@@ -51,7 +51,7 @@ extern unsigned int pageblock_order;
  * If huge pages are not used, group by MAX_ORDER_NR_PAGES or
  * PAGES_PER_SECTION when MAX_ORDER_NR_PAGES is larger.
  */
-#define pageblock_order		(min(PFN_SECTION_SHIFT, MAX_ORDER))
+#define pageblock_order		(min(PFN_SECTION_SHIFT, MIN_MAX_ORDER))
 
 #endif /* CONFIG_HUGETLB_PAGE */
 
