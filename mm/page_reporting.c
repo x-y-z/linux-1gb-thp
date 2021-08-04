@@ -11,7 +11,9 @@
 #include "page_reporting.h"
 #include "internal.h"
 
-unsigned int page_reporting_order = MAX_PHYS_CONTIG_ORDER + 1;
+/* Set page_reporting_order to (unsigned int)-1 to prevent it running until the
+ * value is being overwritten */
+unsigned int page_reporting_order = (unsigned int)-1;
 module_param(page_reporting_order, uint, 0644);
 MODULE_PARM_DESC(page_reporting_order, "Set page reporting order");
 
