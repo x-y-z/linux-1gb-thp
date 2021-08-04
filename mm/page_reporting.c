@@ -11,7 +11,8 @@
 #include "page_reporting.h"
 #include "internal.h"
 
-unsigned int page_reporting_order = MAX_ORDER;
+/* Set page_reporting_order at section size */
+unsigned int page_reporting_order = PFN_SECTION_SHIFT;
 module_param(page_reporting_order, uint, 0644);
 MODULE_PARM_DESC(page_reporting_order, "Set page reporting order");
 
