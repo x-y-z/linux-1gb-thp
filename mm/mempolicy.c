@@ -2186,8 +2186,9 @@ struct folio *vma_alloc_folio(gfp_t gfp, int order, struct vm_area_struct *vma,
 			 * First, try to allocate THP only on local node, but
 			 * don't reclaim unnecessarily, just compact.
 			 */
-			folio = __folio_alloc_node(hpage_node,
-				gfp | __GFP_THISNODE | __GFP_NORETRY, order);
+			folio = __folio_alloc_node(
+				gfp | __GFP_THISNODE | __GFP_NORETRY, order,
+				hpage_node);
 
 			/*
 			 * If hugepage allocations are configured to always
@@ -2196,8 +2197,8 @@ struct folio *vma_alloc_folio(gfp_t gfp, int order, struct vm_area_struct *vma,
 			 * memory with both reclaim and compact as well.
 			 */
 			if (!folio && (gfp & __GFP_DIRECT_RECLAIM))
-				folio = __folio_alloc_node(hpage_node,
-								gfp, order);
+				folio = __folio_alloc_node(gfp, order,
+					hpage_node);
 
 			goto out;
 		}

@@ -1995,7 +1995,7 @@ static struct page *alloc_misplaced_dst_page(struct page *page,
 			__GFP_NOWARN;
 		gfp &= ~__GFP_RECLAIM;
 	}
-	new = __folio_alloc_node(nid, gfp, order);
+	new = __folio_alloc_node(gfp, order, nid);
 
 	return &new->page;
 }
