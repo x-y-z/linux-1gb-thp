@@ -1020,7 +1020,7 @@ buddy_merge_likely(unsigned long pfn, unsigned long buddy_pfn,
 	struct page *higher_page, *higher_buddy;
 	unsigned long combined_pfn;
 
-	if (order >= MAX_ORDER - 2)
+	if (order >= MAX_ORDER)
 		return false;
 
 	combined_pfn = buddy_pfn & pfn;
@@ -1067,7 +1067,7 @@ static inline void __free_one_page(struct page *page,
 	struct page *buddy;
 	bool to_tail;
 
-	max_order = min_t(unsigned int, MAX_ORDER - 1, pageblock_order);
+	max_order = min_t(unsigned int, MAX_ORDER, pageblock_order);
 
 	VM_BUG_ON(!zone_is_initialized(zone));
 	VM_BUG_ON_PAGE(page->flags & PAGE_FLAGS_CHECK_AT_PREP, page);
@@ -1104,7 +1104,7 @@ continue_merging:
 		pfn = combined_pfn;
 		order++;
 	}
-	if (order < MAX_ORDER - 1) {
+	if (order < MAX_ORDER) {
 		/* If we are here, it means order is >= pageblock_order.
 		 * We want to prevent merge between freepages on isolate
 		 * pageblock and normal pageblock. Without this, pageblock
@@ -1476,7 +1476,7 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 			batch_free = count;
 
 		order = pindex_to_order(pindex);
-		BUILD_BUG_ON(MAX_ORDER >= (1<<NR_PCP_ORDER_WIDTH));
+		BUILD_BUG_ON(MAX_ORDER > (1<<NR_PCP_ORDER_WIDTH));
 		do {
 			page = list_last_entry(list, struct page, lru);
 			/* must delete to avoid corrupting pcp list */
