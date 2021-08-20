@@ -250,10 +250,6 @@ __test_page_isolated_in_pageblock(unsigned long pfn, unsigned long end_pfn,
 	struct page *page;
 
 	while (pfn < end_pfn) {
-		if (!pfn_valid_within(pfn)) {
-			pfn++;
-			continue;
-		}
 		page = pfn_to_page(pfn);
 		if (PageBuddy(page))
 			/*
