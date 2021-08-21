@@ -7466,6 +7466,14 @@ sub process {
 			}
 		}
 
+# check for MAX_ORDER uses as its semantics has changed.
+# MAX_ORDER now really means the max order of a page that can come out of
+# kernel buddy allocator
+        if ($line =~ /MAX_ORDER/) {
+            WARN("MAX_ORDER",
+                 "MAX_ORDER has changed its semantics. The max order of a page that can be allocated from buddy allocator is MAX_ORDER instead of MAX_ORDER - 1.")
+        }
+
 # Mode permission misuses where it seems decimal should be octal
 # This uses a shortcut match to avoid unnecessary uses of a slow foreach loop
 # o Ignore module_param*(...) uses with a decimal 0 permission as that has a
