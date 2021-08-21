@@ -269,17 +269,15 @@ config ARCH_SPARSEMEM_DEFAULT
 
 config ARCH_FORCE_MAX_ORDER
 	int "Maximum zone order"
-	default "13"
+	default "12"
 	help
 	  The kernel memory allocator divides physically contiguous memory
 	  blocks into "zones", where each zone is a power of two number of
 	  pages.  This option selects the largest power of two that the kernel
 	  keeps in the memory allocator.  If you need to allocate very large
 	  blocks of physically contiguous memory, then you may need to
-	  increase this value.
-
-	  This config option is actually maximum order plus one. For example,
-	  a value of 13 means that the largest free memory block is 2^12 pages.
+	  increase this value. A value of 12 means that the largest free memory
+	  block is 2^12 pages.
 
 if SPARC64
 source "kernel/power/Kconfig"
