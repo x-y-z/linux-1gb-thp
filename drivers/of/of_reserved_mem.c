@@ -116,7 +116,7 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 	    && of_get_flat_dt_prop(node, "reusable", NULL)
 	    && !nomap) {
 		unsigned long order =
-			max_t(unsigned long, MAX_ORDER - 1, pageblock_order);
+			max_t(unsigned long, MAX_ORDER, pageblock_order);
 
 		align = max(align, (phys_addr_t)PAGE_SIZE << order);
 	}

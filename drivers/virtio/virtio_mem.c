@@ -1125,7 +1125,7 @@ static void virtio_mem_fake_online(unsigned long pfn, unsigned long nr_pages)
 		if (PageDirty(page)) {
 			virtio_mem_clear_fake_offline(pfn + i, max_nr_pages,
 						      false);
-			generic_online_page(page, MAX_ORDER - 1);
+			generic_online_page(page, MAX_ORDER);
 		} else {
 			virtio_mem_clear_fake_offline(pfn + i, max_nr_pages,
 						      true);

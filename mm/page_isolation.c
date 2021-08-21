@@ -88,7 +88,7 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 	 */
 	if (PageBuddy(page)) {
 		order = buddy_order(page);
-		if (order >= pageblock_order && order < MAX_ORDER - 1) {
+		if (order >= pageblock_order && order <= MAX_ORDER) {
 			pfn = page_to_pfn(page);
 			buddy_pfn = __find_buddy_pfn(pfn, order);
 			buddy = page + (buddy_pfn - pfn);
@@ -284,7 +284,7 @@ int test_pages_isolated(unsigned long start_pfn, unsigned long end_pfn,
 	struct zone *zone;
 
 	/*
-	 * Note: pageblock_nr_pages != MAX_ORDER. Then, chunks of free pages
+	 * Note: pageblock_order != MAX_ORDER. Then, chunks of free pages
 	 * are not aligned to pageblock_nr_pages.
 	 * Then we just check migratetype first.
 	 */
