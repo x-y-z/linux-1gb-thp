@@ -181,7 +181,7 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 
 	/* ensure minimal alignment required by mm core */
 	alignment = PAGE_SIZE <<
-			max_t(unsigned long, MAX_ORDER - 1, pageblock_order);
+			max_t(unsigned long, MAX_ORDER, pageblock_order);
 
 	/* alignment should be aligned with order_per_bit */
 	if (!IS_ALIGNED(alignment >> PAGE_SHIFT, 1 << order_per_bit))
@@ -269,7 +269,7 @@ int __init cma_declare_contiguous_nid(phys_addr_t base,
 	 * you couldn't get a contiguous memory, which is not what we want.
 	 */
 	alignment = max(alignment,  (phys_addr_t)PAGE_SIZE <<
-			  max_t(unsigned long, MAX_ORDER - 1, pageblock_order));
+			  max_t(unsigned long, MAX_ORDER, pageblock_order));
 	if (fixed && base & (alignment - 1)) {
 		ret = -EINVAL;
 		pr_err("Region at %pa must be aligned to %pa bytes\n",

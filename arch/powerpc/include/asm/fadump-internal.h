@@ -21,7 +21,7 @@
 
 /* Alignment per CMA requirement. */
 #define FADUMP_CMA_ALIGNMENT	(PAGE_SIZE <<				\
-				 max_t(unsigned long, MAX_ORDER - 1,	\
+				 max_t(unsigned long, MAX_ORDER,	\
 				 pageblock_order))
 
 /* FAD commands */

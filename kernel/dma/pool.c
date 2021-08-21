@@ -84,8 +84,8 @@ static int atomic_pool_expand(struct gen_pool *pool, size_t pool_size,
 	void *addr;
 	int ret = -ENOMEM;
 
-	/* Cannot allocate larger than MAX_ORDER-1 */
-	order = min(get_order(pool_size), MAX_ORDER-1);
+	/* Cannot allocate larger than MAX_ORDER */
+	order = min(get_order(pool_size), MAX_ORDER);
 
 	do {
 		pool_size = 1 << (PAGE_SHIFT + order);
