@@ -384,12 +384,18 @@ static inline bool deferred_pages_enabled(void)
 }
 
 /* Returns true if the struct page for the pfn is uninitialised */
-static inline bool __meminit early_page_uninitialised(unsigned long pfn)
+static inline bool __meminit early_page_uninitialised(unsigned long pfn, unsigned int *order)
 {
 	int nid = early_pfn_to_nid(pfn);
 
 	if (node_online(nid) && pfn >= NODE_DATA(nid)->first_deferred_pfn)
 		return true;
+
+	/* clamp down order to not exceed first_deferred_pfn */
+	if (order)
+		*order = min_t(unsigned int,
+			       *order,
+			       ilog2(NODE_DATA(nid)->first_deferred_pfn - pfn));
 
 	return false;
 }
@@ -436,7 +442,7 @@ static inline bool deferred_pages_enabled(void)
 	return false;
 }
 
-static inline bool early_page_uninitialised(unsigned long pfn)
+static inline bool early_page_uninitialised(unsigned long pfn, unsigned int *order)
 {
 	return false;
 }
@@ -1591,7 +1597,7 @@ static void __meminit init_reserved_page(unsigned long pfn)
 	pg_data_t *pgdat;
 	int nid, zid;
 
-	if (!early_page_uninitialised(pfn))
+	if (!early_page_uninitialised(pfn, NULL))
 		return;
 
 	nid = early_pfn_to_nid(pfn);
@@ -1747,11 +1753,11 @@ int __meminit early_pfn_to_nid(unsigned long pfn)
 #endif /* CONFIG_NUMA */
 
 void __init memblock_free_pages(struct page *page, unsigned long pfn,
-							unsigned int order)
+							unsigned int *order)
 {
-	if (early_page_uninitialised(pfn))
+	if (early_page_uninitialised(pfn, order))
 		return;
-	__free_pages_core(page, order);
+	__free_pages_core(page, *order);
 }
 
 /*
@@ -1977,7 +1983,11 @@ static unsigned long __init
 deferred_init_maxorder(u64 *i, struct zone *zone, unsigned long *start_pfn,
 		       unsigned long *end_pfn)
 {
-	unsigned long mo_pfn = ALIGN(*start_pfn + 1, MAX_ORDER_NR_PAGES);
+	/* deferred_init_memmap_chunk gives out jobs with max size to
+	 * PAGES_PER_SECTION. Do not align mo_pfn beyond that. */
+	unsigned long align = min_t(unsigned long,
+				MAX_ORDER_NR_PAGES, PAGES_PER_SECTION);
+	unsigned long mo_pfn = ALIGN(*start_pfn + 1, align);
 	unsigned long spfn = *start_pfn, epfn = *end_pfn;
 	unsigned long nr_pages = 0;
 	u64 j = *i;
