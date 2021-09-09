@@ -864,6 +864,8 @@ static void __init mm_init(void)
 	pti_init();
 	kmsan_init_runtime();
 	mm_cache_init();
+
+	pr_info("pageblock_order: %d, MAX_ORDER: %d, PFN_SECTION_SHIFT: %d\n", pageblock_order, MAX_ORDER, PFN_SECTION_SHIFT);
 }
 
 #ifdef CONFIG_RANDOMIZE_KSTACK_OFFSET
