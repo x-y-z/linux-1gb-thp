@@ -1068,7 +1068,7 @@ static inline void __free_one_page(struct page *page,
 			clear_page_guard(zone, buddy, order, migratetype);
 		else
 			del_page_from_free_list(buddy, zone, order);
-		combined_pfn = buddy_pfn & pfn;
+		combined_pfn = page_to_pfn(buddy) & pfn;
 		page = page + (combined_pfn - pfn);
 		pfn = combined_pfn;
 		order++;
@@ -1082,7 +1082,8 @@ done_merging:
 	else if (is_shuffle_order(order))
 		to_tail = shuffle_pick_tail();
 	else
-		to_tail = buddy_merge_likely(pfn, buddy_pfn, page, order);
+		to_tail = buddy != NULL &&
+			buddy_merge_likely(pfn, page_to_pfn(buddy), page, order);
 
 	if (to_tail)
 		add_to_free_list_tail(page, zone, order, migratetype);
