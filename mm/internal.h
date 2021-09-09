@@ -313,11 +313,15 @@ static inline struct page *find_buddy_page_pfn(struct page *page,
 			unsigned long pfn, unsigned int order, unsigned long *buddy_pfn)
 {
 	unsigned long __buddy_pfn = __find_buddy_pfn(pfn, order);
+	struct zone *zone = page_zone(page);
 	struct page *buddy;
 
 	buddy = page + (__buddy_pfn - pfn);
 	if (buddy_pfn)
 		*buddy_pfn = __buddy_pfn;
+
+	if (!zone->contiguous && !pfn_valid(__buddy_pfn))
+		return NULL;
 
 	if (page_is_buddy(page, buddy, order))
 		return buddy;
