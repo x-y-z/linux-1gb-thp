@@ -1023,10 +1023,9 @@ buddy_merge_likely(unsigned long pfn, unsigned long buddy_pfn,
 
 	combined_pfn = buddy_pfn & pfn;
 	higher_page = page + (combined_pfn - pfn);
-	buddy_pfn = __find_buddy_pfn(combined_pfn, order + 1);
-	higher_buddy = higher_page + (buddy_pfn - combined_pfn);
+	higher_buddy = find_valid_buddy_page(pfn_to_page(combined_pfn), order + 1);
 
-	return page_is_buddy(higher_page, higher_buddy, order + 1);
+	return higher_buddy && page_is_buddy(higher_page, higher_buddy, order + 1);
 }
 
 /*
@@ -1059,7 +1058,6 @@ static inline void __free_one_page(struct page *page,
 		int migratetype, fpi_t fpi_flags)
 {
 	struct capture_control *capc = task_capc(zone);
-	unsigned long buddy_pfn;
 	unsigned long combined_pfn;
 	unsigned int max_order;
 	struct page *buddy;
@@ -1084,8 +1082,11 @@ continue_merging:
 								migratetype);
 			return;
 		}
-		buddy_pfn = __find_buddy_pfn(pfn, order);
-		buddy = page + (buddy_pfn - pfn);
+
+		buddy = find_valid_buddy_page(page, order);
+
+		if (!buddy)
+			goto done_merging;
 
 		if (!page_is_buddy(page, buddy, order))
 			goto done_merging;
@@ -1097,7 +1098,7 @@ continue_merging:
 			clear_page_guard(zone, buddy, order, migratetype);
 		else
 			del_page_from_free_list(buddy, zone, order);
-		combined_pfn = buddy_pfn & pfn;
+		combined_pfn = page_to_pfn(buddy) & pfn;
 		page = page + (combined_pfn - pfn);
 		pfn = combined_pfn;
 		order++;
@@ -1114,8 +1115,11 @@ continue_merging:
 		if (unlikely(has_isolate_pageblock(zone))) {
 			int buddy_mt;
 
-			buddy_pfn = __find_buddy_pfn(pfn, order);
-			buddy = page + (buddy_pfn - pfn);
+			buddy = find_valid_buddy_page(page, order);
+
+			if (!buddy)
+				goto done_merging;
+
 			buddy_mt = get_pageblock_migratetype(buddy);
 
 			if (migratetype != buddy_mt
@@ -1135,7 +1139,8 @@ done_merging:
 	else if (is_shuffle_order(order))
 		to_tail = shuffle_pick_tail();
 	else
-		to_tail = buddy_merge_likely(pfn, buddy_pfn, page, order);
+		to_tail = buddy != NULL &&
+			buddy_merge_likely(pfn, page_to_pfn(buddy), page, order);
 
 	if (to_tail)
 		add_to_free_list_tail(page, zone, order, migratetype);
@@ -1419,9 +1424,7 @@ static bool bulkfree_pcp_prepare(struct page *page)
 
 static inline void prefetch_buddy(struct page *page)
 {
-	unsigned long pfn = page_to_pfn(page);
-	unsigned long buddy_pfn = __find_buddy_pfn(pfn, 0);
-	struct page *buddy = page + (buddy_pfn - pfn);
+	struct page *buddy = find_valid_buddy_page(page, 0);
 
 	prefetch(buddy);
 }
