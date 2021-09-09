@@ -211,7 +211,6 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 	unsigned long flags, nr_pages;
 	bool isolated_page = false;
 	unsigned int order;
-	unsigned long pfn, buddy_pfn;
 	struct page *buddy;
 
 	zone = page_zone(page);
@@ -230,11 +229,9 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 	if (PageBuddy(page)) {
 		order = buddy_order(page);
 		if (order >= pageblock_order && order <= MAX_ORDER) {
-			pfn = page_to_pfn(page);
-			buddy_pfn = __find_buddy_pfn(pfn, order);
-			buddy = page + (buddy_pfn - pfn);
+			buddy = find_valid_buddy_page(page, order);
 
-			if (!is_migrate_isolate_page(buddy)) {
+			if (buddy && !is_migrate_isolate_page(buddy)) {
 				isolated_page = !!__isolate_free_page(page, order);
 				/*
 				 * Isolating a free page in an isolated pageblock
