@@ -1662,7 +1662,7 @@ static void zoneinfo_show_print(struct seq_file *m, pg_data_t *pgdat,
 							struct zone *zone)
 {
 	int i;
-	seq_printf(m, "Node %d, zone %8s", pgdat->node_id, zone->name);
+	seq_printf(m, "Node %d, zone %8s [%lx - %lx] contiguous: %s", pgdat->node_id, zone->name, zone->zone_start_pfn, zone_end_pfn(zone), zone->contiguous?"yes":"no");
 	if (is_zone_first_populated(pgdat, zone)) {
 		seq_printf(m, "\n  per-node stats");
 		for (i = 0; i < NR_VM_NODE_STAT_ITEMS; i++) {
