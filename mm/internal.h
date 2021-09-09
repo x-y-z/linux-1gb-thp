@@ -234,6 +234,18 @@ __find_buddy_pfn(unsigned long page_pfn, unsigned int order)
 	return page_pfn ^ (1 << order);
 }
 
+static inline struct page*
+find_valid_buddy_page(struct page *page, unsigned int order)
+{
+	unsigned long pfn = page_to_pfn(page);
+	unsigned long buddy_pfn = __find_buddy_pfn(pfn, order);
+	struct zone *zone = page_zone(page);
+
+	if (!zone->contiguous && !pfn_valid(buddy_pfn))
+		return NULL;
+	return page + (buddy_pfn - pfn);
+}
+
 extern struct page *__pageblock_pfn_to_page(unsigned long start_pfn,
 				unsigned long end_pfn, struct zone *zone);
 
