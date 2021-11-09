@@ -57,6 +57,9 @@ extern unsigned int pageblock_order;
 
 #define pageblock_nr_pages	(1UL << pageblock_order)
 
+#define MAX_PHYS_CONTIG_ORDER	(min(PFN_SECTION_SHIFT, MAX_ORDER))
+#define MAX_PHYS_CONTIG_NR_PAGES	(1UL << MAX_PHYS_CONTIG_ORDER)
+
 /* Forward declaration */
 struct page;
 
