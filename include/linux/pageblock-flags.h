@@ -61,6 +61,18 @@ extern unsigned int pageblock_order;
 #define pageblock_start_pfn(pfn)	ALIGN_DOWN((pfn), pageblock_nr_pages)
 #define pageblock_end_pfn(pfn)		ALIGN((pfn) + 1, pageblock_nr_pages)
 
+/*
+ * memory section is only defined in sparsemem and in flatmem, pages are always
+ * physically contiguous, but we use MAX_ORDER since all users assume so.
+ */
+#ifdef CONFIG_FLATMEM
+#define MAX_PHYS_CONTIG_ORDER	MAX_ORDER
+#else /* SPARSEMEM */
+#define MAX_PHYS_CONTIG_ORDER	(min(PFN_SECTION_SHIFT, MAX_ORDER))
+#endif /* CONFIG_FLATMEM */
+
+#define MAX_PHYS_CONTIG_NR_PAGES	(1UL << MAX_PHYS_CONTIG_ORDER)
+
 /* Forward declaration */
 struct page;
 
