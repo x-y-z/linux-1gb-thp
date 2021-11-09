@@ -5478,7 +5478,7 @@ void clear_huge_page(struct page *page,
 	unsigned long addr = addr_hint &
 		~(((unsigned long)pages_per_huge_page << PAGE_SHIFT) - 1);
 
-	if (unlikely(pages_per_huge_page > MAX_ORDER_NR_PAGES)) {
+	if (unlikely(pages_per_huge_page > MAX_PHYS_CONTIG_NR_PAGES)) {
 		clear_gigantic_page(page, addr, pages_per_huge_page);
 		return;
 	}
@@ -5531,7 +5531,7 @@ void copy_user_huge_page(struct page *dst, struct page *src,
 		.vma = vma,
 	};
 
-	if (unlikely(pages_per_huge_page > MAX_ORDER_NR_PAGES)) {
+	if (unlikely(pages_per_huge_page > MAX_PHYS_CONTIG_NR_PAGES)) {
 		copy_user_gigantic_page(dst, src, addr, vma,
 					pages_per_huge_page);
 		return;

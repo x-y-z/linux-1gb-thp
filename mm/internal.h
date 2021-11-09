@@ -287,7 +287,7 @@ static inline bool page_is_buddy(struct page *page, struct page *buddy,
  * satisfies the following equation:
  *     P = B & ~(1 << O)
  *
- * Assumption: *_mem_map is contiguous at least up to MAX_ORDER
+ * Assumption: *_mem_map is contiguous at least up to MAX_PHYS_CONTIG_ORDER
  */
 static inline unsigned long
 __find_buddy_pfn(unsigned long page_pfn, unsigned int order)
@@ -631,11 +631,11 @@ static inline void vunmap_range_noflush(unsigned long start, unsigned long end)
 /*
  * Return the mem_map entry representing the 'offset' subpage within
  * the maximally aligned gigantic page 'base'.  Handle any discontiguity
- * in the mem_map at MAX_ORDER_NR_PAGES boundaries.
+ * in the mem_map at MAX_PHYS_CONTIG_NR_PAGES boundaries.
  */
 static inline struct page *mem_map_offset(struct page *base, int offset)
 {
-	if (unlikely(offset >= MAX_ORDER_NR_PAGES))
+	if (unlikely(offset >= MAX_PHYS_CONTIG_NR_PAGES))
 		return nth_page(base, offset);
 	return base + offset;
 }
@@ -647,7 +647,7 @@ static inline struct page *mem_map_offset(struct page *base, int offset)
 static inline struct page *mem_map_next(struct page *iter,
 						struct page *base, int offset)
 {
-	if (unlikely((offset & (MAX_ORDER_NR_PAGES - 1)) == 0)) {
+	if (unlikely((offset & (MAX_PHYS_CONTIG_NR_PAGES - 1)) == 0)) {
 		unsigned long pfn = page_to_pfn(base) + offset;
 		if (!pfn_valid(pfn))
 			return NULL;
