@@ -1524,6 +1524,16 @@ out:
 	return rc;
 }
 
+static inline bool is_transparent_hugepage(struct page *page)
+{
+	if (!PageCompound(page))
+		return false;
+
+	page = compound_head(page);
+	return is_huge_zero_page(page) ||
+	       page[1].compound_dtor == TRANSHUGE_PAGE_DTOR;
+}
+
 struct page *alloc_migration_target(struct page *page, unsigned long private)
 {
 	struct migration_target_control *mtc;
@@ -1544,9 +1554,7 @@ struct page *alloc_migration_target(struct page *page, unsigned long private)
 
 		gfp_mask = htlb_modify_alloc_mask(h, gfp_mask);
 		return alloc_huge_page_nodemask(h, nid, mtc->nmask, gfp_mask);
-	}
-
-	if (PageTransHuge(page)) {
+	} else if (is_transparent_hugepage(page)) {
 		/*
 		 * clear __GFP_RECLAIM to make the migration callback
 		 * consistent with regular THP allocations.
@@ -1554,14 +1562,19 @@ struct page *alloc_migration_target(struct page *page, unsigned long private)
 		gfp_mask &= ~__GFP_RECLAIM;
 		gfp_mask |= GFP_TRANSHUGE;
 		order = thp_order(page);
+	} else if (PageCompound(page)) {
+		/* for non-LRU movable compound pages */
+		gfp_mask |= __GFP_COMP;
+		order = compound_order(page);
 	}
+
 	zidx = zone_idx(page_zone(page));
 	if (is_highmem_idx(zidx) || zidx == ZONE_MOVABLE)
 		gfp_mask |= __GFP_HIGHMEM;
 
 	new_page = __alloc_pages(gfp_mask, order, nid, mtc->nmask);
 
-	if (new_page && PageTransHuge(page))
+	if (new_page && is_transparent_hugepage(page))
 		prep_transhuge_page(new_page);
 
 	return new_page;
