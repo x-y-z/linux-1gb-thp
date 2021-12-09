@@ -137,7 +137,6 @@ static void v9fs_vfs_readahead(struct readahead_control *ractl)
 static int v9fs_release_page(struct page *page, gfp_t gfp)
 {
 	struct folio *folio = page_folio(page);
-	struct inode *inode = folio_inode(folio);
 
 	if (folio_test_private(folio))
 		return 0;
