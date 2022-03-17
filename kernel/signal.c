@@ -32,7 +32,7 @@
 #include <linux/signal.h>
 #include <linux/signalfd.h>
 #include <linux/ratelimit.h>
-#include <linux/tracehook.h>
+#include <linux/task_work.h>
 #include <linux/capability.h>
 #include <linux/freezer.h>
 #include <linux/pid_namespace.h>
@@ -1308,6 +1308,43 @@ enum sig_handler {
 };
 
 /*
+ * On some archictectures, PREEMPT_RT has to delay sending a signal from a
+ * trap since it cannot enable preemption, and the signal code's
+ * spin_locks turn into mutexes. Instead, it must set TIF_NOTIFY_RESUME
+ * which will send the signal on exit of the trap.
+ */
+#ifdef CONFIG_RT_DELAYED_SIGNALS
+static inline bool force_sig_delayed(struct kernel_siginfo *info,
+				     struct task_struct *t)
+{
+	if (!in_atomic())
+		return false;
+
+	if (WARN_ON_ONCE(t->forced_info.si_signo))
+		return true;
+
+	if (is_si_special(info)) {
+		WARN_ON_ONCE(info != SEND_SIG_PRIV);
+		t->forced_info.si_signo = info->si_signo;
+		t->forced_info.si_errno = 0;
+		t->forced_info.si_code = SI_KERNEL;
+		t->forced_info.si_pid = 0;
+		t->forced_info.si_uid = 0;
+	} else {
+		t->forced_info = *info;
+	}
+	set_tsk_thread_flag(t, TIF_NOTIFY_RESUME);
+	return true;
+}
+#else
+static inline bool force_sig_delayed(struct kernel_siginfo *info,
+				     struct task_struct *t)
+{
+	return false;
+}
+#endif
+
+/*
  * Force a signal that the process can't ignore: if necessary
  * we unblock the signal and change any SIG_IGN to SIG_DFL.
  *
@@ -1326,6 +1363,9 @@ force_sig_info_to_task(struct kernel_siginfo *info, struct task_struct *t,
 	int ret, blocked, ignored;
 	struct k_sigaction *action;
 	int sig = info->si_signo;
+
+	if (force_sig_delayed(info, t))
+		return 0;
 
 	spin_lock_irqsave(&t->sighand->siglock, flags);
 	action = &t->sighand->action[sig-1];
@@ -2345,7 +2385,7 @@ static void ptrace_do_notify(int signr, int exit_code, int why)
 void ptrace_notify(int exit_code)
 {
 	BUG_ON((exit_code & (0x7f | ~0xffff)) != SIGTRAP);
-	if (unlikely(current->task_works))
+	if (unlikely(task_work_pending(current)))
 		task_work_run();
 
 	spin_lock_irq(&current->sighand->siglock);
@@ -2627,20 +2667,12 @@ bool get_signal(struct ksignal *ksig)
 	struct signal_struct *signal = current->signal;
 	int signr;
 
-	if (unlikely(current->task_works))
+	clear_notify_signal();
+	if (unlikely(task_work_pending(current)))
 		task_work_run();
 
-	/*
-	 * For non-generic architectures, check for TIF_NOTIFY_SIGNAL so
-	 * that the arch handlers don't all have to do it. If we get here
-	 * without TIF_SIGPENDING, just exit after running signal work.
-	 */
-	if (!IS_ENABLED(CONFIG_GENERIC_ENTRY)) {
-		if (test_thread_flag(TIF_NOTIFY_SIGNAL))
-			tracehook_notify_signal();
-		if (!task_sigpending(current))
-			return false;
-	}
+	if (!task_sigpending(current))
+		return false;
 
 	if (unlikely(uprobe_deny_signal()))
 		return false;
@@ -2899,7 +2931,8 @@ static void signal_delivered(struct ksignal *ksig, int stepping)
 	set_current_blocked(&blocked);
 	if (current->sas_ss_flags & SS_AUTODISARM)
 		sas_ss_reset(current);
-	tracehook_signal_handler(stepping);
+	if (stepping)
+		ptrace_notify(SIGTRAP);
 }
 
 void signal_setup_done(int failed, struct ksignal *ksig, int stepping)
