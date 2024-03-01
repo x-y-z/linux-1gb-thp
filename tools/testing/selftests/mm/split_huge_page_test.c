@@ -26,7 +26,6 @@ uint64_t pmd_pagesize;
 
 #define SPLIT_DEBUGFS "/sys/kernel/debug/split_huge_pages"
 #define SMAP_PATH "/proc/self/smaps"
-#define THP_FS_PATH "/mnt/thp_fs"
 #define INPUT_MAX 80
 
 #define PID_FMT "%d,0x%lx,0x%lx,%d"
@@ -268,7 +267,37 @@ cleanup:
 	ksft_exit_fail_msg("Error occurred\n");
 }
 
-void create_pagecache_thp_and_fd(const char *testfile, size_t fd_size, int *fd, char **addr)
+bool prepare_thp_fs(const char *xfs_path, char *thp_fs_template,
+		const char **thp_fs_loc)
+{
+	if (xfs_path) {
+		*thp_fs_loc = xfs_path;
+		return false;
+	}
+
+	*thp_fs_loc = mkdtemp(thp_fs_template);
+
+	if (!*thp_fs_loc)
+		ksft_exit_fail_msg("cannot create temp folder\n");
+
+	return true;
+}
+
+void cleanup_thp_fs(const char *thp_fs_loc, bool created_tmp)
+{
+	int status;
+
+	if (!created_tmp)
+		return;
+
+	status = rmdir(thp_fs_loc);
+	if (status)
+		ksft_exit_fail_msg("cannot remove tmp dir: %s\n",
+				   strerror(errno));
+}
+
+int create_pagecache_thp_and_fd(const char *testfile, size_t fd_size, int *fd,
+		char **addr)
 {
 	size_t i;
 	int dummy;
@@ -277,7 +306,7 @@ void create_pagecache_thp_and_fd(const char *testfile, size_t fd_size, int *fd, 
 
 	*fd = open(testfile, O_CREAT | O_RDWR, 0664);
 	if (*fd == -1)
-		ksft_exit_fail_msg("Failed to create a file at "THP_FS_PATH);
+		ksft_exit_fail_msg("Failed to create a file at %s\n", testfile);
 
 	for (i = 0; i < fd_size; i++) {
 		unsigned char byte = (unsigned char)i;
@@ -299,7 +328,7 @@ void create_pagecache_thp_and_fd(const char *testfile, size_t fd_size, int *fd, 
 
 	*fd = open(testfile, O_RDWR);
 	if (*fd == -1) {
-		ksft_perror("Failed to open a file at "THP_FS_PATH);
+		ksft_perror("Failed to open testfile\n");
 		goto err_out_unlink;
 	}
 
@@ -314,26 +343,39 @@ void create_pagecache_thp_and_fd(const char *testfile, size_t fd_size, int *fd, 
 		dummy += *(*addr + i);
 
 	if (!check_huge_file(*addr, fd_size / pmd_pagesize, pmd_pagesize)) {
-		ksft_print_msg("No large pagecache folio generated, please mount a filesystem supporting large folio at "THP_FS_PATH"\n");
-		goto err_out_close;
+		ksft_print_msg("No large pagecache folio generated, please provide a filesystem supporting large folio\n");
+		munmap(*addr, fd_size);
+		close(*fd);
+		unlink(testfile);
+		ksft_test_result_skip("Pagecache folio split skipped\n");
+		return -2;
 	}
-	return;
+	return 0;
 err_out_close:
 	close(*fd);
 err_out_unlink:
 	unlink(testfile);
 	ksft_exit_fail_msg("Failed to create large pagecache folios\n");
+	return -1;
 }
 
-void split_thp_in_pagecache_to_order(size_t fd_size, int order)
+void split_thp_in_pagecache_to_order(size_t fd_size, int order, const char *fs_loc)
 {
 	int fd;
 	char *addr;
 	size_t i;
-	const char testfile[] = THP_FS_PATH "/test";
+	char testfile[INPUT_MAX];
 	int err = 0;
 
-	create_pagecache_thp_and_fd(testfile, fd_size, &fd, &addr);
+	err = snprintf(testfile, INPUT_MAX, "%s/test", fs_loc);
+
+	if (err < 0)
+		ksft_exit_fail_msg("cannot generate right test file name\n");
+
+	err = create_pagecache_thp_and_fd(testfile, fd_size, &fd, &addr);
+	if (err)
+		return;
+	err = 0;
 
 	write_debugfs(PID_FMT, getpid(), (uint64_t)addr, (uint64_t)addr + fd_size, order);
 
@@ -351,6 +393,7 @@ void split_thp_in_pagecache_to_order(size_t fd_size, int order)
 	}
 
 out:
+	munmap(addr, fd_size);
 	close(fd);
 	unlink(testfile);
 	if (err)
@@ -362,6 +405,10 @@ int main(int argc, char **argv)
 {
 	int i;
 	size_t fd_size;
+	char *optional_xfs_path = NULL;
+	char fs_loc_template[] = "/tmp/thp_fs_XXXXXX";
+	const char *fs_loc;
+	bool created_tmp;
 
 	ksft_print_header();
 
@@ -369,6 +416,9 @@ int main(int argc, char **argv)
 		ksft_print_msg("Please run the benchmark as root\n");
 		ksft_finished();
 	}
+
+	if (argc > 1)
+		optional_xfs_path = argv[1];
 
 	ksft_set_plan(3+9);
 
@@ -384,8 +434,11 @@ int main(int argc, char **argv)
 	split_pte_mapped_thp();
 	split_file_backed_thp();
 
+	created_tmp = prepare_thp_fs(optional_xfs_path, fs_loc_template,
+			&fs_loc);
 	for (i = 8; i >= 0; i--)
-		split_thp_in_pagecache_to_order(fd_size, i);
+		split_thp_in_pagecache_to_order(fd_size, i, fs_loc);
+	cleanup_thp_fs(fs_loc, created_tmp);
 
 	ksft_finished();
 
