@@ -1757,10 +1757,10 @@ static unsigned long find_large_buddy(unsigned long start_pfn)
 }
 
 /**
- * move_freepages_block_isolate - move free pages in block for page isolation
+ * __move_freepages_for_page_isolation - move free pages in block for page isolation
  * @zone: the zone
  * @page: the pageblock page
- * @migratetype: migratetype to set on the pageblock
+ * @isolate_pageblock to isolate the given pageblock or unisolate it
  *
  * This is similar to move_freepages_block(), but handles the special
  * case encountered in page isolation, where the block of interest
@@ -1775,10 +1775,15 @@ static unsigned long find_large_buddy(unsigned long start_pfn)
  *
  * Returns %true if pages could be moved, %false otherwise.
  */
-bool move_freepages_block_isolate(struct zone *zone, struct page *page,
-				  int migratetype)
+static bool __move_freepages_for_page_isolation(struct zone *zone,
+		struct page *page, bool isolate_pageblock)
 {
 	unsigned long start_pfn, pfn;
+	int from_mt;
+	int to_mt;
+
+	if (isolate_pageblock == get_pageblock_isolate(page))
+		return false;
 
 	if (!prep_move_freepages_block(zone, page, &start_pfn, NULL, NULL))
 		return false;
@@ -1795,7 +1800,10 @@ bool move_freepages_block_isolate(struct zone *zone, struct page *page,
 
 		del_page_from_free_list(buddy, zone, order,
 					get_pfnblock_migratetype(buddy, pfn));
-		set_pageblock_migratetype(page, migratetype);
+		if (isolate_pageblock)
+			set_pageblock_isolate(page);
+		else
+			clear_pageblock_isolate(page);
 		split_large_buddy(zone, buddy, pfn, order, FPI_NONE);
 		return true;
 	}
@@ -1806,16 +1814,38 @@ bool move_freepages_block_isolate(struct zone *zone, struct page *page,
 
 		del_page_from_free_list(page, zone, order,
 					get_pfnblock_migratetype(page, pfn));
-		set_pageblock_migratetype(page, migratetype);
+		if (isolate_pageblock)
+			set_pageblock_isolate(page);
+		else
+			clear_pageblock_isolate(page);
 		split_large_buddy(zone, page, pfn, order, FPI_NONE);
 		return true;
 	}
 move:
-	__move_freepages_block(zone, start_pfn,
-			       get_pfnblock_migratetype(page, start_pfn),
-			       migratetype);
+	if (isolate_pageblock) {
+		from_mt = get_pageblock_migratetype(page);
+		to_mt = MIGRATE_ISOLATE;
+	} else {
+		clear_pageblock_isolate(page);
+		from_mt = MIGRATE_ISOLATE;
+		to_mt = get_pageblock_migratetype(page);
+		set_pageblock_isolate(page);
+	}
+
+	__move_freepages_block(zone, start_pfn, from_mt, to_mt);
 	return true;
 }
+
+bool pageblock_isolate_and_move_free_pages(struct zone *zone, struct page *page)
+{
+	return __move_freepages_for_page_isolation(zone, page, true);
+}
+
+bool pageblock_unisolate_and_move_free_pages(struct zone *zone, struct page *page)
+{
+	return __move_freepages_for_page_isolation(zone, page, false);
+}
+
 #endif /* CONFIG_MEMORY_ISOLATION */
 
 static void change_pageblock_range(struct page *pageblock_page,
