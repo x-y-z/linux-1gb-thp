@@ -780,7 +780,7 @@ isolate_migratepages_range(struct compact_control *cc,
 
 int __alloc_contig_migrate_range(struct compact_control *cc,
 					unsigned long start, unsigned long end,
-					int migratetype);
+					acr_flags_t alloc_flags);
 
 /* Free whole pageblock and set its migration type to MIGRATE_CMA. */
 void init_cma_reserved_pageblock(struct page *page);
