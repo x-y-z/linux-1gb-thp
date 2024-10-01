@@ -27,7 +27,7 @@ SYSCALL
 =======
 mseal syscall signature
 -----------------------
-   **int** mseal(**void \*** addr, **size_t** len, **unsigned long** flags)
+   ``int mseal(void \* addr, size_t len, unsigned long flags)``
 
    **addr**/**len**: virtual memory address range.
       The address range set by **addr**/**len** must meet:
@@ -62,10 +62,10 @@ mseal syscall signature
         memory range could happen. However, those cases should be rare.
 
    **Architecture support**:
-      mseal only works on 64-bit CPUs, not 32-bit CPU.
+      mseal only works on 64-bit CPUs, not 32-bit CPUs.
 
    **Idempotent**:
-      users can call mseal multiple times, mseal on an already sealed memory
+      users can call mseal multiple times. mseal on an already sealed memory
       is a no-action (not error).
 
    **no munseal**
@@ -75,8 +75,8 @@ mseal syscall signature
 
 Blocked mm syscall for sealed mapping
 -------------------------------------
-   It might be imporant to note: **once the mapping is sealed, it will
-   stay in the process's memory till the process terminates**.
+   It might be important to note: **once the mapping is sealed, it will
+   stay in the process's memory until the process terminates**.
 
    Example::
 
@@ -100,9 +100,9 @@ Blocked mm syscall for sealed mapping
    overwrite the existing mapping with another mapping.
 
    mprotect and pkey_mprotect are blocked because they changes the
-   protection bits (rwx) of the mapping.
+   protection bits (RWX) of the mapping.
 
-   Some destructive madvice behaviors (MADV_DONTNEED, MADV_FREE,
+   Some destructive madvise behaviors (MADV_DONTNEED, MADV_FREE,
    MADV_DONTNEED_LOCKED, MADV_FREE, MADV_DONTFORK, MADV_WIPEONFORK)
    for anonymous memory, when users don't have write permission to the
    memory. Those behaviors can alter region contents by discarding pages,
@@ -118,25 +118,25 @@ Blocked mm syscall for sealed mapping
         VMAs before reaching the sealed VMA and return -EPERM.
       - mmap and mremap: undefined behavior.
 
-Use cases:
-==========
+Use cases
+=========
 - glibc:
   The dynamic linker, during loading ELF executables, can apply sealing to
   mapping segments.
 
-- Chrome browser: protect some security sensitive data-structures.
+- Chrome browser: protect some security sensitive data structures.
 
-Don't use mseal on:
-===================
+When not to use mseal
+=====================
 Applications can apply sealing to any virtual memory region from userspace,
 but it is *crucial to thoroughly analyze the mapping's lifetime* prior to
 apply the sealing. This is because the sealed mapping *won’t be unmapped*
-till the process terminates or the exec system call is invoked.
+until the process terminates or the exec system call is invoked.
 
 For example:
    - aio/shm
      aio/shm can call mmap and  munmap on behalf of userspace, e.g.
-     ksys_shmdt() in shm.c. The lifetime of those mapping are not tied to
+     ksys_shmdt() in shm.c. The lifetimes of those mapping are not tied to
      the lifetime of the process. If those memories are sealed from userspace,
      then munmap will fail, causing leaks in VMA address space during the
      lifetime of the process.
@@ -145,8 +145,10 @@ For example:
      Don't use mseal on the memory ptr return from malloc().
      malloc() is implemented by allocator, e.g. by glibc. Heap manager might
      allocate a ptr from brk or mapping created by mmap.
-     If app calls mseal on ptr returned from malloc(), this can affect the heap
-     manager's ability to manage the mappings, the outcome is non-deterministic.
+     If an app calls mseal on a ptr returned from malloc(), this can affect
+     the heap manager's ability to manage the mappings; the outcome is
+     non-deterministic.
+
      Example::
 
         ptr = malloc(size);
@@ -155,10 +157,10 @@ For example:
         /* free will success, allocator can't shrink heap lower than ptr */
         free(ptr);
 
-mseal doesn't block:
-====================
+mseal doesn't block
+===================
 In a nutshell, mseal blocks certain mm syscall from modifying some of VMA's
-attributes, such as protection bits (rwx). Sealed mappings doesn't mean the
+attributes, such as protection bits (RWX). Sealed mappings doesn't mean the
 memory is immutable.
 
 As Jann Horn pointed out in [3], there are still a few ways to write
@@ -173,8 +175,8 @@ Those cases are:
 The idea that inspired this patch comes from Stephen Röttger’s work in V8
 CFI [4]. Chrome browser in ChromeOS will be the first user of this API.
 
-Reference:
-==========
+Reference
+=========
 - [1] https://github.com/apple-oss-distributions/xnu/blob/1031c584a5e37aff177559b9f69dbd3c8c3fd30a/osfmk/mach/vm_statistics.h#L274
 - [2] https://man.openbsd.org/mimmutable.2
 - [3] https://lore.kernel.org/lkml/CAG48ez3ShUYey+ZAFsU2i1RpQn0a5eOs2hzQ426FkcgnfUGLvA@mail.gmail.com
