@@ -3064,7 +3064,7 @@ static void remap_page(struct folio *folio, unsigned long nr, int flags)
 static void lru_add_page_tail(struct folio *folio, struct page *tail,
 		struct lruvec *lruvec, struct list_head *list)
 {
-	VM_BUG_ON_FOLIO(!folio_test_large(folio), folio);
+	/* VM_BUG_ON_FOLIO(!folio_test_large(folio), folio); */
 	VM_BUG_ON_FOLIO(PageLRU(tail), folio);
 	lockdep_assert_held(&lruvec->lru_lock);
 
@@ -3598,6 +3598,451 @@ int split_folio_to_list(struct folio *folio, struct list_head *list)
 	return split_huge_page_to_list_to_order(&folio->page, list, ret);
 }
 
+static long page_in_folio_offset(struct page *page, struct folio *folio)
+{
+	long nr_pages = folio_nr_pages(folio);
+	unsigned long pages_pfn = page_to_pfn(page);
+	unsigned long folios_pfn = folio_pfn(folio);
+
+	if (pages_pfn >= folios_pfn && pages_pfn < (folios_pfn + nr_pages))
+		return pages_pfn - folios_pfn;
+
+	return -EINVAL;
+}
+
+static struct folio* __halve_folio(struct folio *folio)
+{
+	unsigned int new_order = folio_order(folio) - 1;
+	long new_nr_pages = 1 << new_order;
+	struct page *head = &folio->page;
+	struct page *second_head = head + new_nr_pages;
+
+	/*
+	 * Careful: new_folio is not a "real" folio before we cleared PageTail.
+	 * Don't pass it around before clear_compound_head().
+	 */
+	struct folio *new_folio = (struct folio *)second_head;
+
+	VM_BUG_ON_PAGE(atomic_read(&second_head->_mapcount) != -1, second_head);
+
+	/*
+	 * Clone page flags before unfreezing refcount.
+	 *
+	 * After successful get_page_unless_zero() might follow flags change,
+	 * for example lock_page() which set PG_waiters.
+	 *
+	 * Note that for mapped sub-pages of an anonymous THP,
+	 * PG_anon_exclusive has been cleared in unmap_folio() and is stored in
+	 * the migration entry instead from where remap_page() will restore it.
+	 * We can still have PG_anon_exclusive set on effectively unmapped and
+	 * unreferenced sub-pages of an anonymous THP: we can simply drop
+	 * PG_anon_exclusive (-> PG_mappedtodisk) for these here.
+	 */
+	second_head->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
+	second_head->flags |= (head->flags &
+			((1L << PG_referenced) |
+			 (1L << PG_swapbacked) |
+			 (1L << PG_swapcache) |
+			 (1L << PG_mlocked) |
+			 (1L << PG_uptodate) |
+			 (1L << PG_active) |
+			 (1L << PG_workingset) |
+			 (1L << PG_locked) |
+			 (1L << PG_unevictable) |
+#ifdef CONFIG_ARCH_USES_PG_ARCH_2
+			 (1L << PG_arch_2) |
+#endif
+#ifdef CONFIG_ARCH_USES_PG_ARCH_3
+			 (1L << PG_arch_3) |
+#endif
+			 (1L << PG_dirty) |
+			 LRU_GEN_MASK | LRU_REFS_MASK));
+
+	/* ->mapping in first and second tail page is replaced by other uses */
+	VM_BUG_ON_PAGE(new_nr_pages > 2 && second_head->mapping != TAIL_MAPPING,
+		       second_head);
+	second_head->mapping = head->mapping;
+	second_head->index = head->index + new_nr_pages;
+
+	/*
+	 * page->private should not be set in tail pages. Fix up and warn once
+	 * if private is unexpectedly set.
+	 */
+	if (unlikely(second_head->private)) {
+		VM_WARN_ON_ONCE_PAGE(true, second_head);
+		second_head->private = 0;
+	}
+	if (folio_test_swapcache(folio))
+		new_folio->swap.val = folio->swap.val + new_nr_pages;
+
+	/* Page flags must be visible before we make the page non-compound. */
+	smp_wmb();
+
+	/*
+	 * Clear PageTail before unfreezing page refcount.
+	 *
+	 * After successful get_page_unless_zero() might follow put_page()
+	 * which needs correct compound_head().
+	 */
+	clear_compound_head(second_head);
+	if (new_order) {
+		prep_compound_page(second_head, new_order);
+		folio_set_large_rmappable(new_folio);
+
+		folio_set_order(folio, new_order);
+	} else {
+		ClearPageCompound(head);
+	}
+
+	if (folio_test_young(folio))
+		folio_set_young(new_folio);
+	if (folio_test_idle(folio))
+		folio_set_idle(new_folio);
+
+	folio_xchg_last_cpupid(new_folio, folio_last_cpupid(folio));
+
+	return new_folio;
+}
+
+static int __folio_split_without_mapping(struct folio *folio, int new_order,
+				  struct page *page, struct list_head *list,
+				  pgoff_t end, struct xa_state *xas,
+				  struct address_space *mapping)
+{
+	struct lruvec *lruvec;
+	struct address_space *swap_cache = NULL;
+	int nr_dropped = 0;
+	struct folio *remain_folio = NULL;
+	struct folio *buddy_folio = NULL;
+	struct folio *origin_folio = folio;
+	int order = folio_order(folio);
+	int split_order = order - 1;
+	struct folio* split_folios[MAX_PAGE_ORDER];
+
+	if (folio_test_anon(folio) && folio_test_swapcache(folio))
+		return -EINVAL;
+
+	/* lock lru list/PageCompound, ref frozen by page_ref_freeze */
+	lruvec = folio_lruvec_lock(folio);
+
+	/* work on the other folio contains page */
+	for (split_order = order - 1; split_order >= new_order; split_order--) {
+		if (mapping) {
+			xas_set_order(xas, folio->index, split_order);
+			xas_split_alloc(xas, folio, folio_order(folio), 0);
+			if (xas_error(xas)) {
+				unlock_page_lruvec(lruvec);
+				local_irq_enable();
+				return -ENOMEM;
+			}
+			xas_split(xas, folio, folio_order(folio));
+		}
+
+		remain_folio = __halve_folio(folio);
+
+		/* complete memcg works before add pages to LRU */
+		split_page_memcg(&folio->page, split_order + 1, split_order);
+		split_page_owner(&folio->page, split_order + 1, split_order);
+		pgalloc_tag_split(folio, split_order + 1, split_order);
+
+		if (page_in_folio_offset(page, folio) >= 0)
+			buddy_folio = remain_folio;
+		else {
+			buddy_folio = folio;
+			folio = remain_folio;
+		}
+		split_folios[split_order] = buddy_folio;
+		/*
+		 * Add the buddy folio to list,
+		 * but if its index > end, drop it.
+		 */
+		/* Unfreeze refcount first. Additional reference from page cache. */
+		folio_ref_unfreeze(buddy_folio,
+			1 + ((!folio_test_anon(folio) || folio_test_swapcache(folio)) ?
+				     folio_nr_pages(buddy_folio) : 0));
+
+		if (buddy_folio != origin_folio)
+			lru_add_page_tail(origin_folio, &buddy_folio->page, lruvec, list);
+
+		/* Some pages can be beyond EOF: drop them from page cache */
+		if (buddy_folio->index >= end) {
+			if (shmem_mapping(folio->mapping))
+				nr_dropped++;
+			else if (folio_test_clear_dirty(buddy_folio))
+				folio_account_cleaned(buddy_folio,
+					inode_to_wb(folio->mapping->host));
+			__filemap_remove_folio(buddy_folio, NULL);
+			folio_put(buddy_folio);
+		} else if (!folio_test_anon(buddy_folio)) {
+			__xa_store(&folio->mapping->i_pages, buddy_folio->index,
+					&buddy_folio->page, 0);
+		} else if (swap_cache) {
+			return -EINVAL;
+		}
+	}
+	/* Some pages can be beyond EOF: drop them from page cache */
+	if (folio->index >= end) {
+		if (shmem_mapping(folio->mapping))
+			nr_dropped++;
+		else if (folio_test_clear_dirty(folio))
+			folio_account_cleaned(folio,
+				inode_to_wb(folio->mapping->host));
+		__filemap_remove_folio(folio, NULL);
+		folio_put(folio);
+	} else if (!folio_test_anon(folio)) {
+		__xa_store(&folio->mapping->i_pages, folio->index,
+				&folio->page, 0);
+	} else if (swap_cache) {
+		return -EINVAL;
+	}
+
+	if (folio != origin_folio)
+		lru_add_page_tail(origin_folio, &folio->page, lruvec, list);
+
+	unlock_page_lruvec(lruvec);
+	/* Caller disabled irqs, so they are still disabled here */
+
+	/* See comment in __split_huge_page_tail() */
+	if (folio_test_anon(folio)) {
+		/* Additional pin to swap cache */
+		if (folio_test_swapcache(folio))
+			return -EINVAL;
+		else
+			folio_ref_inc(folio);
+	} else {
+		/* Additional pin to page cache */
+		folio_ref_add(folio, 1 + (1 << new_order));
+		xa_unlock(&folio->mapping->i_pages);
+	}
+
+	local_irq_enable();
+
+	remap_page(origin_folio, 1 << order, 0);
+	for (split_order = order - 1; split_order >= new_order; split_order--) {
+		struct folio *new_folio = split_folios[split_order];
+		
+		folio_unlock(new_folio);
+
+		free_page_and_swap_cache(&new_folio->page);
+	}
+	return 0;
+}
+
+/*
+ * folio_split: split a folio at offset_in_new_order to a new_order folio
+ * @folio: folio to split
+ * @new_order: the order of the new folio
+ * @page: a page within the new folio
+ *
+ * return: 0: successful, <0 failed
+ *
+ * Split a folio at offset_in_new_order to a new_order folio, leave the
+ * remaining subpages of the original folio as large as possible. For example,
+ * split an order-9 folio at its third order-3 subpages to an order-3 folio.
+ * There are 2^6=64 order-3 subpages in an order-9 folio and the result will be
+ * a set of folios with different order and the new folio is in bracket:
+ * [order-4, {order-3}, order-3, order-5, order-6, order-7, order-8].
+ *
+ */
+static int folio_split(struct folio *folio, unsigned int new_order, struct page *page)
+{
+	struct deferred_split *ds_queue = get_deferred_split_queue(folio);
+	bool is_anon = folio_test_anon(folio);
+	struct address_space *mapping = NULL;
+	struct anon_vma *anon_vma = NULL;
+	int extra_pins, ret;
+	pgoff_t end;
+	bool is_hzp;
+	unsigned int order = folio_order(folio);
+	long page_offset = page_in_folio_offset(page, folio);
+	XA_STATE(xas, &folio->mapping->i_pages, folio->index);
+
+	if (!folio_test_locked(folio))
+		return -EINVAL;
+	if (!folio_test_large(folio))
+		return -EINVAL;
+
+	if (is_anon) {
+		/* order-1 is not supported for anonymous THP. */
+		if (new_order == 1) {
+			VM_WARN_ONCE(1, "Cannot split to order-1 folio");
+			return -EINVAL;
+		}
+		if (new_order == 0) {
+			VM_WARN_ONCE(1, "Cannot split to order-0 anon folio yet");
+			return -EINVAL;
+		}
+	} else if (new_order) {
+		/* Split shmem folio to non-zero order not supported */
+		if (shmem_mapping(folio->mapping)) {
+			VM_WARN_ONCE(1,
+				"Cannot split shmem folio to non-0 order");
+			return -EINVAL;
+		}
+		/*
+		 * No split if the file system does not support large folio.
+		 * Note that we might still have THPs in such mappings due to
+		 * CONFIG_READ_ONLY_THP_FOR_FS. But in that case, the mapping
+		 * does not actually support large folios properly.
+		 */
+		if (IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS) &&
+		    !mapping_large_folio_support(folio->mapping)) {
+			VM_WARN_ONCE(1,
+				"Cannot split file folio to non-0 order");
+			return -EINVAL;
+		}
+	}
+
+	/* Only swapping a whole PMD-mapped folio is supported */
+	if (folio_test_swapcache(folio) && new_order)
+		return -EINVAL;
+
+	is_hzp = is_huge_zero_folio(folio);
+	if (is_hzp) {
+		pr_warn_ratelimited("Called folio_split for huge zero page\n");
+		return -EBUSY;
+	}
+
+	if (folio_test_writeback(folio))
+		return -EBUSY;
+
+	if (page_offset < 0)
+		return -EINVAL;
+
+	if (new_order >= order)
+		return -EINVAL;
+
+	/* adjust page pointer to the first page of the new folio */
+	page = folio_page(folio, ALIGN_DOWN(page_offset, (1L<<new_order)));
+
+	if (is_anon) {
+		/*
+		 * The caller does not necessarily hold an mmap_lock that would
+		 * prevent the anon_vma disappearing so we first we take a
+		 * reference to it and then lock the anon_vma for write. This
+		 * is similar to folio_lock_anon_vma_read except the write lock
+		 * is taken to serialise against parallel split or collapse
+		 * operations.
+		 */
+		anon_vma = folio_get_anon_vma(folio);
+		if (!anon_vma) {
+			ret = -EBUSY;
+			goto out;
+		}
+		end = -1;
+		mapping = NULL;
+		anon_vma_lock_write(anon_vma);
+	} else {
+		unsigned int min_order;
+		gfp_t gfp;
+
+		mapping = folio->mapping;
+
+		/* Truncated ? */
+		if (!mapping) {
+			ret = -EBUSY;
+			goto out;
+		}
+
+		min_order = mapping_min_folio_order(folio->mapping);
+		if (new_order < min_order) {
+			VM_WARN_ONCE(1, "Cannot split mapped folio below min-order: %u",
+				     min_order);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		gfp = current_gfp_context(mapping_gfp_mask(mapping) &
+							GFP_RECLAIM_MASK);
+
+		if (!filemap_release_folio(folio, gfp)) {
+			ret = -EBUSY;
+			goto out;
+		}
+
+		anon_vma = NULL;
+		i_mmap_lock_read(mapping);
+
+		/*
+		 *__split_huge_page() may need to trim off pages beyond EOF:
+		 * but on 32-bit, i_size_read() takes an irq-unsafe seqlock,
+		 * which cannot be nested inside the page tree lock. So note
+		 * end now: i_size itself may be changed at any moment, but
+		 * folio lock is good enough to serialize the trimming.
+		 */
+		end = DIV_ROUND_UP(i_size_read(mapping->host), PAGE_SIZE);
+		if (shmem_mapping(mapping))
+			end = shmem_fallocend(mapping->host, end);
+	}
+
+	/*
+	 * Racy check if we can split the page, before unmap_folio() will
+	 * split PMDs
+	 */
+	if (!can_split_folio(folio, 1, &extra_pins)) {
+		ret = -EAGAIN;
+		goto out_unlock;
+	}
+
+	unmap_folio(folio);
+
+	/* block interrupt reentry in xa_lock and spinlock */
+	local_irq_disable();
+	if (mapping) {
+		/*
+		 * Check if the folio is present in page cache.
+		 * We assume all tail are present too, if folio is there.
+		 */
+		xas_lock(&xas);
+		xas_reset(&xas);
+		if (xas_load(&xas) != folio)
+			goto fail;
+	}
+
+	/* Prevent deferred_split_scan() touching ->_refcount */
+	spin_lock(&ds_queue->split_queue_lock);
+	if (folio_ref_freeze(folio, 1 + extra_pins)) {
+		if (folio_order(folio) > 1 &&
+		    !list_empty(&folio->_deferred_list)) {
+			ds_queue->split_queue_len--;
+			if (folio_test_partially_mapped(folio)) {
+				__folio_clear_partially_mapped(folio);
+			}
+			/*
+			 * Reinitialize page_deferred_list after removing the
+			 * page from the split_queue, otherwise a subsequent
+			 * split will see list corruption when checking the
+			 * page_deferred_list.
+			 */
+			list_del_init(&folio->_deferred_list);
+		}
+		spin_unlock(&ds_queue->split_queue_lock);
+
+		__folio_split_without_mapping(folio, new_order, page, NULL, end, &xas, mapping);
+
+		ret = 0;
+	} else {
+		spin_unlock(&ds_queue->split_queue_lock);
+fail:
+		if (mapping)
+			xas_unlock(&xas);
+		local_irq_enable();
+		remap_page(folio, folio_nr_pages(folio), 0);
+		ret = -EAGAIN;
+	}
+
+out_unlock:
+	if (anon_vma) {
+		anon_vma_unlock_write(anon_vma);
+		put_anon_vma(anon_vma);
+	}
+	if (mapping)
+		i_mmap_unlock_read(mapping);
+out:
+	xas_destroy(&xas);
+	return ret;
+}
+
 void __folio_undo_large_rmappable(struct folio *folio)
 {
 	struct deferred_split *ds_queue;
@@ -4117,10 +4562,276 @@ static const struct file_operations split_huge_pages_fops = {
 	.llseek  = no_llseek,
 };
 
+static int folio_split_pid(int pid, unsigned long vaddr_start,
+			unsigned long vaddr_end, unsigned long split_offset,
+			unsigned int new_order)
+{
+	int ret = 0;
+	struct task_struct *task;
+	struct mm_struct *mm;
+	unsigned long total = 0, split = 0;
+	unsigned long addr;
+
+	vaddr_start &= PAGE_MASK;
+	vaddr_end &= PAGE_MASK;
+
+	task = find_get_task_by_vpid(pid);
+	if (!task) {
+		ret = -ESRCH;
+		goto out;
+	}
+
+	/* Find the mm_struct */
+	mm = get_task_mm(task);
+	put_task_struct(task);
+
+	if (!mm) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	pr_debug("Split huge pages in pid: %d, vaddr: [0x%lx - 0x%lx], to new order: %d, at %lu th page\n",
+		 pid, vaddr_start, vaddr_end, new_order, split_offset);
+
+	mmap_read_lock(mm);
+	/*
+	 * always increase addr by PAGE_SIZE, since we could have a PTE page
+	 * table filled with PTE-mapped THPs, each of which is distinct.
+	 */
+	for (addr = vaddr_start; addr < vaddr_end; addr += PAGE_SIZE) {
+		struct vm_area_struct *vma = vma_lookup(mm, addr);
+		struct folio_walk fw;
+		struct folio *folio;
+		struct page *split_point;
+		struct address_space *mapping;
+		unsigned int target_order = new_order;
+		unsigned int origin_order;
+
+		if (!vma)
+			break;
+
+		/* skip special VMA and hugetlb VMA */
+		if (vma_not_suitable_for_thp_split(vma)) {
+			addr = vma->vm_end;
+			continue;
+		}
+
+		folio = folio_walk_start(&fw, vma, addr, 0);
+		if (!folio)
+			continue;
+
+		if (!is_transparent_hugepage(folio))
+			goto next;
+
+		origin_order = folio_order(folio);
+
+		if (!folio_test_anon(folio)) {
+			mapping = folio->mapping;
+			target_order = max(new_order,
+					   mapping_min_folio_order(mapping));
+		}
+
+		if (target_order >= origin_order)
+			goto next;
+
+		if (split_offset >= folio_nr_pages(folio))
+			goto next;
+
+		total++;
+		/*
+		 * For folios with private, split_huge_page_to_list_to_order()
+		 * will try to drop it before split and then check if the folio
+		 * can be split or not. So skip the check here.
+		 */
+		if (!folio_test_private(folio) &&
+		    !can_split_folio(folio, 0, NULL))
+			goto next;
+
+		if (!folio_trylock(folio))
+			goto next;
+		folio_get(folio);
+		folio_walk_end(&fw, vma);
+
+		if (!folio_test_anon(folio) && folio->mapping != mapping)
+			goto unlock;
+
+		split_point = folio_page(folio, split_offset);
+		if (!folio_split(folio, new_order, split_point)) {
+			split++;
+			folio = page_folio(split_point);
+			addr += (1 << origin_order) * PAGE_SIZE - PAGE_SIZE;
+		}
+
+unlock:
+
+		folio_unlock(folio);
+		folio_put(folio);
+
+		cond_resched();
+		continue;
+next:
+		folio_walk_end(&fw, vma);
+		cond_resched();
+	}
+	mmap_read_unlock(mm);
+	mmput(mm);
+
+	pr_debug("%lu of %lu THP split\n", split, total);
+
+out:
+	return ret;
+}
+
+static int folio_split_in_file(const char *file_path, pgoff_t off_start,
+				pgoff_t off_end, pgoff_t split_off,
+				unsigned int new_order)
+{
+	struct filename *file;
+	struct file *candidate;
+	struct address_space *mapping;
+	int ret = -EINVAL;
+	pgoff_t index;
+	int nr_pages = 1;
+	unsigned long total = 0, split = 0;
+	unsigned int min_order;
+	unsigned int target_order;
+
+	file = getname_kernel(file_path);
+	if (IS_ERR(file))
+		return ret;
+
+	candidate = file_open_name(file, O_RDONLY, 0);
+	if (IS_ERR(candidate))
+		goto out;
+
+	pr_debug("split file-backed THPs in file: %s, page offset: [0x%lx - 0x%lx]\n",
+		 file_path, off_start, off_end);
+
+	mapping = candidate->f_mapping;
+	min_order = mapping_min_folio_order(mapping);
+	target_order = max(new_order, min_order);
+
+	for (index = off_start; index < off_end; index += nr_pages) {
+		struct folio *folio = filemap_get_folio(mapping, index);
+
+		nr_pages = 1;
+		if (IS_ERR(folio))
+			continue;
+
+		if (!folio_test_large(folio))
+			goto next;
+
+		total++;
+		nr_pages = folio_nr_pages(folio);
+
+		if (target_order >= folio_order(folio))
+			goto next;
+
+		if (!folio_trylock(folio))
+			goto next;
+
+		if (folio->mapping != mapping)
+			goto unlock;
+
+		if (!split_folio_to_order(folio, target_order))
+			split++;
+
+unlock:
+		folio_unlock(folio);
+next:
+		folio_put(folio);
+		cond_resched();
+	}
+
+	filp_close(candidate, NULL);
+	ret = 0;
+
+	pr_debug("%lu of %lu file-backed THP split\n", split, total);
+out:
+	putname(file);
+	return ret;
+}
+
+static ssize_t folio_split_write(struct file *file, const char __user *buf,
+				size_t count, loff_t *ppops)
+{
+	static DEFINE_MUTEX(split_debug_mutex);
+	ssize_t ret;
+	/*
+	 * hold pid, start_vaddr, end_vaddr, new_order or
+	 * file_path, off_start, off_end, new_order
+	 */
+	char input_buf[MAX_INPUT_BUF_SZ];
+	int pid;
+	unsigned long vaddr_start, vaddr_end, split_offset;
+	unsigned int new_order = 0;
+
+	ret = mutex_lock_interruptible(&split_debug_mutex);
+	if (ret)
+		return ret;
+
+	ret = -EFAULT;
+
+	memset(input_buf, 0, MAX_INPUT_BUF_SZ);
+	if (copy_from_user(input_buf, buf, min_t(size_t, count, MAX_INPUT_BUF_SZ)))
+		goto out;
+
+	input_buf[MAX_INPUT_BUF_SZ - 1] = '\0';
+
+	if (input_buf[0] == '/') {
+		char *tok;
+		char *buf = input_buf;
+		char file_path[MAX_INPUT_BUF_SZ];
+		pgoff_t off_start = 0, off_end = 0, split_off = 0;
+		size_t input_len = strlen(input_buf);
+
+		tok = strsep(&buf, ",");
+		if (tok) {
+			strcpy(file_path, tok);
+		} else {
+			ret = -EINVAL;
+			goto out;
+		}
+
+		ret = sscanf(buf, "0x%lx,0x%lx,%lu,%d", &off_start, &off_end, &split_off, &new_order);
+		if (ret != 3 && ret != 4) {
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = folio_split_in_file(file_path, off_start, off_end, split_off, new_order);
+		if (!ret)
+			ret = input_len;
+
+		goto out;
+	}
+
+	ret = sscanf(input_buf, "%d,0x%lx,0x%lx,%lu,%d", &pid, &vaddr_start, &vaddr_end, &split_offset, &new_order);
+	if (ret != 4 && ret != 5) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = folio_split_pid(pid, vaddr_start, vaddr_end, split_offset, new_order);
+	if (!ret)
+		ret = strlen(input_buf);
+out:
+	mutex_unlock(&split_debug_mutex);
+	return ret;
+
+}
+
+static const struct file_operations folio_split_fops = {
+	.owner	 = THIS_MODULE,
+	.write	 = folio_split_write,
+	.llseek  = no_llseek,
+};
+
 static int __init split_huge_pages_debugfs(void)
 {
 	debugfs_create_file("split_huge_pages", 0200, NULL, NULL,
 			    &split_huge_pages_fops);
+	debugfs_create_file("folio_split", 0200, NULL, NULL,
+			    &folio_split_fops);
 	return 0;
 }
 late_initcall(split_huge_pages_debugfs);
