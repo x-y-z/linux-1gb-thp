@@ -3824,6 +3824,22 @@ int folio_split(struct folio *folio, unsigned int new_order,
 	return __folio_split(folio, new_order, page, list, false);
 }
 
+
+int split_folio_at(struct folio *folio, struct page *page,
+		struct list_head *list)
+{
+	int ret = min_order_for_split(folio);
+
+	if (ret < 0)
+		return ret;
+
+	/* shmem does not support split to non order-0 yet */
+	if (shmem_mapping(folio->mapping))
+		return split_folio(folio);
+
+	return folio_split(folio, ret, page, list);
+}
+
 int min_order_for_split(struct folio *folio)
 {
 	if (folio_test_anon(folio))

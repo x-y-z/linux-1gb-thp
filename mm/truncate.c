@@ -178,6 +178,7 @@ bool truncate_inode_partial_folio(struct folio *folio, loff_t start, loff_t end)
 {
 	loff_t pos = folio_pos(folio);
 	unsigned int offset, length;
+	struct page *split_at, *split_at2;
 
 	if (pos < start)
 		offset = start - pos;
@@ -207,8 +208,29 @@ bool truncate_inode_partial_folio(struct folio *folio, loff_t start, loff_t end)
 		folio_invalidate(folio, offset, length);
 	if (!folio_test_large(folio))
 		return true;
-	if (split_folio(folio) == 0)
-		return true;
+
+	split_at = folio_page(folio, PAGE_ALIGN_DOWN(offset) / PAGE_SIZE);
+	split_at2 = folio_page(folio,
+			       PAGE_ALIGN_DOWN(offset + length) / PAGE_SIZE);
+	if (!split_folio_at(folio, split_at, NULL)) {
+		struct folio *folio2 = page_folio(split_at2);
+		int ret;
+
+		if (folio_try_get(folio2)) {
+			if (folio_test_large(folio2)) {
+				if (!folio_trylock(folio2))
+					folio_put(folio2);
+
+				ret = split_folio_at(folio2, split_at2, NULL);
+				folio_put(folio2);
+				folio_unlock(folio2);
+
+				if (!ret)
+					return true;
+			} else
+				folio_put(folio2);
+		}
+	}
 	if (folio_test_dirty(folio))
 		return false;
 	truncate_inode_folio(folio->mapping, folio);
