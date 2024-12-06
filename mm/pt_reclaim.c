@@ -36,7 +36,7 @@ void try_to_free_pte(struct mm_struct *mm, pmd_t *pmd, unsigned long addr,
 		     struct mmu_gather *tlb)
 {
 	pmd_t pmdval;
-	spinlock_t *pml, *ptl;
+	spinlock_t *pml, *ptl = NULL;
 	pte_t *start_pte, *pte;
 	int i;
 
