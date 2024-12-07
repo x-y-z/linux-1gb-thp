@@ -101,7 +101,7 @@ static inline bool mmap_lock_speculate_try_begin(struct mm_struct *mm, unsigned 
 
 static inline bool mmap_lock_speculate_retry(struct mm_struct *mm, unsigned int seq)
 {
-	return do_read_seqcount_retry(&mm->mm_lock_seq, seq);
+	return read_seqcount_retry(&mm->mm_lock_seq, seq);
 }
 
 #else /* CONFIG_PER_VMA_LOCK */
