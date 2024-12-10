@@ -434,6 +434,13 @@ FOLIO_MATCH(flags, _flags_2a);
 FOLIO_MATCH(compound_head, _head_2a);
 #undef FOLIO_MATCH
 
+#if ALLOC_SPLIT_PTLOCKS
+struct pt_lock {
+	spinlock_t ptl;
+	struct rcu_head rcu;
+};
+#endif
+
 /**
  * struct ptdesc -    Memory descriptor for page tables.
  * @__page_flags:     Same as page flags. Powerpc only.
@@ -482,7 +489,7 @@ struct ptdesc {
 	union {
 		unsigned long _pt_pad_2;
 #if ALLOC_SPLIT_PTLOCKS
-		spinlock_t *ptl;
+		struct pt_lock *ptl;
 #else
 		spinlock_t ptl;
 #endif
