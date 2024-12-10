@@ -7013,24 +7013,34 @@ static struct kmem_cache *page_ptl_cachep;
 
 void __init ptlock_cache_init(void)
 {
-	page_ptl_cachep = kmem_cache_create("page->ptl", sizeof(spinlock_t), 0,
+	page_ptl_cachep = kmem_cache_create("page->ptl", sizeof(struct pt_lock), 0,
 			SLAB_PANIC, NULL);
 }
 
 bool ptlock_alloc(struct ptdesc *ptdesc)
 {
-	spinlock_t *ptl;
+	struct pt_lock *pt_lock;
 
-	ptl = kmem_cache_alloc(page_ptl_cachep, GFP_KERNEL);
-	if (!ptl)
+	pt_lock = kmem_cache_alloc(page_ptl_cachep, GFP_KERNEL);
+	if (!pt_lock)
 		return false;
-	ptdesc->ptl = ptl;
+	ptdesc->ptl = pt_lock;
 	return true;
+}
+
+static void ptlock_free_rcu(struct rcu_head *head)
+{
+	struct pt_lock *pt_lock;
+
+	pt_lock = container_of(head, struct pt_lock, rcu);
+	kmem_cache_free(page_ptl_cachep, pt_lock);
 }
 
 void ptlock_free(struct ptdesc *ptdesc)
 {
-	kmem_cache_free(page_ptl_cachep, ptdesc->ptl);
+	struct pt_lock *pt_lock = ptdesc->ptl;
+
+	call_rcu(&pt_lock->rcu, ptlock_free_rcu);
 }
 #endif
 
