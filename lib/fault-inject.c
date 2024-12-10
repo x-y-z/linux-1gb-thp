@@ -13,8 +13,8 @@
 #include <linux/fault-inject.h>
 
 /*
- * The should_fail() use prandom instead of the normal Linux RNG since they don't
- * need cryptographically secure random numbers.
+ * The should_fail() functions use prandom instead of the normal Linux RNG
+ * since they don't need cryptographically secure random numbers.
  */
 static DEFINE_PER_CPU(struct rnd_state, fault_rnd_state);
 
