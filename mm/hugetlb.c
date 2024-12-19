@@ -2978,7 +2978,7 @@ int isolate_or_dissolve_huge_page(struct page *page, struct list_head *list)
 /*
  *  replace_free_hugepage_folios - Replace free hugepage folios in a given pfn
  *  range with new folios.
- *  @stat_pfn: start pfn of the given pfn range
+ *  @start_pfn: start pfn of the given pfn range
  *  @end_pfn: end pfn of the given pfn range
  *  Returns 0 on success, otherwise negated error.
  */
@@ -3000,7 +3000,8 @@ int replace_free_hugepage_folios(unsigned long start_pfn, unsigned long end_pfn)
 		}
 
 		if (!folio_ref_count(folio)) {
-			ret = alloc_and_dissolve_hugetlb_folio(h, folio, &isolate_list);
+			ret = alloc_and_dissolve_hugetlb_folio(h, folio,
+							       &isolate_list);
 			if (ret)
 				break;
 
