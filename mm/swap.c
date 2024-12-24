@@ -395,7 +395,8 @@ static void lru_gen_inc_refs(struct folio *folio)
 
 	do {
 		if ((old_flags & LRU_REFS_MASK) == LRU_REFS_MASK) {
-			folio_set_workingset(folio);
+			if (!folio_test_workingset(folio))
+				folio_set_workingset(folio);
 			return;
 		}
 
