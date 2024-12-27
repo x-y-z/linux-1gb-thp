@@ -320,6 +320,7 @@ enum module_state {
 	MODULE_STATE_COMING,	/* Full formed, running module_init. */
 	MODULE_STATE_GOING,	/* Going away. */
 	MODULE_STATE_UNFORMED,	/* Still setting it up. */
+	MODULE_STATE_GONE,	/* Deconstructing and freeing. */
 };
 
 struct mod_tree_node {
@@ -618,6 +619,11 @@ static inline bool module_is_live(struct module *mod)
 static inline bool module_is_coming(struct module *mod)
 {
         return mod->state == MODULE_STATE_COMING;
+}
+
+static inline bool module_is_formed(struct module *mod)
+{
+	return mod->state < MODULE_STATE_UNFORMED;
 }
 
 struct module *__module_text_address(unsigned long addr);
