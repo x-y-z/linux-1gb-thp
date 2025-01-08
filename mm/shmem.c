@@ -1978,16 +1978,14 @@ static struct folio *shmem_swap_alloc_folio(struct inode *inode,
 
 	/*
 	 * We have arrived here because our zones are constrained, so don't
-	 * limit chance of success by further cpuset and node constraints.
+	 * limit chance of success with further cpuset and node constraints.
 	 */
 	gfp &= ~GFP_CONSTRAINT_MASK;
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	if (order > 0) {
+	if (IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE) && order > 0) {
 		gfp_t huge_gfp = vma_thp_gfp_mask(vma);
 
 		gfp = limit_gfp_mask(huge_gfp, gfp);
 	}
-#endif
 
 	new = shmem_alloc_folio(gfp, order, info, index);
 	if (!new)
