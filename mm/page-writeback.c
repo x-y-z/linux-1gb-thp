@@ -799,6 +799,8 @@ int bdi_set_min_bytes(struct backing_dev_info *bdi, u64 min_bytes)
 		return ret;
 
 	min_ratio = bdi_ratio_from_pages(pages);
+	if (min_ratio == -EINVAL)
+		return -EINVAL;
 	return __bdi_set_min_ratio(bdi, min_ratio);
 }
 
@@ -818,6 +820,8 @@ int bdi_set_max_bytes(struct backing_dev_info *bdi, u64 max_bytes)
 		return ret;
 
 	max_ratio = bdi_ratio_from_pages(pages);
+	if (max_ratio == -EINVAL)
+		return -EINVAL;
 	return __bdi_set_max_ratio(bdi, max_ratio);
 }
 
