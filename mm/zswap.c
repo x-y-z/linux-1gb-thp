@@ -848,8 +848,6 @@ static int zswap_cpu_comp_prepare(unsigned int cpu, struct hlist_node *node)
 		ret = -ENOMEM;
 		goto req_fail;
 	}
-
-	/* acomp_ctx->req must be NULL if the acomp_ctx is not fully initialized */
 	acomp_ctx->req = req;
 
 	crypto_init_wait(&acomp_ctx->wait);
