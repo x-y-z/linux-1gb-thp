@@ -1134,6 +1134,28 @@ void xas_split(struct xa_state *xas, void *entry, unsigned int order)
 EXPORT_SYMBOL_GPL(xas_split);
 
 /**
+ * xas_halve_min_order() - Minimal split order xas_try_halve can accept
+ * @order: Current entry order.
+ *
+ * xas_try_halve() can split a multi-index entry to smaller than @order - 1 if
+ * no new xa_node is needed. This function provides the minimal order
+ * xas_try_halve() supports.
+ *
+ * Return: the minimal order xas_try_halve() supports
+ *
+ * Context: Any context.
+ *
+ */
+unsigned int xas_halve_min_order(unsigned int order)
+{
+	if (order % XA_CHUNK_SHIFT == 0)
+		return order == 0 ? 0 : order - 1;
+
+	return order - (order % XA_CHUNK_SHIFT);
+}
+EXPORT_SYMBOL_GPL(xas_halve_min_order);
+
+/**
  * xas_try_halve() - Try to halve a multi-index entry.
  * @xas: XArray operation state.
  * @entry: New entry to store in the array.
@@ -1144,6 +1166,8 @@ EXPORT_SYMBOL_GPL(xas_split);
  * copied to all the replacement entries. If and only if one xa_node needs to
  * be allocated, the function uses @gfp to get one. Otherwise the
  * function gives ENOTSUPP error.
+ *
+ * NOTE: use xas_halve_min_order() if you want to halve as fast as you can.
  *
  * Context: Any context.  The caller should hold the xa_lock.
  */
