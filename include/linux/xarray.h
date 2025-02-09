@@ -1555,6 +1555,7 @@ int xa_get_order(struct xarray *, unsigned long index);
 int xas_get_order(struct xa_state *xas);
 void xas_split(struct xa_state *, void *entry, unsigned int order);
 void xas_split_alloc(struct xa_state *, void *entry, unsigned int order, gfp_t);
+unsigned int xas_halve_min_order(unsigned int order);
 void xas_try_halve(struct xa_state *xas, void *entry, unsigned int order,
 		gfp_t gfp);
 #else
@@ -1577,6 +1578,11 @@ static inline void xas_split(struct xa_state *xas, void *entry,
 static inline void xas_split_alloc(struct xa_state *xas, void *entry,
 		unsigned int order, gfp_t gfp)
 {
+}
+
+static inline unsigned int xas_halve_min_order(unsigned int order)
+{
+	return 0;
 }
 
 static inline void xas_try_halve(struct xa_state *xas, void *entry,
