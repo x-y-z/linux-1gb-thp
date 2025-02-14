@@ -3785,21 +3785,23 @@ after_split:
 				     folio_test_swapcache(origin_folio)) ?
 					     folio_nr_pages(release) : 0));
 
-			if (release != origin_folio)
-				lru_add_page_tail(origin_folio, &release->page,
-						lruvec, list);
+			if (release == origin_folio)
+				continue;
+			
+			lru_add_page_tail(origin_folio, &release->page, lruvec,
+					list);
 
 			/* Some pages can be beyond EOF: drop them from page cache */
 			if (release->index >= end) {
-				if (shmem_mapping(origin_folio->mapping))
+				if (shmem_mapping(mapping))
 					nr_dropped += folio_nr_pages(release);
 				else if (folio_test_clear_dirty(release))
 					folio_account_cleaned(release,
-						inode_to_wb(origin_folio->mapping->host));
+						inode_to_wb(mapping->host));
 				__filemap_remove_folio(release, NULL);
 				folio_put(release);
 			} else if (!folio_test_anon(release)) {
-				__xa_store(&origin_folio->mapping->i_pages,
+				__xa_store(&mapping->i_pages,
 						release->index, &release->page, 0);
 			} else if (swap_cache) {
 				__xa_store(&swap_cache->i_pages,
